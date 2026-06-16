@@ -62,7 +62,7 @@ export const PROJECT_SKILLS = [
     {label: '集成开发工具', value: 'IntelliJ IDEA', version: '2023.3.3.win Ultimate Edition'},
     {label: '项目管理工具', value: 'Maven', version: '3.9.9'},
     {label: '版本控制工具', value: 'Git', version: '2.28.0.windows.1'},
-    {label: '代码托管中心', value: 'GitEE', version: 'latest'},
+    {label: '代码托管中心', value: 'GitHub', version: 'latest'},
     {label: '前端服务容器', value: 'Node', version: '22.12+'},
     {label: '前端测试软件', value: 'Edge', version: '120.0.2210.77'},
     {label: '压力测试工具', value: 'JMeter', version: '5.4.1'},
