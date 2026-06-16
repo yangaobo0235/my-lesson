@@ -1,0 +1,24 @@
+::-webkit-scrollbar {
+  display: none; // 隐藏滚动条
+}
+
+html {
+  font-family: Consolas, Avenir, Helvetica, Arial, sans-serif; // 字体
+  font-size: 14px; // 全局字号
+}
+
+body {
+  margin: 0; // 清空内边距
+  padding: 0; // 清空外边距
+}
+
+html.dark {
+  img, .dark-img-bg {
+    filter: brightness(0.8) saturate(1.25) // 滤镜: 暗黑模式图片的亮度和饱和度
+  }
+
+  .el-table th {
+    background: #18222C !important; // th 背景色
+  }
+}
+

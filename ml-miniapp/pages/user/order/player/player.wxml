@@ -1,0 +1,193 @@
+<van-notice-bar wx:if="{{episode['title']}}"
+                left-icon="volume-o"
+                speed="100"
+                text="当前播放视频：《{{course['title']}}》 课程之《{{episode['title']}}》"/>
+<view class="video-body" wx:if="{{episode['src'] && episode['cover']}}">
+    <video id="myVideo"
+           controls
+           show-mute-btn
+           src="{{episode['src']}}"
+           enable-danmu
+           danmu-btn
+           danmu-list="{{barrages}}"
+           poster="{{episode['cover']}}"
+           title="{{episode['title']}}"
+           bindplay="onVideoPlay"
+           bindpause="onVideoPause"/>
+</view>
+<view class="video-foot">
+    <view class="buttons">
+        <view class="col">
+            <van-icon wx:if="{{like}}" name="like"/>
+            <van-icon wx:else name="like-o"/>
+            <text bind:tap="toggleLike"> 点赞</text>
+        </view>
+        <view class="col">
+            <van-icon wx:if="{{follow}}" name="star"/>
+            <van-icon wx:else name="star-o"/>
+            <text bind:tap="toggleFollow"> 收藏</text>
+        </view>
+        <view class="col">
+            <van-icon name="warn-o"/>
+            <text bind:tap="openReportSheet"> 举报</text>
+        </view>
+        <view class="col">
+            <van-icon name="share-o"/>
+            <text bind:tap="openShareSheet"> 分享</text>
+        </view>
+        <view class="col">
+            <van-icon name="comment-o"/>
+            <text bind:tap="openCommentSheet"> 评论</text>
+        </view>
+    </view>
+    <view class="info">
+        <view class="col left">
+            <van-icon name="vip-card" color="gold"/>
+            <van-icon name="hot-sale" color="skyblue"/>
+            <van-icon name="fire" color="orange"/>
+            <text>773</text>
+        </view>
+        <view class="col center">
+            <text>课程 · {{course['title']}}</text>
+        </view>
+        <view class="col right">
+            <text bind:tap="openBarrageSheet">讨论 ></text>
+        </view>
+    </view>
+</view>
+<van-divider dashed/>
+<view class="operation-tabs">
+    <van-tabs active="{{currentTab}}" type="card" animated color="orange" bind:change="changeTab">
+        <van-tab title="播放列表" class="catalog">
+            <van-collapse custom-class="season-collapse"
+                          accordion
+                          value="{{ currentTabIdx }}"
+                          bind:change="changeCollapse">
+                <!--遍历集次-->
+                <van-collapse-item wx:for="{{course['seasons']}}"
+                                   wx:key="id"
+                                   wx:for-item="s"
+                                   wx:for-index="si"
+                                   title="第{{si+1}}季：{{s['title']}}"
+                                   name="{{si}}"
+                                   icon="label-o"
+                                   content-class="collapse-item">
+                    <van-grid column-num="6" gutter="{{5}}">
+                        <!--遍历集次-->
+                        <van-grid-item wx:for="{{s['episodes']}}"
+                                       wx:key="id"
+                                       wx:for-item="e"
+                                       wx:for-index="ei"
+                                       data-src="{{e['video']}}"
+                                       data-title="{{e['title']}}"
+                                       data-cover="{{e['cover']}}"
+                                       data-episode-id="{{e['id']}}"
+                                       bind:tap="toggleEpisode">
+                            <view slot="icon">
+                                <van-icon wx:if="{{episode['id'] === e['id']}}" name="play-circle" color="#f9ed69"/>
+                                <van-icon wx:else name="play-circle"/>
+                            </view>
+                            <view slot="text">
+                                <text wx:if="{{episode['id'] === e['id']}}" class="current-episode">{{ei + 1}}集</text>
+                                <text wx:else>{{ei + 1}}集</text>
+                            </view>
+                        </van-grid-item>
+                    </van-grid>
+                </van-collapse-item>
+            </van-collapse>
+        </van-tab>
+        <van-tab title="评论列表" class="comment">
+            <view class="comment-list">
+                <van-card wx:for="{{comments}}"
+                          wx:for-item="comment"
+                          wx:key="id"
+                          title="{{comment['nickname']}}"
+                          thumb="{{MINIO_AVATAR}}dog.png"
+                          thumb-mode="scaleToFill"
+                          tag="V">
+                    <view slot="desc">
+                        <view class="info">{{comment['updated']}} IP属地: 哈尔滨</view>
+                        <view class="content">{{comment['content']}}</view>
+                        <view class="buttons">
+                            <van-icon class="icon good-icon" name="good-job-o" size="20px"/>
+                            <van-icon class="icon bad-icon" name="good-job-o" size="20px"/>
+                            <van-icon class="icon comment-icon" name="comment-o" size="20px"
+                                      bind:tap="openReplySheet"
+                                      data-comment-id="{{comment['id']}}"/>
+                            <van-icon class="icon warn-icon" name="warn-o" size="20px"/>
+                        </view>
+                    </view>
+                    <view slot="footer">
+                        <view class="subComments"
+                              wx:for="{{comment['subComments']}}"
+                              wx:for-item="subComment"
+                              wx:key="id">
+                            {{subComment['member']['nickname']}}
+                            <van-tag type="primary">VIP</van-tag>
+                            : {{subComment['content']}}
+                        </view>
+                    </view>
+                </van-card>
+            </view>
+        </van-tab>
+    </van-tabs>
+</view>
+
+<van-action-sheet class="sheet report-sheet" show="{{ reportSheetShow }}" title="举报该课程" bind:close="closeReportSheet">
+    <van-field value="{{ reportText }}"
+               type="textarea"
+               maxlength="{{500}}"
+               show-word-limit="{{true}}"
+               autosize
+               border="{{false}}"
+               placeholder="请输入你的举报理由"
+               bindinput="changeReportText"/>
+    <van-button type="info" block bind:tap="sendReportText">提交</van-button>
+</van-action-sheet>
+<van-share-sheet class="sheet share-sheet"
+                 show="{{ shareSheetShow }}"
+                 title="立即分享给好友"
+                 options="{{ shareSheetOptions }}"
+                 bind:close="closeShareSheet"/>
+<van-action-sheet class="sheet comment-sheet"
+                  show="{{ commentSheetShow }}"
+                  title="评论该课程"
+                  bind:close="closeCommentSheet">
+    <van-field value="{{ commentText }}"
+               type="textarea"
+               maxlength="{{500}}"
+               show-word-limit="{{true}}"
+               autosize
+               border="{{false}}"
+               placeholder="请输入你的评论内容"
+               bindinput="changeCommentText"/>
+    <van-button type="info" block bind:tap="sendCommentText">提交</van-button>
+</van-action-sheet>
+<van-action-sheet class="sheet barrage-sheet"
+                  show="{{ barrageSheetShow }}"
+                  title="发送弹幕参与讨论"
+                  bind:close="closeBarrageSheet">
+    <van-field value="{{ barrageText }}"
+               type="textarea"
+               maxlength="{{500}}"
+               show-word-limit="{{true}}"
+               autosize
+               border="{{false}}"
+               placeholder="请输入你的弹幕内容"
+               bindinput="changeBarrageText"/>
+    <van-button type="info" block bind:tap="sendBarrageText">提交</van-button>
+</van-action-sheet>
+<van-action-sheet class="sheet reply-sheet"
+                  show="{{ replySheetShow }}"
+                  title="回复该评论"
+                  bind:close="closeReplySheet">
+    <van-field value="{{ replyText }}"
+               type="textarea"
+               maxlength="{{500}}"
+               show-word-limit="{{true}}"
+               autosize
+               border="{{false}}"
+               placeholder="请输入你的回复内容"
+               bindinput="changeReplyText"/>
+    <van-button type="info" block bind:tap="sendReplyText">提交</van-button>
+</van-action-sheet>

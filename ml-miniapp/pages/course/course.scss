@@ -1,0 +1,31 @@
+@import "app";
+
+.course-list {
+  height: 90vh; // 高度
+
+  .course-item {
+    background-color: $black; // 背景色
+
+    .title {
+      font-weight: bold; // 加粗
+      white-space: nowrap; // 不换行
+      overflow: hidden; // 超出隐藏
+      text-overflow: ellipsis; // 超出部分显示...
+      color: $yellow; // 字体颜色
+      font-size: 30rpx; // 字体大小
+      margin-top: 10rpx; // 上边距
+      margin-left: 20rpx; // 左边距
+      margin-bottom: 20rpx; // 下边距
+      text-align: left; // 文字左对齐
+      width: 100%; // 宽度
+    }
+
+    .info {
+      font-size: small; // 字体大小
+      text-align: left; // 文字左对齐
+      line-height: 40rpx; // 行高
+      width: 100%; // 宽度
+      margin-left: 20rpx; // 左边距
+    }
+  }
+}

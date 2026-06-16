@@ -1,0 +1,14 @@
+<view class="update-province-board">
+    <van-tree-select items="{{ provinceOptions }}"
+                     main-active-index="{{ mainActiveIndex }}"
+                     active-id="{{ activeId }}"
+                     bind:click-nav="onClickNav"
+                     bind:click-item="onClickItem"
+                     main-item-class="main-item-class"
+                     main-active-class="main-active-class"
+                     content-item-class="content-item-class"
+                     content-active-class="content-active-class"/>
+    <van-button class="submit-btn" bind:tap="updateProvince" custom-class="submit-btn" type="info" block>
+        确认修改
+    </van-button>
+</view>

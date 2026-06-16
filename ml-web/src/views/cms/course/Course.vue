@@ -1,0 +1,120 @@
+<script setup>
+import MyNav from "../../../components/MyNav.vue";
+import MyHead from "../../../components/MyHead.vue";
+import MyTable from "../../../components/MyTable.vue";
+import {onMounted, reactive, ref} from "vue";
+import {deleteApi, deleteBatchApi, pageApi} from "../../../api/index.js";
+import {myPage} from "../../../request/index.js";
+import {isNotEmpty, isNotNull} from "../../../util/index.js";
+import {MINIO_COURSE_SUMMARY, MINIO_COURSE_COVER} from "../../../const/index.js";
+import router from "../../../router/index.js";
+
+// 路径导航
+const navItems = [
+  {icon: 'Notebook', label: '课程管理'},
+  {icon: 'Notebook', label: '课程列表'},
+];
+// 数据头
+const headItems = [
+  {type: 'ipt', span: 5, placeholder: '按标题搜索', callback: pageLikeTitle},
+];
+// 表格列
+const columns = [
+  {label: '序号', prop: 'idx', type: 'tag', width: 65},
+  {label: '标题', prop: 'title'},
+  {label: '作者', prop: 'author', width: 120},
+  {label: '类别', prop: 'category.title', width: 120},
+  {label: '价格', prop: 'price', width: 120, suffix: '.00 元'},
+  {label: '封面图片', prop: 'cover', width: 120, type: 'img', minio: MINIO_COURSE_COVER},
+  {label: '摘要图片', prop: 'summary', width: 120, type: 'img', minio: MINIO_COURSE_SUMMARY},
+  {label: '描述', prop: 'info', type: 'card', tooltip: false},
+];
+// 按钮列
+const buttons = [
+  {label: '季次列表', type: 'success', callback: courseSeasons}
+];
+
+/* ==================== 分页查询 ==================== */
+
+// 表格数据 + 分页数据 + 课程标题
+let records = ref();
+let pageInfo = reactive({pageNum: 1, pageSize: 5, total: 0, callback: page});
+let title = ref();
+
+/**
+ * 分页查询
+ *
+ * 1. 定义分页基础配置，包括 records, pageInfo, api, params 等。
+ * 2. 附加分页查询条件，如标题等。
+ * 3. 异步发送分页查询请求。
+ *
+ * @param pageNum 当前第几页，默认 1
+ * @param pageSize 每页多少条，默认 5
+ */
+async function page(pageNum = pageInfo['pageNum'], pageSize = pageInfo['pageSize']) {
+  let config = {
+    api: pageApi,
+    params: {pageNum, pageSize},
+    args: {module: 'course'},
+    records, pageInfo,
+  }
+  if (isNotEmpty(title.value)) config['params']['title'] = title.value;
+  await myPage(config);
+}
+
+/* ==================== 按课程标题模糊查询 ==================== */
+
+/**
+ * 按课程标题模糊查询
+ *
+ * 1. 将输入框中的值赋值给分页条件字段变量。
+ * 2. 重新发送分页请求。
+ *
+ * @param val 输入框中的值
+ */
+function pageLikeTitle(val) {
+  if (isNotNull(val) || title.value) {
+    title.value = val;
+    page();
+  }
+}
+
+/* ==================== 季次列表 ==================== */
+
+/**
+ * 查询季次列表
+ *
+ * 1. 存储课程主键 courseId
+ * 2. 存储课程标题 courseTitle
+ * 3. 路由到 Season 页面
+ *
+ * @param row 表格行
+ */
+function courseSeasons(row) {
+  sessionStorage.setItem('courseId', row['id']);
+  sessionStorage.setItem('courseTitle', row['title'].toString());
+  router.push('/Season')
+}
+
+/* ==================== 加载函数 ==================== */
+
+onMounted(() => page());
+
+</script>
+
+<template v-if="records">
+  <my-nav :items="navItems"/>
+  <my-head :items="headItems"/>
+  <my-table module="course"
+            insert-page="/CourseInsert"
+            update-page="/CourseUpdate"
+            :records="records"
+            :columns="columns"
+            :buttons="buttons"
+            :delete-api="deleteApi"
+            :delete-batch-api="deleteBatchApi"
+            :delete-callback="page"
+            :pageInfo="pageInfo"/>
+</template>
+
+<style scoped lang="scss"></style>

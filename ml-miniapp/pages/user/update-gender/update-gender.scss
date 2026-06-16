@@ -1,0 +1,31 @@
+@import "app";
+
+.update-gender-board {
+  padding: 20rpx; // 内边距
+
+  .van-picker {
+    background-color: $bg-gray; // 背景颜色
+    border: none; // 边框
+    border-radius: 8px; // 圆角
+  }
+
+  .van-picker__cancel {
+    color: $white; // 取消按钮颜色
+  }
+
+  .van-picker__confirm {
+    color: $yellow; // 确认按钮颜色
+  }
+
+  .van-picker__mask {
+    background-image: none; // 遮罩背景图片
+  }
+
+  .van-picker-column__item {
+    color: $white; // 选项颜色
+  }
+
+  .van-picker-column__item--selected {
+    color: $yellow; // 选中选项颜色
+  }
+}

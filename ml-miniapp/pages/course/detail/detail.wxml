@@ -1,0 +1,150 @@
+<van-sticky>
+    <video class="free-video"
+           wx:if="{{videoSrc && videoPoster}}"
+           src="{{videoSrc}}"
+           title="{{videoTitle}}"
+           poster="{{videoPoster}}"
+           danmu-list="{{welcomeBarrage}}"
+           controls
+           show-mute-btn
+           enable-danmu
+           danmu-btn/>
+    <van-empty class="free-video-empty"
+               wx:else
+               image="error"
+               description="暂无免费视频"/>
+</van-sticky>
+<view class="course-info"
+      wx:if="{{course}}">
+    <van-divider contentPosition="center" dashed>课程详情</van-divider>
+    <van-cell-group inset>
+        <van-cell title="课程类别" value="{{course['category']['title']}}" icon="flag-o"/>
+        <van-cell title="课程标题" value="{{course['title']}}" icon="notes-o"/>
+        <van-cell title="课程作者" value="{{course['author']}}" icon="user-o"/>
+        <van-cell title="创建日期" value="{{course['created']}}" icon="clock-o"/>
+        <van-cell title="更新日期" value="{{course['updated']}}" icon="clock-o"/>
+        <van-cell title="课程价格" value="{{course['price'] + ' 元'}}" icon="cash-o"/>
+        <van-cell title="课程简介" value="{{course['info']}}" icon="font-o"/>
+    </van-cell-group>
+</view>
+<view class="operation-tabs">
+    <van-tabs active="{{activeTab}}"
+              color="orange"
+              type="card"
+              animated
+              tab-class="tab">
+        <van-tab title="课程摘要" name="摘要">
+            <view class="summary"
+                  wx:if="{{course['summary']}}">
+                <van-image src="{{MINIO_COURSE_SUMMARY}}{{course['summary']}}"
+                           width="100%"
+                           fit="widthFix"/>
+            </view>
+            <van-empty class="summary-empty"
+                       wx:else
+                       image="error"
+                       description="暂无摘要图片"/>
+            <view class="baseline">
+                <van-divider contentPosition="center" dashed>底线</van-divider>
+            </view>
+        </van-tab>
+        <van-tab title="课程目录" name="目录">
+            <view class="catalog"
+                  wx:if="{{course['seasons'].length > 0}}">
+                <view wx:for="{{course['seasons']}}"
+                      wx:key="id"
+                      wx:for-item="season"
+                      wx:for-index="si">
+                    <van-cell-group title="{{'第' + (si + 1) + '季：' + season['title']}}">
+                        <view wx:if="{{season['episodes'].length > 0}}">
+                            <van-cell wx:for="{{season['episodes']}}"
+                                      wx:key="id"
+                                      wx:for-item="episode"
+                                      wx:for-index="ei"
+                                      title="{{'第' + (ei + 1) + '集：' + episode['title']}}"
+                                      use-label-slot>
+                                <view slot="label" class="van-multi-ellipsis--l2">{{episode['info']}}</view>
+                                <view slot="right-icon"
+                                      data-episode-id="{{episode['id']}}"
+                                      data-follow-id="{{episode['followId']}}"
+                                      data-followed="{{episode['followed']}}"
+                                      catch:tap="toggleFollow">
+                                    <van-icon name="{{episode['followed'] ? 'star' : 'star-o'}}"
+                                              size="20px"
+                                              color="{{episode['followed'] ? '#ff9900' : '#999'}}"
+                                              custom-class="follow-star-icon"/>
+                                </view>
+                            </van-cell>
+                        </view>
+                    </van-cell-group>
+                </view>
+                <view class="baseline">
+                    <van-divider contentPosition="center" dashed>底线</van-divider>
+                </view>
+            </view>
+            <van-empty class="catalog-empty"
+                       wx:else
+                       image="error"
+                       description="该课程暂无季次信息，请联系运维人员。"/>
+        </van-tab>
+    </van-tabs>
+</view>
+<view class="detail-foot">
+    <van-goods-action>
+        <van-goods-action-icon text="客服" bind:click="chatMe" icon="chat-o"/>
+        <van-goods-action-icon text="购物车" bind:click="toCart" icon="cart-o"/>
+        <van-goods-action-button text="加入购物车" bind:click="addToCart" type="warning"/>
+        <van-goods-action-button text="立即购买" bind:click="pay"/>
+    </van-goods-action>
+</view>
+<van-dialog wx:if="{{confirmDialogShow}}"
+            class="pay-dialog"
+            title="{{ payStep === 'confirm' ? '确认订单' : '支付订单' }}"
+            show="{{ true }}"
+            show-confirm-button="{{false}}"
+            use-slot
+            width="400px">
+    <!-- 第一步：确认订单 -->
+    <block wx:if="{{payStep === 'confirm'}}">
+        <van-cell-group wx:if="{{course}}" inset>
+            <van-cell title="课程名称" value="{{course['title']}}" icon="notes-o"/>
+            <van-cell title="课程作者" value="{{course['author']}}" icon="user-o"/>
+            <van-cell title="支付金额" value="{{course['price'] + ' 元'}}" icon="cash-o"/>
+        </van-cell-group>
+        <view class="pay-dialog-tip">课程属于虚拟产品，购买后不支持退换！</view>
+        <van-divider dashed/>
+        <van-row>
+            <van-col span="12">
+                <van-button class="cancel-btn" bind:click="cancelPay" block type="info">取消</van-button>
+            </van-col>
+            <van-col span="12">
+                <van-button class="confirm-btn" bind:click="confirmPay" block type="danger">确认支付</van-button>
+            </van-col>
+        </van-row>
+    </block>
+    <!-- 第二步：扫码支付 -->
+    <block wx:else>
+        <van-divider dashed/>
+        <view class="countdown-time">
+            <van-count-down class="pay-countdown"
+                            wx:if="{{countDownShow}}"
+                            time="{{ time }}"
+                            bind:change="countDown"
+                            bind:finish="onCountDownFinish"
+                            use-slot>
+                <view class="title">【请在15分钟内完成付款】</view>
+                <text class="item">{{ timeData.hours }}</text>
+                <text class="delimiter">时 </text>
+                <text class="item">{{ timeData.minutes }}</text>
+                <text class="delimiter">分 </text>
+                <text class="item">{{ timeData.seconds }}</text>
+                <text class="delimiter">秒 </text>
+            </van-count-down>
+        </view>
+        <van-divider dashed/>
+        <view class="pay-dialog-label">支付宝扫码</view>
+        <van-image class="qrcode-image" src="{{qrCodeImage}}" width="300" height="200"/>
+        <van-divider dashed/>
+        <van-button class="cancel-btn" bind:click="cancelPay" block type="info">取消支付</van-button>
+    </block>
+</van-dialog>

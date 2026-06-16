@@ -1,0 +1,29 @@
+<scroll-view class="video-list"
+             wx:if="{{courses && courses.length > 0}}"
+             scroll-y="true"
+             bindscrolltolower="pageMore">
+    <view class="video-item"
+          wx:for="{{courses}}"
+          wx:for-item="course"
+          wx:key="courseId">
+        <van-card title="{{course['title'] || '未知课程'}}"
+                  desc="订单号: {{course['orderSn']}}"
+                  price="{{course['price']}} 元"
+                  thumb="{{MINIO_COURSE_COVER}}{{course['cover']}}"
+                  thumb-mode="scaleToFill"
+                  bind:tap="playVideo"
+                  data-course-id="{{course['courseId']}}">
+            <view slot="footer">
+                <van-button size="small" type="primary" plain
+                            bind:tap="playVideo"
+                            data-course-id="{{course['courseId']}}">
+                    观看视频
+                </van-button>
+            </view>
+        </van-card>
+    </view>
+    <view class="baseline">
+        <van-divider contentPosition="center" dashed>底线</van-divider>
+    </view>
+</scroll-view>
+<van-empty wx:else image="error" description="暂无已购课程"/>

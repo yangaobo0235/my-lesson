@@ -1,0 +1,80 @@
+@import "app";
+
+.user-head {
+  margin-top: 40rpx; // 外边距
+
+  .nickname-col {
+    text-align: left; // 文本居左
+    line-height: 80rpx; // 行高
+  }
+
+  .van-tag {
+    margin-right: 10rpx; // 外边距
+  }
+}
+
+.operation-btn {
+  margin: 40rpx 20rpx; // 外边距
+
+  .van-grid-item__content {
+    background: $black; // 背景颜色
+    border: 1rpx solid $yellow; // 边框颜色
+    box-sizing: border-box; // 盒子模型
+    color: $yellow; // 字体颜色
+    border-radius: 5rpx; // 边框圆角
+  }
+
+  .van-grid-item__text {
+    font-size: 25rpx; // 字体大小
+    color: $white; // 字体颜色
+  }
+}
+
+.ai-entry {
+  margin: 30rpx 20rpx;
+  padding: 24rpx 16rpx;
+  border: 1rpx solid rgba(249, 237, 105, .35);
+  border-radius: 16rpx;
+  background: rgba(255, 255, 255, .04);
+
+  .ai-entry-title {
+    margin: 0 12rpx 18rpx;
+    color: $yellow;
+    font-size: 30rpx;
+    font-weight: 600;
+  }
+}
+
+.user-body {
+  margin-top: 50rpx; // 上外边距
+
+  .van-cell {
+    background-color: $bg-gray; // 背景色
+    text-align: left; // 左对齐
+
+    .van-cell__title {
+      color: $white; // 字体颜色
+      letter-spacing: 5rpx; // 字间距
+    }
+
+    .van-cell__value {
+      color: $yellow; // 字体颜色
+    }
+  }
+
+  .van-cell-tips {
+    text-align: left; // 左对齐
+    font-size: small; // 小号
+    color: $gray; // 字体颜色
+    margin: 50rpx 0 20rpx 20rpx; // 外边距
+  }
+}
+
+.user-foot {
+  padding: 0 30rpx 200rpx; // 内边距
+
+  .van-button {
+    margin-top: 30rpx; // 外边距
+    border-radius: 15rpx; // 边框圆角
+  }
+}

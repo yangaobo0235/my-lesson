@@ -1,0 +1,51 @@
+<view class="page">
+  <view class="chat-head">
+    <view><view class="title">{{title}}</view><view class="state">{{streamState}}</view></view>
+    <navigator url="/pages/ai/conversations/conversations" class="history">历史会话</navigator>
+  </view>
+
+  <scroll-view class="messages" scroll-y scroll-into-view="{{scrollIntoView}}">
+    <view wx:for="{{messages}}" wx:key="id" class="message {{item.role === 'USER' ? 'user' : 'assistant'}}">
+      <view class="role">{{item.role === 'USER' ? '你' : 'MyLesson AI'}}</view>
+      <view class="bubble">{{item.content}}</view>
+      <view wx:if="{{item.citations.length}}" class="citations">
+        <view wx:for="{{item.citations}}" wx:for-item="citation" wx:key="sourceKey"
+              class="citation" data-url="{{citation.sourceUrl}}" bind:tap="openCitation">
+          {{citation.title || citation.sourceKey}}
+        </view>
+      </view>
+    </view>
+    <view wx:if="{{sending || liveAnswer}}" class="message assistant">
+      <view class="role">MyLesson AI</view>
+      <view class="bubble">{{liveAnswer || '正在思考...'}}</view>
+      <view class="citations">
+        <view wx:for="{{citations}}" wx:key="sourceKey" class="citation"
+              data-url="{{item.sourceUrl}}" bind:tap="openCitation">{{item.title || item.sourceKey}}</view>
+      </view>
+    </view>
+    <view wx:if="{{timeline.length}}" class="timeline">
+      <view class="timeline-title">执行过程</view>
+      <view wx:for="{{timeline}}" wx:key="index" class="timeline-item">{{item.label}}</view>
+    </view>
+    <view wx:if="{{approval}}" class="approval">
+      <view class="approval-title">需要你的确认</view>
+      <view>{{approval.reason || approval.actionType}}</view>
+      <view class="approval-actions">
+        <van-button size="small" type="danger" plain data-action="reject" bind:tap="decide">拒绝</van-button>
+        <van-button size="small" type="primary" data-action="approve" bind:tap="decide">批准</van-button>
+      </view>
+    </view>
+    <view class="trace">traceId：{{traceId || '-'}}</view>
+    <view id="{{scrollIntoView}}"></view>
+  </scroll-view>
+
+  <view class="composer">
+    <van-field value="{{input}}" type="textarea" autosize maxlength="{{2000}}"
+               placeholder="输入课程咨询或学习目标" bind:input="changeInput"/>
+    <view class="composer-actions">
+      <van-button wx:if="{{lastMessage && !sending}}" size="small" plain
+                  data-retry="true" bind:tap="send">重试</van-button>
+      <van-button size="small" type="info" loading="{{sending}}" bind:tap="send">发送</van-button>
+    </view>
+  </view>
+</view>

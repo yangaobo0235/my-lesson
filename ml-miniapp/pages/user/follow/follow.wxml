@@ -1,0 +1,26 @@
+<scroll-view class="follow-list"
+             wx:if="{{follows && follows.length > 0}}"
+             scroll-y="true"
+             bindscrolltolower="pageMore">
+    <view class="follow-item"
+          wx:for="{{follows}}"
+          wx:for-item="follow"
+          wx:key="id">
+        <van-card title="{{follow['episode']['title'] || '未知课程'}}"
+                  desc="{{follow['episode']['info'] || '暂无描述'}}"
+                  thumb="{{MINIO_COURSE_COVER}}{{follow['episode']['cover']}}"
+                  thumb-mode="scaleToFill">
+            <view slot="footer">
+                <van-button size="small" type="danger" plain
+                            bind:tap="removeFollow"
+                            data-id="{{follow['id']}}">
+                    取消收藏
+                </van-button>
+            </view>
+        </van-card>
+    </view>
+    <view class="baseline">
+        <van-divider contentPosition="center" dashed>底线</van-divider>
+    </view>
+</scroll-view>
+<van-empty wx:else image="error" description="暂无收藏记录"/>

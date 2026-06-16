@@ -1,0 +1,12 @@
+<view class="page">
+  <view class="page-head">
+    <view><view class="title">历史会话</view><view class="subtitle">继续之前的 MyLesson AI 对话</view></view>
+    <van-button size="small" type="info" bind:tap="create">新建</van-button>
+  </view>
+  <van-empty wx:if="{{!loading && !conversations.length}}" description="暂无会话"/>
+  <van-swipe-cell wx:for="{{conversations}}" wx:key="id" right-width="{{65}}">
+    <van-cell title="{{item.title || '新对话'}}" label="{{item.updatedAt}}" is-link
+              data-id="{{item.id}}" bind:tap="open"/>
+    <view slot="right" class="delete" data-id="{{item.id}}" bind:tap="remove">删除</view>
+  </van-swipe-cell>
+</view>

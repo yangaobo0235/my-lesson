@@ -1,0 +1,92 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### IntelliJ IDEA ###
+**/.idea/
+.idea/modules.xml
+.idea/jarRepositories.xml
+.idea/compiler.xml
+.idea/libraries/
+*.iws
+*.iml
+*.ipr
+
+### Local secrets ###
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
+secrets/
+credentials/
+application-local.yml
+application-local.yaml
+bootstrap-local.yml
+bootstrap-local.yaml
+application-*-local.yml
+application-*-local.yaml
+bootstrap-*-local.yml
+bootstrap-*-local.yaml
+
+### Test sources and test output ###
+**/src/test/
+**/src/test/**
+**/test-results/
+**/surefire-reports/
+**/failsafe-reports/
+coverage/
+*.exec
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### Local acceptance output ###
+ml-ai/scripts/m8-rag-acceptance-results.csv
+ml-ai/scripts/*-acceptance-results.*
+
+### Node.js ###
+**/node_modules/
+**/dist/
+
+### WeChat Mini Program generated/local files ###
+**/miniprogram_npm/
+**/project.private.config.json
+
+### Runtime and local data ###
+*.log
+logs/
+*.pid
+*.dump
+*.bak
+*.backup

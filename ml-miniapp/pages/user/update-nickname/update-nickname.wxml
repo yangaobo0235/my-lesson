@@ -1,0 +1,4 @@
+<view class="update-nickname-board">
+    <van-field label="昵称" model:value="{{ nickname }}" custom-class="field" right-icon="eye-o" placeholder="请输入昵称" border="{{ false }}"/>
+    <van-button bind:tap="updateNickname" custom-class="submit-btn" type="info" block>确认修改</van-button>
+</view>

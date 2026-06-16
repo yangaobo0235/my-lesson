@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "历史会话",
+  "usingComponents": {
+    "van-button": "@vant/weapp/button/index",
+    "van-cell": "@vant/weapp/cell/index",
+    "van-empty": "@vant/weapp/empty/index",
+    "van-swipe-cell": "@vant/weapp/swipe-cell/index"
+  }
+}

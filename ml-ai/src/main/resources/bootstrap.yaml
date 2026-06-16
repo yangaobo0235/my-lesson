@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: ml-ai # 服务名
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # Spring Cloud Alibaba 2025 使用 Config Data 加载 Nacos 配置。
+  # bootstrap.yaml 由 spring-cloud-starter-bootstrap 提前加载。
+  config:
+    import:
+      - optional:nacos:${spring.application.name}-${spring.profiles.active}.yaml?group=ml-group&refreshEnabled=true
+
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml # NacosConfig 配置文件后缀
+        server-addr: ${NACOS_SERVER_ADDR:192.168.23.66:8848}
+        group: ml-group # NacosConfig 配置文件分组
+        encode: UTF-8
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:192.168.23.66:8848}
+        group: DEFAULT_GROUP # 与现有网关和业务服务的注册分组保持一致

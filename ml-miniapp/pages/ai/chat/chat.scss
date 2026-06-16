@@ -1,0 +1,18 @@
+.page { height:100vh; display:flex; flex-direction:column; background:#f6f7fb; }
+.chat-head { display:flex; align-items:center; justify-content:space-between; padding:24rpx 30rpx; background:white; }
+.title { font-size:32rpx; font-weight:700; } .state,.role,.trace { color:#8a8f99; font-size:22rpx; }
+.history { color:#1989fa; font-size:26rpx; }
+.messages { flex:1; padding:10rpx 30rpx 30rpx; box-sizing:border-box; overflow:hidden; }
+.message { max-width:86%; margin:24rpx 0; } .message.user { margin-left:auto; }
+.role { margin-bottom:8rpx; } .message.user .role { text-align:right; }
+.bubble { padding:20rpx 24rpx; line-height:1.65; white-space:pre-wrap; border-radius:22rpx; background:white; }
+.message.user .bubble { color:white; background:#1989fa; }
+.citations { display:flex; flex-wrap:wrap; gap:10rpx; margin-top:10rpx; }
+.citation { padding:8rpx 14rpx; color:#1989fa; font-size:22rpx; border-radius:20rpx; background:#eaf4ff; }
+.timeline,.approval { margin:22rpx 0; padding:22rpx; border-radius:18rpx; background:white; }
+.timeline-title,.approval-title { margin-bottom:12rpx; font-weight:600; }
+.timeline-item { padding:8rpx 0; color:#626872; font-size:24rpx; }
+.approval { border:1rpx solid #ff976a; } .approval-actions { display:flex; justify-content:flex-end; gap:16rpx; margin-top:18rpx; }
+.trace { padding:18rpx 0 30rpx; word-break:break-all; }
+.composer { padding:18rpx 24rpx 28rpx; border-top:1rpx solid #e8ebf0; background:white; }
+.composer-actions { display:flex; justify-content:flex-end; gap:16rpx; margin-top:12rpx; }

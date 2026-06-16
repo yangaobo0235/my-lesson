@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "学习计划",
+  "usingComponents": {
+    "van-empty": "@vant/weapp/empty/index",
+    "van-tag": "@vant/weapp/tag/index"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "ml-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "@vueuse/core": "^10.7.2",
+    "axios": "^1.17.0",
+    "echarts": "^5.4.3",
+    "element-plus": "^2.14.2",
+    "qs": "^6.15.2",
+    "vue": "^3.4.35",
+    "vue-router": "^4.0.3",
+    "vuex": "^4.0.0",
+    "xgplayer": "^3.0.11"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "sass-embedded": "^1.77.8",
+    "vite": "^6.4.3"
+  }
+}
