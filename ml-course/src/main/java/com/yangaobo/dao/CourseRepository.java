@@ -17,5 +17,10 @@ public interface CourseRepository extends ElasticsearchRepository<CourseDoc, Lon
      * @param author 作者名称
      * @return 课程列表
      */
-    Page<CourseDoc> searchByTitleOrAuthorOrderByIdx(String title, String author, Pageable pageable);
+    Page<CourseDoc> searchByTitleOrAuthorOrInfoOrSearchKeywordsOrderByIdx(
+            String title,
+            String author,
+            String info,
+            String searchKeywords,
+            Pageable pageable);
 }

@@ -610,7 +610,7 @@ ai:
 
 检查 `AI_INTERNAL_TOKEN` 是否在 `common-config.yaml`、`ml-ai-dev.yaml` 和各业务服务运行环境中保持一致。
 
-### 小程序或管理端跨域失败
+### Web 前端跨域失败
 
 检查 `ml-gateway-dev.yaml` 中的 `cors.allowed-origins` 是否包含前端访问地址，例如 `http://localhost:24108`。
 

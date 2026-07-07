@@ -10,8 +10,11 @@ public record LearningPlan(
         int availableMinutesPerDay,
         int estimatedWeeks,
         String status,
+        int progressPercent,
+        String progressNote,
         List<LearningPlanCourse> courses,
         List<LearningPlanRoutine> dailyRoutine,
+        List<LearningPlanAdjustment> adjustments,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -21,6 +24,9 @@ public record LearningPlan(
         dailyRoutine = dailyRoutine == null
                 ? List.of()
                 : List.copyOf(dailyRoutine);
+        adjustments = adjustments == null
+                ? List.of()
+                : List.copyOf(adjustments);
     }
 
     public record LearningPlanCourse(
@@ -36,6 +42,12 @@ public record LearningPlan(
     public record LearningPlanRoutine(
             String activity,
             int minutes
+    ) {
+    }
+
+    public record LearningPlanAdjustment(
+            String type,
+            String message
     ) {
     }
 }

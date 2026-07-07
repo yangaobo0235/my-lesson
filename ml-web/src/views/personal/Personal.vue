@@ -9,7 +9,7 @@ const loginUser = JSON.parse(sessionStorage.getItem('loginUser'));
 const avatar = MINIO_AVATAR(loginUser['avatar']);
 // 路径导航
 const navItems = [
-  {icon: 'House', label: 'DashBoard', url: '/DashBoard'},
+  {icon: 'House', label: 'Dashboard', url: '/Dashboard'},
   {icon: 'View', label: '个人信息'},
 ];
 </script>

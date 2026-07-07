@@ -7,6 +7,7 @@ import com.yangaobo.ai.security.UserContext;
 import com.yangaobo.ai.service.AiBusinessGateway;
 import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
 import com.yangaobo.ai.tool.model.LearningPlan;
+import com.yangaobo.ai.tool.model.LearningPlan.LearningPlanAdjustment;
 import com.yangaobo.ai.tool.model.LearningPlan.LearningPlanCourse;
 import com.yangaobo.ai.tool.model.LearningPlan.LearningPlanRoutine;
 import com.yangaobo.ai.tool.repository.LearningPlanRepository;
@@ -173,8 +174,13 @@ public class LearningPlanWorkflowService {
                         (int) Math.ceil(
                                 state.draft().planDays() / 7.0)),
                 "ACTIVE",
+                0,
+                null,
                 courses,
                 routines,
+                List.of(new LearningPlanAdjustment(
+                        "CATCH_UP",
+                        "计划刚开始，建议先完成第一门课程并记录学习笔记。")),
                 null,
                 null);
     }
@@ -202,10 +208,20 @@ public class LearningPlanWorkflowService {
     }
 
     private List<CourseAiClient.CourseSummary> findCourses(String goal) {
-        List<CourseAiClient.CourseSummary> courses =
-                businessGateway.searchCourses(goal, MAX_CANDIDATES);
-        if (!courses.isEmpty()) {
-            return courses;
+        Map<Long, CourseAiClient.CourseSummary> result =
+                new LinkedHashMap<>();
+        for (String keyword : searchKeywords(goal)) {
+            List<CourseAiClient.CourseSummary> courses =
+                    businessGateway.searchCourses(keyword, MAX_CANDIDATES);
+            for (CourseAiClient.CourseSummary course : courses) {
+                result.putIfAbsent(course.id(), course);
+                if (result.size() >= MAX_CANDIDATES) {
+                    return List.copyOf(result.values());
+                }
+            }
+        }
+        if (!result.isEmpty()) {
+            return List.copyOf(result.values());
         }
         String simplified = goal
                 .replaceAll(
@@ -213,11 +229,44 @@ public class LearningPlanWorkflowService {
                         " ")
                 .replaceAll("\\s+", " ")
                 .trim();
-        if (simplified.isBlank() || simplified.equals(goal)) {
-            return courses;
+        if (simplified.isBlank()) {
+            return List.of();
         }
         return businessGateway.searchCourses(
                 simplified,
                 MAX_CANDIDATES);
+    }
+
+    private List<String> searchKeywords(String goal) {
+        List<String> keywords = new ArrayList<>();
+        if (containsAny(goal, "表达", "沟通", "公开分享", "汇报")) {
+            keywords.add("表达");
+        }
+        if (containsAny(goal, "临场", "稳定", "自信", "紧张", "放松", "呼吸")) {
+            keywords.add("临场");
+            keywords.add("放松");
+        }
+        if (containsAny(goal, "学习", "效率", "时间", "计划")) {
+            keywords.add("学习");
+        }
+        if (containsAny(goal, "睡眠", "睡觉", "失眠", "冥想", "睡前")) {
+            keywords.add("睡眠");
+        }
+        if (containsAny(goal, "运动", "低强度", "跑步", "慢跑", "拉伸")) {
+            keywords.add("运动");
+        }
+        return keywords.stream().distinct().toList();
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

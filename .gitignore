@@ -46,6 +46,11 @@ bootstrap-*-local.yaml
 coverage/
 *.exec
 
+### Demo / acceptance data generated locally ###
+demo-data/
+**/__pycache__/
+*.pyc
+
 ### Eclipse ###
 .apt_generated
 .classpath

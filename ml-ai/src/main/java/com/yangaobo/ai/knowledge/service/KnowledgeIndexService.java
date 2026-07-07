@@ -80,6 +80,48 @@ public class KnowledgeIndexService {
         return statusStore.get();
     }
 
+    public KnowledgeSourceIndexer.IndexOutcome retrySource(
+            String sourceType,
+            String sourceId) {
+        KnowledgeDocument source = loadSource(sourceType, sourceId);
+        return sourceIndexer.index(source);
+    }
+
+    private KnowledgeDocument loadSource(String sourceType, String sourceId) {
+        return switch (sourceType) {
+            case KnowledgeDocumentFactory.COURSE -> documentFactory
+                    .fromCourse(requireData(
+                            courseClient.getCourse(Long.valueOf(sourceId)),
+                            "course"))
+                    .stream()
+                    .filter(document -> KnowledgeDocumentFactory.COURSE
+                            .equals(document.sourceType()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Course knowledge document not found"));
+            case KnowledgeDocumentFactory.COURSE_EPISODES -> documentFactory
+                    .fromCourse(requireData(
+                            courseClient.getCourse(Long.valueOf(sourceId)),
+                            "course episodes"))
+                    .stream()
+                    .filter(document -> KnowledgeDocumentFactory.COURSE_EPISODES
+                            .equals(document.sourceType()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Course episode knowledge document not found"));
+            case KnowledgeDocumentFactory.ARTICLE -> documentFactory.fromArticle(
+                    requireData(
+                            saleClient.getArticle(Long.valueOf(sourceId)),
+                            "article"));
+            case KnowledgeDocumentFactory.NOTICE -> documentFactory.fromNotice(
+                    requireData(
+                            saleClient.getNotice(Long.valueOf(sourceId)),
+                            "notice"));
+            default -> throw new IllegalArgumentException(
+                    "Unsupported knowledge source type: " + sourceType);
+        };
+    }
+
     private void rebuildAll(String lockToken) {
         MutableCounters counters = new MutableCounters();
         Set<KnowledgeSourceKey> seenSources = new HashSet<>();

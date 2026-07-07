@@ -23,6 +23,7 @@ import com.yangaobo.exception.ServiceException;
 import com.yangaobo.feign.CourseFeign;
 import com.yangaobo.feign.UserFeign;
 import com.yangaobo.mapper.CartMapper;
+import com.yangaobo.mapper.CouponsMapper;
 import com.yangaobo.mapper.OrderDetailMapper;
 import com.yangaobo.mapper.OrderMapper;
 import com.yangaobo.result.Result;
@@ -45,6 +46,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.mybatisflex.core.query.QueryMethods.*;
+import static com.yangaobo.entity.table.CouponsTableDef.COUPONS;
 import static com.yangaobo.entity.table.CartTableDef.CART;
 import static com.yangaobo.entity.table.OrderDetailTableDef.ORDER_DETAIL;
 import static com.yangaobo.entity.table.OrderTableDef.ORDER;
@@ -65,6 +67,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order>  implement
     private CourseFeign courseFeign;
     @Resource
     private CartService cartService;
+    @Resource
+    private CouponsMapper couponsMapper;
 
     @Resource
     private MyRedis redis;
@@ -103,6 +107,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order>  implement
         if (ObjectUtil.isNull(order)) {
             throw new ServiceException(ResultCode.ORDER_NOT_FOUND, id + "号订单数据不存在");
         }
+        SecurityContext.requireOwner(order.getFkUserId());
         return order;
     }
 
@@ -127,6 +132,14 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order>  implement
         String username = dto.getUsername();
         if (ObjectUtil.isNotNull(username)) {
             queryChain.where(ORDER.USERNAME.like(username));
+        }
+
+        // 普通用户只能查询自己的订单；管理员可按用户筛选，也可查询全部。
+        Long fkUserId = SecurityContext.isAdmin() && ObjectUtil.isNotNull(dto.getFkUserId())
+                ? dto.getFkUserId()
+                : (SecurityContext.isAdmin() ? null : SecurityContext.requireUserId());
+        if (ObjectUtil.isNotNull(fkUserId)) {
+            queryChain.where(ORDER.FK_USER_ID.eq(fkUserId));
         }
 
         // DB分页并转为VO
@@ -291,7 +304,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order>  implement
             calculatedTotal = calculatedTotal.add(BigDecimal.valueOf(course.getPrice()));
         }
         dto.setTotalAmount(calculatedTotal);
-        dto.setPayAmount(calculatedTotal);
+        dto.setPayAmount(calculatePayAmount(calculatedTotal, dto.getFkCouponsId()));
 
         // 仅已支付订单参与重复购买校验，未支付或已取消订单允许重新下单。
         List<Long> orderIds = QueryChain.of(mapper)
@@ -366,6 +379,23 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order>  implement
         return sn;
     }
 
+    private BigDecimal calculatePayAmount(BigDecimal totalAmount, Long couponId) {
+        if (couponId == null) {
+            return totalAmount;
+        }
+        Coupons coupon = QueryChain.of(couponsMapper)
+                .where(COUPONS.ID.eq(couponId))
+                .and(COUPONS.START_TIME.le(LocalDateTime.now()))
+                .and(COUPONS.END_TIME.ge(LocalDateTime.now()))
+                .one();
+        if (coupon == null) {
+            throw new ServiceException(ResultCode.COUPONS_NOT_FOUND, "优惠券不存在或不在有效期内");
+        }
+        BigDecimal discount = BigDecimal.valueOf(coupon.getCpPrice());
+        BigDecimal payAmount = totalAmount.subtract(discount);
+        return payAmount.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : payAmount;
+    }
+
     @Override
     public boolean updateStatusBySn(String sn, Integer status, Integer payType) {
         // 根据订单编号更新订单状态和支付方式
@@ -413,6 +443,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order>  implement
         // select count(*) from `order` where id = ?
         if (!QueryChain.of(mapper)
                 .where(ORDER.ID.eq(id))
+                .and(SecurityContext.isAdmin() ? ORDER.ID.isNotNull() : ORDER.FK_USER_ID.eq(SecurityContext.requireUserId()))
                 .exists()) {
             throw new ServiceException(ResultCode.ORDER_NOT_FOUND, id + "号订单记录不存在");
         }

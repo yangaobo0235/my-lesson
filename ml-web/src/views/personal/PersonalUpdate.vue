@@ -13,7 +13,7 @@ import {ElMessage} from "element-plus";
 const loginUser = JSON.parse(sessionStorage.getItem('loginUser'));
 // 路径导航
 const navItems = [
-  {icon: 'House', label: 'DashBoard', url: '/DashBoard'},
+  {icon: 'House', label: 'Dashboard', url: '/Dashboard'},
   {icon: 'Edit', label: '修改个人信息'},
 ];
 // 修改基本信息表单：表单项 + 表单值 + 表单规则

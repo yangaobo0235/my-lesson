@@ -13,7 +13,7 @@ import {isEmpty, isNotNull} from "../../util/index.js";
 let loginUser = JSON.parse(sessionStorage.getItem('loginUser'));
 // 路径导航
 const navItems = [
-  {icon: 'House', label: 'DashBoard', url: '/DashBoard'},
+  {icon: 'House', label: 'Dashboard', url: '/Dashboard'},
   {icon: 'Edit', label: '换绑手机号码'},
 ];
 // 当前进度条步骤

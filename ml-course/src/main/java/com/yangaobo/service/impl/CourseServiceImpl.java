@@ -28,6 +28,7 @@ import com.yangaobo.service.CourseService;
 import com.yangaobo.util.MinioUtil;
 import com.yangaobo.vo.PageVO;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -49,6 +50,7 @@ import static com.yangaobo.entity.table.SeasonTableDef.SEASON;
  * @since v1.0.0
  */
 @Service
+@Slf4j
 public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course>  implements CourseService{
     @Resource
     private SeasonMapper seasonMapper;
@@ -386,21 +388,78 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course>  implem
         if (pageSize < 0) pageSize = 0;
         Pageable pageable = PageRequest.of(pageNum, pageSize);
 
-        // 关键字为空时分页全查，不为空时候按关键字搜索
-        if (StrUtil.isEmpty(keyword)) {
-            esPage = courseRepository.findAll(pageable);
-        } else {
-            esPage = courseRepository.searchByTitleOrAuthorOrderByIdx(keyword, keyword, pageable);
+        try {
+            // 关键字为空时分页全查，不为空时候按关键字搜索
+            if (StrUtil.isEmpty(keyword)) {
+                esPage = courseRepository.findAll(pageable);
+            } else {
+                esPage = courseRepository
+                        .searchByTitleOrAuthorOrInfoOrSearchKeywordsOrderByIdx(
+                                keyword,
+                                keyword,
+                                keyword,
+                                keyword,
+                                pageable);
+            }
+            if (esPage.getTotalElements() > 0) {
+                return toCourseDocPage(esPage, pageNum + 1L, pageSize);
+            }
+        } catch (Exception exception) {
+            log.warn("Elasticsearch course search unavailable, fallback to MySQL. keyword={}", keyword, exception);
         }
 
-        // 组装 PageVO 并返回
+        return searchFromMysql(keyword, pageNum + 1L, pageSize);
+    }
+
+    private PageVO<CourseDoc> toCourseDocPage(org.springframework.data.domain.Page<CourseDoc> esPage,
+                                              Long pageNum,
+                                              int pageSize) {
         PageVO<CourseDoc> result = new PageVO<>();
-        result.setPageNum(pageNum + 1L);
+        result.setPageNum(pageNum);
         result.setPageSize(pageSize);
         result.setTotalRow(esPage.getTotalElements());
         result.setTotalPage(esPage.getTotalPages());
         result.setRecords(esPage.getContent());
         return result;
+    }
+
+    private PageVO<CourseDoc> searchFromMysql(String keyword, Long pageNum, int pageSize) {
+        RelationManager.addQueryRelations("category");
+        QueryChain<Course> queryChain = QueryChain.of(mapper)
+                .orderBy(COURSE.IDX.asc(), COURSE.ID.desc());
+
+        if (StrUtil.isNotBlank(keyword)) {
+            queryChain.where(COURSE.TITLE.like(keyword))
+                    .or(COURSE.AUTHOR.like(keyword))
+                    .or(COURSE.INFO.like(keyword));
+        }
+
+        Page<Course> coursePage = queryChain.withRelations().page(new Page<>(pageNum, pageSize));
+        PageVO<CourseDoc> result = new PageVO<>();
+        result.setPageNum(coursePage.getPageNumber());
+        result.setPageSize(pageSize);
+        result.setTotalRow(coursePage.getTotalRow());
+        result.setTotalPage((int) coursePage.getTotalPage());
+        result.setRecords(coursePage.getRecords().stream()
+                .map(this::toCourseDoc)
+                .toList());
+        return result;
+    }
+
+    private CourseDoc toCourseDoc(Course course) {
+        CourseDoc doc = new CourseDoc();
+        doc.setId(course.getId());
+        doc.setTitle(course.getTitle());
+        doc.setAuthor(course.getAuthor());
+        doc.setInfo(course.getInfo());
+        doc.setCover(course.getCover());
+        doc.setPrice(course.getPrice());
+        doc.setIdx(course.getIdx());
+        doc.setUpdated(course.getUpdated());
+        if (course.getCategory() != null) {
+            doc.setCategoryTitle(course.getCategory().getTitle());
+        }
+        return doc;
     }
 
     private void publishCourse(

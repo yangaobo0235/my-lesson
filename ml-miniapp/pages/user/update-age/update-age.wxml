@@ -1,7 +1,0 @@
-<view class="update-age-board">
-    <van-field label="年龄" model:value="{{ age }}" type="number"
-               custom-class="field" right-icon="eye-o" placeholder="请输入年龄" border="{{ false }}"/>
-    <van-button custom-class="submit-btn" bind:tap="updateAge" type="info" block>
-        确认修改
-    </van-button>
-</view>

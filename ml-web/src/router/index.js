@@ -3,6 +3,7 @@ import {ElMessage} from "element-plus";
 import vuex from "../vuex/index.js";
 import Login from "../views/Login.vue";
 import Main from "../views/Main.vue";
+import {canAccessRoute, getLoginMenus, getLoginRoles} from "../util/auth.js";
 const Dashboard = () => import("../views/Dashboard.vue");
 const Personal = () => import("../views/personal/Personal.vue");
 const PersonalUpdate = () => import("../views/personal/PersonalUpdate.vue");
@@ -145,11 +146,20 @@ const router = createRouter({
                 {path: '/OrderDetail', name: 'OrderDetail', component: OrderDetail},
                 {path: '/OrderDetailInsert', name: 'OrderDetailInsert', component: OrderDetailInsert},
                 {path: '/OrderDetailUpdate', name: 'OrderDetailUpdate', component: OrderDetailUpdate},
+                {path: '/ai/overview', name: 'AiOverview', component: () => import('../views/ai/Overview.vue')},
                 {path: '/ai/chat', name: 'AiChat', component: () => import('../views/ai/Chat.vue')},
                 {path: '/ai/conversations', name: 'AiConversations', component: () => import('../views/ai/Conversations.vue')},
                 {path: '/ai/plans', name: 'AiPlans', component: () => import('../views/ai/Plans.vue')},
                 {path: '/ai/approvals', name: 'AiApprovals', component: () => import('../views/ai/Approvals.vue')},
                 {path: '/ai/admin/evaluation', name: 'AiAdminEvaluation', component: () => import('../views/ai/AdminEvaluation.vue')},
+                {path: '/student/home', name: 'StudentHome', component: () => import('../views/student/Home.vue')},
+                {path: '/student/courses', name: 'StudentCourses', component: () => import('../views/student/Courses.vue')},
+                {path: '/student/course/:id', name: 'StudentCourseDetail', component: () => import('../views/student/CourseDetail.vue')},
+                {path: '/student/cart', name: 'StudentCart', component: () => import('../views/student/Cart.vue')},
+                {path: '/student/orders', name: 'StudentOrders', component: () => import('../views/student/Orders.vue')},
+                {path: '/student/learning', name: 'StudentLearning', component: () => import('../views/student/Learning.vue')},
+                {path: '/student/follows', name: 'StudentFollows', component: () => import('../views/student/Follows.vue')},
+                {path: '/student/player/:courseId', name: 'StudentPlayer', component: () => import('../views/student/Player.vue')},
             ]
         }
     ]
@@ -162,13 +172,24 @@ const router = createRouter({
  * next: 放行函数
  */
 router.beforeEach((to, from, next) => {
-    if (to.path === '/' || vuex.state['loginFlag']) {
+    if (to.path === '/') {
         next();
+        return;
     }
-    else {
+
+    if (!vuex.state['loginFlag']) {
         ElMessage.warning('请先登录！');
         setTimeout(() => next('/'), 2000);
+        return;
     }
+
+    if (!canAccessRoute(to.path, getLoginRoles(), getLoginMenus())) {
+        ElMessage.warning('当前账号没有访问该页面的权限');
+        next('/Dashboard');
+        return;
+    }
+
+    next();
 });
 
 export default router;

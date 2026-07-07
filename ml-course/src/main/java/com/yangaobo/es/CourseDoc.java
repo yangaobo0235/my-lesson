@@ -19,6 +19,10 @@ public class CourseDoc {
     private String title;
     @Field(type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart")
     private String author;
+    @Field(type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart")
+    private String info;
+    @Field(value = "search_keywords", type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart")
+    private String searchKeywords;
     @Field(type = FieldType.Keyword)
     private String cover;
     @Field(value = "category_title", type = FieldType.Keyword)

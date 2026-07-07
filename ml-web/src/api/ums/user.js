@@ -9,6 +9,11 @@ export function loginByAccountApi(params) {
     return GATEWAY_AXIOS.post(`${apiPrefixFormat('user')}/loginByAccount`, params)
 }
 
+// POST - 注册普通学员账号
+export function registerApi(params) {
+    return GATEWAY_AXIOS.post(`${apiPrefixFormat('user')}/insert`, params)
+}
+
 // GET - 用户统计数据
 export function statisticsApi(params) {
     return GATEWAY_AXIOS.get(`${apiPrefixFormat('user')}/statistics`, params)

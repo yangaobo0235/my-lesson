@@ -41,7 +41,11 @@ public class AiBusinessGateway {
     }
 
     public List<CourseAiClient.CourseSummary> searchCourses(String keyword, int limit) {
-        return call("course", () -> courseClient.search(keyword, limit));
+        String safeKeyword = safeCourseKeyword(keyword);
+        if (safeKeyword.isBlank()) {
+            return List.of();
+        }
+        return call("course", () -> courseClient.search(safeKeyword, limit));
     }
 
     public CourseAiClient.CursorPage<CourseAiClient.CourseKnowledge> courseKnowledge(
@@ -168,5 +172,16 @@ public class AiBusinessGateway {
         return normalized.length() <= 120
                 ? normalized
                 : normalized.substring(0, 120);
+    }
+
+    private String safeCourseKeyword(String keyword) {
+        if (keyword == null) {
+            return "";
+        }
+        String normalized = keyword.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 42) {
+            return normalized;
+        }
+        return normalized.substring(0, 42).trim();
     }
 }

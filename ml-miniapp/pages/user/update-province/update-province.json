@@ -1,6 +1,0 @@
-{
-  "usingComponents": {
-    "van-tree-select": "@vant/weapp/tree-select/index",
-    "van-button": "@vant/weapp/button/index"
-  }
-}

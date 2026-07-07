@@ -1,8 +1,0 @@
-{
-  "navigationBarTitleText": "待确认操作",
-  "usingComponents": {
-    "van-button": "@vant/weapp/button/index",
-    "van-empty": "@vant/weapp/empty/index",
-    "van-tag": "@vant/weapp/tag/index"
-  }
-}

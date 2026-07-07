@@ -5,9 +5,11 @@ import com.yangaobo.ai.exception.BusinessOperationException;
 import com.yangaobo.ai.security.UserContext;
 import com.yangaobo.ai.service.AiBusinessGateway;
 import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
+import com.yangaobo.ai.tool.dto.LearningPlanProgressRequest;
 import com.yangaobo.ai.tool.model.LearningPlan;
 import com.yangaobo.ai.tool.model.LearningPlan.LearningPlanCourse;
 import com.yangaobo.ai.tool.model.LearningPlan.LearningPlanRoutine;
+import com.yangaobo.ai.tool.model.LearningPlan.LearningPlanAdjustment;
 import com.yangaobo.ai.tool.repository.LearningPlanRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,8 +49,11 @@ public class LearningPlanService {
                 minutes,
                 estimatedWeeks(courses.size()),
                 "ACTIVE",
+                0,
+                null,
                 planCourses(courses, goal),
                 dailyRoutine(minutes),
+                adjustments(0),
                 null,
                 null);
         repository.supersedeActive(userId);
@@ -60,7 +65,25 @@ public class LearningPlanService {
         return repository.findLatestActive(userId)
                 .orElseThrow(() -> new BusinessOperationException(
                         "LEARNING_PLAN_NOT_FOUND",
-                        "当前还没有学习计划，可以先告诉我你的学习目标"));
+                "当前还没有学习计划，可以先告诉我你的学习目标"));
+    }
+
+    public LearningPlan updateProgress(
+            java.util.UUID planId,
+            LearningPlanProgressRequest request) {
+        Long userId = UserContext.requireUser().id();
+        String note = request.note() == null || request.note().isBlank()
+                ? null
+                : request.note().trim();
+        return repository.updateProgress(
+                        planId,
+                        userId,
+                        request.progressPercent(),
+                        note,
+                        adjustments(request.progressPercent()))
+                .orElseThrow(() -> new BusinessOperationException(
+                        "LEARNING_PLAN_NOT_FOUND",
+                        "学习计划不存在或不属于当前用户"));
     }
 
     private List<LearningPlanCourse> planCourses(
@@ -82,12 +105,22 @@ public class LearningPlanService {
 
     private List<CourseAiClient.CourseSummary> findCourses(
             String goal) {
-        List<CourseAiClient.CourseSummary> courses =
-                businessGateway.searchCourses(
-                        goal,
-                        MAX_RECOMMENDED_COURSES);
-        if (!courses.isEmpty()) {
-            return courses;
+        java.util.Map<Long, CourseAiClient.CourseSummary> result =
+                new java.util.LinkedHashMap<>();
+        for (String keyword : searchKeywords(goal)) {
+            List<CourseAiClient.CourseSummary> courses =
+                    businessGateway.searchCourses(
+                            keyword,
+                            MAX_RECOMMENDED_COURSES);
+            for (CourseAiClient.CourseSummary course : courses) {
+                result.putIfAbsent(course.id(), course);
+                if (result.size() >= MAX_RECOMMENDED_COURSES) {
+                    return List.copyOf(result.values());
+                }
+            }
+        }
+        if (!result.isEmpty()) {
+            return List.copyOf(result.values());
         }
         String simplified = goal
                 .replaceAll(
@@ -95,12 +128,45 @@ public class LearningPlanService {
                         " ")
                 .replaceAll("\\s+", " ")
                 .trim();
-        if (simplified.isBlank() || simplified.equals(goal)) {
-            return courses;
+        if (simplified.isBlank()) {
+            return List.of();
         }
         return businessGateway.searchCourses(
                 simplified,
                 MAX_RECOMMENDED_COURSES);
+    }
+
+    private List<String> searchKeywords(String goal) {
+        List<String> keywords = new ArrayList<>();
+        if (containsAny(goal, "表达", "沟通", "公开分享", "汇报")) {
+            keywords.add("表达");
+        }
+        if (containsAny(goal, "临场", "稳定", "自信", "紧张", "放松", "呼吸")) {
+            keywords.add("临场");
+            keywords.add("放松");
+        }
+        if (containsAny(goal, "学习", "效率", "时间", "计划")) {
+            keywords.add("学习");
+        }
+        if (containsAny(goal, "睡眠", "睡觉", "失眠", "冥想", "睡前")) {
+            keywords.add("睡眠");
+        }
+        if (containsAny(goal, "运动", "低强度", "跑步", "慢跑", "拉伸")) {
+            keywords.add("运动");
+        }
+        return keywords.stream().distinct().toList();
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<LearningPlanRoutine> dailyRoutine(int totalMinutes) {
@@ -115,5 +181,26 @@ public class LearningPlanService {
 
     private int estimatedWeeks(int courseCount) {
         return Math.max(4, Math.min(12, courseCount * 2));
+    }
+
+    private List<LearningPlanAdjustment> adjustments(int progressPercent) {
+        if (progressPercent >= 100) {
+            return List.of(new LearningPlanAdjustment(
+                    "COMPLETED",
+                    "计划已完成，可以整理项目作品或复盘课程笔记。"));
+        }
+        if (progressPercent >= 70) {
+            return List.of(new LearningPlanAdjustment(
+                    "SPRINT",
+                    "进度良好，建议把剩余课程集中到高优先级知识点并安排一次综合复盘。"));
+        }
+        if (progressPercent >= 30) {
+            return List.of(new LearningPlanAdjustment(
+                    "KEEP_PACE",
+                    "进度稳定，建议继续按每日任务推进，并每周补一次错题或实践记录。"));
+        }
+        return List.of(new LearningPlanAdjustment(
+                "CATCH_UP",
+                "当前进度偏早期，建议先缩小范围，优先完成第一门课程和配套练习。"));
     }
 }

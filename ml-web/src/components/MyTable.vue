@@ -4,6 +4,7 @@ import {ElMessageBox} from "element-plus";
 import {myDelete, myDeleteBatch} from "../request";
 import {isNotNull, datetimeFormat} from "../util";
 import router from "../router";
+import {canWriteModule, getLoginRoles} from "../util/auth.js";
 
 let parent = defineProps({
   // 模块名称，必填，用于删除和批量删除业务
@@ -77,6 +78,8 @@ let parent = defineProps({
   // 每页多少条可选数量，默认 [1, 5, 10, 18]
   pageSizes: {type: Array, required: false, default: [1, 5, 10, 18]},
 });
+
+const canWrite = canWriteModule(parent['module'], getLoginRoles());
 
 /* ==================== 处理表格多级标题 ==================== */
 
@@ -381,14 +384,14 @@ function useWidth(item) {
                      fixed="right"
                      :width="170">
       <template #header>
-        <el-button class="insert-btn"
+        <el-button v-if="canWrite" class="insert-btn"
                    plain
                    size="small"
                    icon="CirclePlusFilled"
                    type="primary"
                    title="单增一条记录"
                    @click="insert"/>
-        <el-button class="delete-batch-btn"
+        <el-button v-if="canWrite" class="delete-batch-btn"
                    plain
                    size="small"
                    icon="DeleteFilled"
@@ -415,7 +418,7 @@ function useWidth(item) {
               查看详情
             </el-button>
           </el-col>
-          <el-col class="delete-btn-col" :span="12">
+          <el-col v-if="canWrite" class="delete-btn-col" :span="12">
             <el-button class="delete-btn"
                        link
                        size="small"
@@ -425,7 +428,7 @@ function useWidth(item) {
               删除记录
             </el-button>
           </el-col>
-          <el-col class="update-btn-col" :span="12">
+          <el-col v-if="canWrite" class="update-btn-col" :span="12">
             <el-button class="update-btn"
                        link
                        size="small"

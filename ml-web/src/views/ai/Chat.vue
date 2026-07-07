@@ -1,5 +1,5 @@
 <script setup>
-import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue';
+import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {useRoute, useRouter} from 'vue-router';
 import {ElMessage} from 'element-plus';
 import AiPageHeader from './AiPageHeader.vue';
@@ -19,6 +19,9 @@ const liveCitations = ref([]);
 const liveApproval = ref(null);
 const traceId = ref('');
 const lastMessage = ref('');
+const recommendationGoal = ref('');
+const recommendation = ref(null);
+const recommendationLoading = ref(false);
 const messagePanel = ref();
 let stream;
 
@@ -72,7 +75,10 @@ function handleEvent(type, event) {
   timeline.value.push({type, label: eventLabel(type, data), timestamp: event.timestamp});
   if (type === 'run_completed') {
     sending.value = false;
-    loadMessages();
+    loadMessages().finally(() => {
+      liveAnswer.value = '';
+      liveCitations.value = [];
+    });
   }
   if (type === 'run_failed') sending.value = false;
 }
@@ -136,19 +142,55 @@ async function decide(approved) {
   liveApproval.value = null;
 }
 
+async function recommendCourses() {
+  const goal = (recommendationGoal.value || input.value || lastMessage.value).trim();
+  if (!goal) {
+    ElMessage.warning('先输入学习目标');
+    return;
+  }
+  recommendationLoading.value = true;
+  try {
+    recommendation.value = await aiApi.recommendCourses(goal, 5);
+    recommendationGoal.value = goal;
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '课程推荐生成失败');
+  } finally {
+    recommendationLoading.value = false;
+  }
+}
+
+async function addRecommendedToCart(course) {
+  await send(`把课程 ${course.courseId} 加入我的购物车`);
+}
+
+function fillPrompt(prompt) {
+  if (typeof prompt === 'string' && prompt.trim()) {
+    input.value = prompt.trim();
+  }
+}
+
 async function scrollBottom() {
   await nextTick();
   if (messagePanel.value) messagePanel.value.scrollTop = messagePanel.value.scrollHeight;
 }
 
-onMounted(() => loadConversations().catch(error =>
-    ElMessage.error(error.response?.data?.message || '加载会话失败')));
+watch(() => route.query.prompt, prompt => fillPrompt(prompt));
+
+onMounted(async () => {
+  const initialPrompt = route.query.prompt;
+  try {
+    await loadConversations();
+    fillPrompt(initialPrompt);
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '加载会话失败');
+  }
+});
 onBeforeUnmount(closeStream);
 </script>
 
 <template>
   <div>
-    <AiPageHeader title="AI 对话" description="流式回答、引用、工具时间线与人工确认集中展示"/>
+    <AiPageHeader title="AI 对话" description="课程问答、推荐、个人查询、购物车操作与学习计划统一在这里处理"/>
     <div class="chat-layout">
       <el-card class="conversation-panel">
         <template #header><div class="panel-title"><strong>会话</strong><el-button size="small" type="primary" @click="createConversation">新建</el-button></div></template>
@@ -190,12 +232,43 @@ onBeforeUnmount(closeStream);
         </div>
         <div class="composer">
           <el-input v-model="input" type="textarea" :rows="3" maxlength="2000"
-                    placeholder="输入课程咨询、个人查询或学习计划目标"
+                    placeholder="例如：帮我找适合睡前放松的课程，并说明推荐依据"
                     @keydown.ctrl.enter.prevent="send()"/>
           <div class="composer-actions">
             <span>Ctrl + Enter 发送</span>
             <el-button v-if="lastMessage && !sending" @click="send(lastMessage)">重试上一条</el-button>
             <el-button type="primary" :loading="sending" @click="send()">发送</el-button>
+          </div>
+        </div>
+      </el-card>
+
+      <div class="side-column">
+      <el-card class="recommend-card">
+        <template #header><strong>AI 选课</strong></template>
+        <el-input v-model="recommendationGoal" type="textarea" :rows="3" maxlength="200"
+                  placeholder="例如：两个月准备 Java 后端面试"/>
+        <el-button class="recommend-button" type="primary" :loading="recommendationLoading" @click="recommendCourses">
+          生成推荐
+        </el-button>
+        <div v-if="recommendation" class="recommendation">
+          <p class="recommend-summary">{{ recommendation.summary }}</p>
+          <div v-for="course in recommendation.recommendedCourses" :key="course.courseId" class="course-card">
+            <div class="course-head">
+              <strong>{{ course.priority }}. {{ course.title }}</strong>
+              <el-tag v-if="course.owned" type="success">已拥有</el-tag>
+              <el-tag v-else-if="course.inCart" type="warning">购物车</el-tag>
+            </div>
+            <small>{{ course.category || '-' }} · {{ course.estimatedHours }} 小时</small>
+            <p>{{ course.reason }}</p>
+            <div class="citation-list">
+              <a v-for="citation in course.citations" :key="citation.sourceType + citation.sourceId">
+                {{ citation.title }}
+              </a>
+            </div>
+            <el-button v-if="!course.owned && !course.inCart" size="small" type="primary" plain
+                       @click="addRecommendedToCart(course)">
+              加入购物车
+            </el-button>
           </div>
         </div>
       </el-card>
@@ -211,12 +284,14 @@ onBeforeUnmount(closeStream);
         <el-divider/>
         <div class="trace"><strong>traceId</strong><code>{{ traceId || '-' }}</code></div>
       </el-card>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
 .chat-layout { display:grid; grid-template-columns:220px minmax(420px,1fr) 280px; gap:16px; }
+.side-column { display:grid; gap:16px; align-content:start; }
 .panel-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .conversation-item { width:100%; padding:12px; margin-bottom:8px; text-align:left; border:0; border-radius:8px; background:var(--el-fill-color-light); cursor:pointer; }
 .conversation-item.active { color:var(--el-color-primary); background:var(--el-color-primary-light-9); }
@@ -233,6 +308,13 @@ onBeforeUnmount(closeStream);
 .approval-box div { flex:1; } .approval-box p { margin:5px 0 0; color:var(--el-text-color-secondary); }
 .composer { border-top:1px solid var(--el-border-color-lighter); padding-top:14px; }
 .composer-actions { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:10px; color:var(--el-text-color-secondary); font-size:12px; }
+.recommend-button { width:100%; margin-top:10px; }
+.recommendation { display:grid; gap:10px; margin-top:12px; }
+.recommend-summary { margin:0; color:var(--el-text-color-secondary); line-height:1.6; }
+.course-card { padding:10px; border:1px solid var(--el-border-color-lighter); border-radius:8px; }
+.course-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.course-card small { display:block; margin-top:4px; color:var(--el-text-color-secondary); }
+.course-card p { margin:8px 0; line-height:1.6; }
 .trace { display:grid; gap:8px; } .trace code { overflow-wrap:anywhere; }
-@media (max-width:1250px) { .chat-layout { grid-template-columns:200px 1fr; } .timeline-card { grid-column:1 / -1; } }
+@media (max-width:1250px) { .chat-layout { grid-template-columns:200px 1fr; } .side-column { grid-column:1 / -1; } }
 </style>

@@ -78,7 +78,6 @@ public class OrderController {
 
     @Operation(summary = "查询 - 分页查询", description = "分页查询订单记录")
     @GetMapping("page")
-    @RequireAdmin
     public PageVO<Order> page(@Validated OrderPageDTO dto) {
         return orderService.page(dto);
     }
@@ -92,7 +91,6 @@ public class OrderController {
 
     @Operation(summary = "删除 - 单条删除", description = "按主键删除一条订单记录")
     @DeleteMapping("delete/{id}")
-    @RequireAdmin
     public boolean delete(@PathVariable("id") Long id) {
         return orderService.delete(id);
     }

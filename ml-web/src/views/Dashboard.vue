@@ -1,5 +1,5 @@
 <script setup>
-import {onMounted, ref} from "vue";
+import {onBeforeUnmount, onMounted, ref} from "vue";
 import {genderFormat, orderPayTypeFormat} from "../util/index.js";
 import {bar, pie} from "../echarts/index.js";
 import {getResponseData} from "../request/index.js";
@@ -93,10 +93,21 @@ async function selectOrderStatistics() {
 onMounted(() => {
   selectUserStatistics();
   selectOrderStatistics();
+  window.addEventListener('ml-theme-change', refreshCharts);
 });
+
+onBeforeUnmount(() => {
+  window.removeEventListener('ml-theme-change', refreshCharts);
+});
+
+function refreshCharts() {
+  selectUserStatistics();
+  selectOrderStatistics();
+}
 </script>
 
 <template>
+  <section class="dashboard-page">
   <section class="board-head">
     <el-row :gutter="16">
       <el-col :span="6" v-for="statisticCard in statisticCards">
@@ -139,11 +150,20 @@ onMounted(() => {
       </el-col>
     </el-row>
   </section>
+  </section>
 </template>
 
 <style scoped lang="scss">
+.dashboard-page {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .board-head {
-  margin-bottom: 40px; // 下外边距
+  flex: 0 0 auto;
+  margin-bottom: 24px; // 下外边距
 
   .el-statistic {
     --el-statistic-content-font-size: 30px; // value字号
@@ -155,9 +175,10 @@ onMounted(() => {
 
   .statistic-card {
     height: 100%; // 高度
-    border-radius: 4px; // 圆角
-    border: 1px solid #1D1E1F; // 边框
-    background-color: var(--el-bg-color-overlay); // 背景色
+    border-radius: 8px; // 圆角
+    border: 1px solid var(--ml-border); // 边框
+    background-color: var(--ml-surface); // 背景色
+    box-shadow: var(--ml-shadow);
     padding: 20px 20px 0; // 上内边距，左右内边距，下内边距
     text-align: center; // 内容居中
   }
@@ -167,7 +188,7 @@ onMounted(() => {
     justify-content: center; // 左右居中
     flex-wrap: wrap; // flex环绕
     font-size: 12px; // 字号
-    color: var(--el-text-color-regular); // 前景色
+    color: var(--ml-muted); // 前景色
     margin-top: 16px; // 上外边距
   }
 
@@ -187,12 +208,26 @@ onMounted(() => {
 }
 
 .board-body {
-  height: 500px; // 高度
+  flex: 1;
+  min-height: 0;
+  height: auto; // 高度
+
+  :deep(.el-divider__text) {
+    background: var(--ml-bg);
+  }
+
+  :deep(.el-button.is-link) {
+    color: var(--ml-text);
+  }
 
   .board {
     width: 100%; // 宽度
-    height: 447px; // 高度
-    border: 1px solid #5470C6; // 边框
+    height: calc(100vh - 352px); // 高度
+    min-height: 320px;
+    border: 1px solid var(--ml-border); // 边框
+    border-radius: 8px;
+    background: var(--ml-surface);
+    box-shadow: var(--ml-shadow);
   }
 
   .foot-divider-tip {

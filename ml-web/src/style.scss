@@ -3,22 +3,90 @@
 }
 
 html {
-  font-family: Consolas, Avenir, Helvetica, Arial, sans-serif; // 字体
+  font-family: Inter, "Microsoft YaHei", Avenir, Helvetica, Arial, sans-serif; // 字体
   font-size: 14px; // 全局字号
+  height: 100%;
+  overflow: hidden;
+  --ml-bg: #f6f7f9;
+  --ml-surface: #ffffff;
+  --ml-surface-soft: #f8fafc;
+  --ml-sidebar: #ffffff;
+  --ml-header: rgba(255, 255, 255, 0.94);
+  --ml-border: #e5e7eb;
+  --ml-text: #1f2937;
+  --ml-muted: #6b7280;
+  --ml-primary: #2563eb;
+  --ml-success: #059669;
+  --ml-warning: #d97706;
+  --ml-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 body {
   margin: 0; // 清空内边距
   padding: 0; // 清空外边距
+  height: 100%;
+  overflow: hidden;
+  background: var(--ml-bg);
+  color: var(--ml-text);
+}
+
+#app {
+  height: 100vh;
+  overflow: hidden;
+  background: var(--ml-bg);
+}
+
+.el-card {
+  border-radius: 8px !important;
+  border-color: var(--ml-border) !important;
+  background: var(--ml-surface) !important;
+  box-shadow: var(--ml-shadow) !important;
+}
+
+.el-button {
+  border-radius: 6px;
+}
+
+.el-button.is-round {
+  background: var(--ml-surface);
+  border-color: var(--ml-border);
+  color: var(--ml-text);
+}
+
+.el-table {
+  border-radius: 8px;
+}
+
+.el-table th.el-table__cell {
+  background: var(--ml-surface-soft) !important;
+  color: var(--ml-text);
+}
+
+.el-dialog,
+.el-drawer {
+  border-radius: 8px;
 }
 
 html.dark {
+  color-scheme: dark;
+  --ml-bg: #050505;
+  --ml-surface: #0d0d0d;
+  --ml-surface-soft: #171717;
+  --ml-sidebar: #050505;
+  --ml-header: rgba(8, 8, 8, 0.96);
+  --ml-border: #262626;
+  --ml-text: #f5f5f5;
+  --ml-muted: #a3a3a3;
+  --ml-primary: #60a5fa;
+  --ml-success: #34d399;
+  --ml-warning: #fbbf24;
+  --ml-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+
   img, .dark-img-bg {
     filter: brightness(0.8) saturate(1.25) // 滤镜: 暗黑模式图片的亮度和饱和度
   }
 
   .el-table th {
-    background: #18222C !important; // th 背景色
+    background: var(--ml-surface-soft) !important; // th 背景色
   }
 }
-

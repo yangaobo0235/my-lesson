@@ -1,4 +1,33 @@
 import * as echarts from "echarts";
+import {currentThemeColors, isDarkTheme} from "../util/theme.js";
+
+function chartBaseOption() {
+    const colors = currentThemeColors();
+    return {
+        backgroundColor: 'transparent',
+        textStyle: {color: colors.text},
+        color: isDarkTheme()
+            ? ['#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#a78bfa']
+            : ['#2563eb', '#059669', '#d97706', '#db2777', '#7c3aed'],
+        tooltip: {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            textStyle: {color: colors.text}
+        }
+    };
+}
+
+function chartAxis(name, data) {
+    const colors = currentThemeColors();
+    return {
+        name: name,
+        data: data,
+        nameLocation: 'end',
+        axisLine: {show: true, lineStyle: {color: colors.primary, width: 2}},
+        axisLabel: {show: true, color: colors.muted},
+        splitLine: {show: true, lineStyle: {color: colors.border}}
+    };
+}
 
 /*
  * 绘制 Echarts 饼图
@@ -32,10 +61,11 @@ export function pie(config) {
     };
 
     // 绘制图表
+    echarts.dispose(dom);
     echarts.init(dom).setOption({
-        title: {text: title},
+        ...chartBaseOption(),
+        title: {text: title, textStyle: {color: currentThemeColors().text}},
         series: [series],
-        tooltip: {}
     });
 }
 
@@ -96,30 +126,22 @@ export function bar(config) {
     };
 
     // 数据X轴
-    const xAxis = {
-        name: xName, // 名称，可选
-        data: xData, // 数据数组
-        nameLocation: 'end', // 名称位置，可选
-        axisLine: {show: true, lineStyle: {color: '#48b', width: 2}}, // 轴线
-        axisLabel: {show: true} // 文本
-    };
+    const xAxis = chartAxis(xName, xData);
 
     // 数据Y轴
     const yAxis = {
-        name: yName, // 名称，可选
-        nameLocation: 'end', // 名称位置，可选
+        ...chartAxis(yName),
         min: 0, // 最小值
         scale: true, // 自适应最大最小值
-        axisLine: {show: true, lineStyle: {color: '#48b', width: 2}}, // 轴线
-        axisLabel: {show: true} // 文本
     };
 
     // 绘制图表
+    echarts.dispose(dom);
     echarts.init(dom).setOption({
+        ...chartBaseOption(),
         series: [series],
         xAxis: xAxis,
         yAxis: yAxis,
-        tooltip: {},
         barWidth: barWidth
     });
 }

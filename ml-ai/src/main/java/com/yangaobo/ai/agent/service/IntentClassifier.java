@@ -133,8 +133,8 @@ public class IntentClassifier {
                     UserIntent.PERSONAL_QUERY,
                     "命中当前用户数据查询关键词");
         }
-        if (containsAny(text, "推荐课程", "搜索课程", "查找课程",
-                "课程详情", "有哪些课程", "有没有课程")) {
+        if (containsAny(text, "推荐课程", "推荐", "门课程", "搜索课程",
+                "查找课程", "课程详情", "有哪些课程", "有没有课程")) {
             return decision(
                     UserIntent.COURSE_SEARCH,
                     "命中课程检索关键词");

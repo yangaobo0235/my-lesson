@@ -6,12 +6,33 @@ import {RULE} from "../const/index.js";
 import {onMounted, reactive, ref} from "vue";
 import {getResponseData} from "../request/index.js";
 import {isNotNull} from "../util/index.js";
-import {loginByAccountApi} from "../api/ums/user.js";
+import {loginByAccountApi, registerApi} from "../api/ums/user.js";
 
 // 表单 + 表单数据 + 表单规则
 let loginForm = ref();
 let loginFormData = reactive({username: '', password: ''});
 let loginFormRules = {username: RULE.USERNAME, password: RULE.PASSWORD};
+let registerForm = ref();
+let registerDialog = ref(false);
+let registerLoading = ref(false);
+let registerFormData = reactive({
+  username: '',
+  password: '',
+  realname: '',
+  phone: '',
+  email: '',
+  idcard: '',
+  info: '新注册学员'
+});
+let registerFormRules = {
+  username: RULE.USERNAME,
+  password: RULE.PASSWORD,
+  realname: RULE.REALNAME,
+  phone: RULE.PHONE,
+  email: RULE.EMAIL,
+  idcard: RULE.IDCARD,
+  info: RULE.INFO
+};
 
 /**
  * 登录系统
@@ -50,6 +71,31 @@ function resetForm() {
   loginForm.value.resetFields();
 }
 
+function openRegister() {
+  registerDialog.value = true;
+}
+
+function resetRegisterForm() {
+  registerForm.value?.resetFields();
+  registerFormData.info = '新注册学员';
+}
+
+function register() {
+  registerForm.value.validate(valid => {
+    if (!valid) return;
+    registerLoading.value = true;
+    registerApi(registerFormData).then(res => {
+      if (getResponseData(res)) {
+        ElMessage.success('注册成功，请登录');
+        loginFormData.username = registerFormData.username;
+        loginFormData.password = '';
+        registerDialog.value = false;
+        resetRegisterForm();
+      }
+    }).finally(() => registerLoading.value = false);
+  });
+}
+
 /**
  * 忘记密码
  *
@@ -77,7 +123,7 @@ onMounted(() => {
 
 <template>
   <section class="login-body">
-    <el-card class="login-card" header="《我的课堂》后台管理系统">
+    <el-card class="login-card" header="MyLesson 课程平台">
       <el-form class="login-form" ref="loginForm" :model="loginFormData" :rules="loginFormRules"
                status-icon>
         <el-form-item prop="username" required>
@@ -90,7 +136,10 @@ onMounted(() => {
         </el-form-item>
         <el-button class="login-btn" @click="login"
                    type="primary">
-          管理员登录
+          登录系统
+        </el-button>
+        <el-button class="register-btn" @click="openRegister" plain type="primary">
+          注册账号
         </el-button>
         <el-checkbox class="remember-cbx"
                      label="记住账号" size="small"/>
@@ -104,6 +153,36 @@ onMounted(() => {
         </el-button>
       </el-form>
     </el-card>
+
+    <el-dialog v-model="registerDialog" title="注册学员账号" width="520px" @closed="resetRegisterForm">
+      <el-form ref="registerForm" :model="registerFormData" :rules="registerFormRules" label-width="86px" status-icon>
+        <el-form-item label="账号" prop="username" required>
+          <el-input v-model="registerFormData.username" clearable placeholder="4-20位英文或数字"/>
+        </el-form-item>
+        <el-form-item label="密码" prop="password" required>
+          <el-input v-model="registerFormData.password" clearable show-password placeholder="4-20位英文或数字"/>
+        </el-form-item>
+        <el-form-item label="姓名" prop="realname" required>
+          <el-input v-model="registerFormData.realname" clearable placeholder="请输入真实姓名"/>
+        </el-form-item>
+        <el-form-item label="手机号" prop="phone" required>
+          <el-input v-model="registerFormData.phone" clearable placeholder="请输入手机号"/>
+        </el-form-item>
+        <el-form-item label="邮箱" prop="email" required>
+          <el-input v-model="registerFormData.email" clearable placeholder="请输入邮箱"/>
+        </el-form-item>
+        <el-form-item label="身份证号" prop="idcard" required>
+          <el-input v-model="registerFormData.idcard" clearable placeholder="用于生成默认资料"/>
+        </el-form-item>
+        <el-form-item label="简介" prop="info">
+          <el-input v-model="registerFormData.info" type="textarea" :rows="3" maxlength="170"/>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="registerDialog = false">取消</el-button>
+        <el-button type="primary" :loading="registerLoading" @click="register">完成注册</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
@@ -111,20 +190,36 @@ onMounted(() => {
 .login-body {
   height: 100vh; // 高度
   background: url("../assets/image/loginBackground.png") no-repeat; // 背景图片（不平铺）
-  background-size: 100% 100%; // 上下 左右
-  padding-top: 200px; // 上内边距
+  background-size: cover; // 上下 左右
+  background-position: center;
+  padding-top: 18vh; // 上内边距
   box-sizing: border-box; // 忽略内边距影响
+  position: relative;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(246, 247, 249, 0.62);
+  }
 
   .login-card {
+    position: relative;
     margin: auto; // 自居中
-    width: 50vh; // 宽度
-    opacity: 0.95; // 透明度
+    width: min(420px, calc(100vw - 40px)); // 宽度
+    opacity: 0.98; // 透明度
   }
 
   .login-btn {
     width: 100%; // 宽度
     margin: 0 auto 10px; // 外边距
-    letter-spacing: 2px; // 字母间距
+    letter-spacing: 0; // 字母间距
+  }
+
+  .register-btn {
+    width: 100%;
+    margin: 0 0 10px;
+    letter-spacing: 0;
   }
 
   .forget-btn, .reset-btn {

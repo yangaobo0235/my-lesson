@@ -18,4 +18,6 @@ public class OrderPageDTO extends PageDTO {
     private Integer status;
     @Schema(description = "用户账号，冗余字段")
     private String username;
+    @Schema(description = "用户ID，用户表外键")
+    private Long fkUserId;
 }

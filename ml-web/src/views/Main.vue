@@ -3,12 +3,25 @@ import router from "../router/index.js";
 import {ElNotification} from "element-plus";
 import {MINIO_HOST, PROJECT_INFO, PROJECT_SKILLS} from "../const/index.js";
 import MyIcon from "../components/MyIcon.vue";
-import {ref} from "vue";
+import {computed, ref} from "vue";
+import {
+  getAccessibleAiNavItems,
+  getAccessibleBusinessMenus,
+  getAccessibleStudentNavItems,
+  getLoginMenus,
+  getLoginRoles,
+  readJsonStorage
+} from "../util/auth.js";
+import {applyTheme, getSavedTheme} from "../util/theme.js";
 
 // 当前登录的用户信息
-const loginUser = JSON.parse(sessionStorage.getItem('loginUser'));
+const loginUser = readJsonStorage('loginUser', {});
 // 当前登录的菜单列表
-const menus = JSON.parse(sessionStorage.getItem('loginMenus'));
+const menus = getLoginMenus();
+const roles = getLoginRoles();
+const aiMenus = computed(() => getAccessibleAiNavItems(roles));
+const studentMenus = computed(() => getAccessibleStudentNavItems());
+const businessMenus = computed(() => getAccessibleBusinessMenus(menus, roles));
 // 当前登录的用户头像
 const avatar = MINIO_HOST + '/avatar/' + loginUser['avatar'];
 // 项目LOGO
@@ -21,6 +34,7 @@ const isCollapse = ref(false);
 const projectInfoDrawer = ref();
 const projectSkillDrawer = ref();
 const calendarDrawer = ref();
+const theme = ref(getSavedTheme());
 // 日历数据（本地时间）
 let calendarData = ref(new Date());
 
@@ -43,6 +57,11 @@ function openProjectSkillDrawer() {
  */
 function openCalendarDrawer() {
   calendarDrawer.value = true;
+}
+
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark';
+  applyTheme(theme.value);
 }
 
 /**
@@ -96,21 +115,27 @@ function logout() {
       <el-menu class="menus-menu el-menu-vertical-demo" :collapse="isCollapse" :default-active="currentMenuIndex"
                unique-opened router>
         <el-image class="logo" :src="logo"/>
-        <el-menu-item class="house-item" index="/DashBoard"
+        <el-menu-item class="house-item" index="/Dashboard"
                       title="回到后台项目首页">
-          <my-icon icon="House" label="DashBoard"/>
+          <my-icon icon="House" label="Dashboard"/>
         </el-menu-item>
-        <el-sub-menu index="ai-console" title="AI 控制台">
+        <el-sub-menu v-if="aiMenus.length > 0" index="ai-console" title="AI 工作台">
           <template #title>
-            <my-icon icon="ChatDotRound" label="AI 控制台"/>
+            <my-icon icon="ChatDotRound" label="AI 工作台"/>
           </template>
-          <el-menu-item index="/ai/chat"><my-icon icon="ChatLineRound" label="AI 对话"/></el-menu-item>
-          <el-menu-item index="/ai/conversations"><my-icon icon="Clock" label="历史会话"/></el-menu-item>
-          <el-menu-item index="/ai/plans"><my-icon icon="Notebook" label="学习计划"/></el-menu-item>
-          <el-menu-item index="/ai/approvals"><my-icon icon="CircleCheck" label="待确认操作"/></el-menu-item>
-          <el-menu-item index="/ai/admin/evaluation"><my-icon icon="DataAnalysis" label="评测与知识库"/></el-menu-item>
+          <el-menu-item v-for="item in aiMenus" :key="item.path" :index="item.path">
+            <my-icon :icon="item.icon" :label="item.label"/>
+          </el-menu-item>
         </el-sub-menu>
-        <el-sub-menu class="menus" v-for="(menu, i) in menus"
+        <el-sub-menu v-if="studentMenus.length > 0" index="student-center" title="学习中心">
+          <template #title>
+            <my-icon icon="Reading" label="学习中心"/>
+          </template>
+          <el-menu-item v-for="item in studentMenus" :key="item.path" :index="item.path">
+            <my-icon :icon="item.icon" :label="item.label"/>
+          </el-menu-item>
+        </el-sub-menu>
+        <el-sub-menu class="menus" v-for="(menu, i) in businessMenus"
                      :key="menu['id']" :index="i.toString()" :title="menu['info']">
           <template #title>
             <my-icon :icon="menu['icon']" :label="menu['title']"/>
@@ -147,6 +172,10 @@ function logout() {
             </el-tooltip>
             <el-tooltip content="系统通知">
               <el-button icon="bell" @click="notify"
+                         size="small" round/>
+            </el-tooltip>
+            <el-tooltip :content="theme === 'dark' ? '切换亮色主题' : '切换暗色主题'">
+              <el-button :icon="theme === 'dark' ? 'Sunny' : 'Moon'" @click="toggleTheme"
                          size="small" round/>
             </el-tooltip>
             <el-tooltip content="项目基本信息">
@@ -216,19 +245,46 @@ function logout() {
 </template>
 
 <style scoped lang="scss">
+.main-body {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .main-body-left {
 
   height: 100vh; // 高度
-  border-right: 1px solid #cccccc; // 右边框
+  border-right: 1px solid var(--ml-border); // 右边框
+  background: var(--ml-sidebar);
 
   .logo {
     padding: 10px; // 内边距
+    box-sizing: border-box;
+  }
+
+  :deep(.el-menu) {
+    background: var(--ml-sidebar);
+    border-right: 0;
+  }
+
+  :deep(.el-menu-item),
+  :deep(.el-sub-menu__title) {
+    color: var(--ml-text);
+  }
+
+  :deep(.el-menu-item:hover),
+  :deep(.el-sub-menu__title:hover) {
+    background: color-mix(in srgb, var(--ml-primary) 8%, transparent);
+  }
+
+  :deep(.el-menu-item.is-active) {
+    color: var(--ml-primary);
+    background: color-mix(in srgb, var(--ml-primary) 12%, transparent);
   }
 
   .el-menu-vertical-demo:not(.el-menu--collapse) {
     width: 200px; // 宽度
     height: 100vh; // 高度
-    letter-spacing: 2px; // 字间距
+    letter-spacing: 0; // 字间距
   }
 
   .el-icon {
@@ -237,17 +293,40 @@ function logout() {
 }
 
 .main-body-right-head {
+  flex: 0 0 64px;
+  height: 64px;
+  border-bottom: 1px solid var(--ml-border);
+  background: var(--ml-header);
+  backdrop-filter: blur(8px);
 
   .project-title-col {
     font-weight: bolder; // 加粗
-    font-size: 1.5rem; // 字号倍率
+    font-size: 1.15rem; // 字号倍率
+    color: var(--ml-text);
+  }
+
+  :deep(.el-radio-button__inner) {
+    background: var(--ml-surface);
+    border-color: var(--ml-border);
+    color: var(--ml-text);
+  }
+
+  :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+    background: var(--ml-primary);
+    border-color: var(--ml-primary);
+    color: #ffffff;
+  }
+
+  :deep(.el-button.is-round) {
+    background: var(--ml-surface);
+    border-color: var(--ml-border);
+    color: var(--ml-text);
   }
 
   .nickname-col {
     text-align: right; // 右对齐
     height: 50px; // 高度
     display: inline-block; // 内联块
-    text-shadow: 2px 2px 2px gray; // 文字阴影
     line-height: 50px; // 行高
   }
 
@@ -257,8 +336,15 @@ function logout() {
 
   .avatar {
     margin: 10px; // 外边距
-    outline: 1px solid #854040; // 边框
-    border: 1px solid #854040; // 边框
+    outline: 1px solid var(--ml-border); // 边框
+    border: 1px solid var(--ml-border); // 边框
   }
+}
+
+.main-body-right-main {
+  height: calc(100vh - 64px);
+  min-height: 0;
+  overflow: auto;
+  background: var(--ml-bg);
 }
 </style>

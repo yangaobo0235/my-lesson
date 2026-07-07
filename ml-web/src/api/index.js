@@ -23,7 +23,7 @@ export function apiPrefixFormat(module) {
     // 微服务与模块的映射关系：key 为微服务名称，value 为模块名称数组
     const serviceModuleMap = {
         'user-server': ['menu', 'role', 'user'],
-        'course-server': ['category', 'comment', 'course', 'episode', 'report', 'season'],
+        'course-server': ['category', 'comment', 'course', 'episode', 'follow', 'report', 'season'],
         'sale-server': ['article', 'banner', 'coupons', 'notice', 'seckill', 'seckillDetail'],
         'order-server': ['cart', 'order', 'orderDetail']
     };

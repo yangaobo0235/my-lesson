@@ -16,13 +16,23 @@ export const aiApi = {
     messages: (id, limit = 100) => GATEWAY_AXIOS.get(`${AI_BASE}/conversations/${id}/messages`, {params: {limit}}).then(body),
     sendMessage: (id, message, requestId) => GATEWAY_AXIOS.post(`${AI_BASE}/conversations/${id}/messages`, {message, requestId}).then(body),
     deleteConversation: id => GATEWAY_AXIOS.delete(`${AI_BASE}/conversations/${id}`),
+    recommendCourses: (goal, limit = 5) => GATEWAY_AXIOS.post(`${AI_BASE}/course-recommendations`, {goal, limit}).then(body),
     plans: () => GATEWAY_AXIOS.get(`${AI_BASE}/plans`).then(body),
+    updatePlanProgress: (id, progressPercent, note) => GATEWAY_AXIOS.patch(
+        `${AI_BASE}/plans/${id}/progress`,
+        {progressPercent, note}
+    ).then(body),
     approvals: () => GATEWAY_AXIOS.get(`${AI_BASE}/approvals`).then(body),
     approve: id => GATEWAY_AXIOS.post(`${AI_BASE}/approvals/${id}/approve`).then(body),
     reject: id => GATEWAY_AXIOS.post(`${AI_BASE}/approvals/${id}/reject`).then(body),
     knowledgeStatus: () => GATEWAY_AXIOS.get(`${AI_BASE}/admin/knowledge/status`).then(body),
+    knowledgeSources: params => GATEWAY_AXIOS.get(`${AI_BASE}/admin/knowledge/sources`, {params}).then(body),
+    retryKnowledgeSource: (sourceType, sourceId) => GATEWAY_AXIOS.post(
+        `${AI_BASE}/admin/knowledge/sources/${encodeURIComponent(sourceType)}/${encodeURIComponent(sourceId)}/retry`
+    ).then(body),
     evaluationSummary: () => GATEWAY_AXIOS.get(`${AI_BASE}/admin/evaluation/summary`).then(body),
-    evaluationResults: (limit = 100) => GATEWAY_AXIOS.get(`${AI_BASE}/admin/evaluation/results`, {params: {limit}}).then(body)
+    evaluationResults: (limit = 100) => GATEWAY_AXIOS.get(`${AI_BASE}/admin/evaluation/results`, {params: {limit}}).then(body),
+    toolCalls: params => GATEWAY_AXIOS.get(`${AI_BASE}/admin/tools/calls`, {params}).then(body)
 };
 
 export function openConversationStream(conversationId, handlers = {}) {

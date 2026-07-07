@@ -1,7 +1,0 @@
-{
-  "navigationBarTitleText": "MyLesson AI",
-  "usingComponents": {
-    "van-button": "@vant/weapp/button/index",
-    "van-field": "@vant/weapp/field/index"
-  }
-}

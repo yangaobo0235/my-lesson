@@ -13,6 +13,8 @@ import * as ElementPlusIcons from '@element-plus/icons-vue';
 // ElementPlus暗黑模式: 核心CSS
 import 'element-plus/theme-chalk/dark/css-vars.css';
 
+document.documentElement.classList.toggle('dark', localStorage.getItem('ml-theme') === 'dark');
+
 const app = createApp(App);
 app.use(router);
 app.use(vuex);
@@ -24,4 +26,3 @@ app.mount('#app');
 for (const [key, component] of Object.entries(ElementPlusIcons)) {
     app.component(key, component)
 }
-

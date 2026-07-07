@@ -60,6 +60,8 @@ public class LearningPlanRepository {
                     id,
                     goal,
                     status,
+                    progress_percent,
+                    progress_note,
                     plan_json::text AS plan_json,
                     created_at,
                     updated_at
@@ -78,6 +80,8 @@ public class LearningPlanRepository {
                     id,
                     goal,
                     status,
+                    progress_percent,
+                    progress_note,
                     plan_json::text AS plan_json,
                     created_at,
                     updated_at
@@ -99,6 +103,8 @@ public class LearningPlanRepository {
                     id,
                     goal,
                     status,
+                    progress_percent,
+                    progress_note,
                     plan_json::text AS plan_json,
                     created_at,
                     updated_at
@@ -110,6 +116,82 @@ public class LearningPlanRepository {
                 this::map,
                 userId,
                 limit);
+    }
+
+    public Optional<LearningPlan> findOwned(UUID planId, Long userId) {
+        List<LearningPlan> plans = jdbcTemplate.query(
+                """
+                SELECT
+                    id,
+                    goal,
+                    status,
+                    progress_percent,
+                    progress_note,
+                    plan_json::text AS plan_json,
+                    created_at,
+                    updated_at
+                FROM ai_learning_plan
+                WHERE id = ?
+                  AND user_id = ?
+                LIMIT 1
+                """,
+                this::map,
+                planId,
+                userId);
+        return plans.stream().findFirst();
+    }
+
+    public Optional<LearningPlan> updateProgress(
+            UUID planId,
+            Long userId,
+            int progressPercent,
+            String note,
+            List<LearningPlan.LearningPlanAdjustment> adjustments) {
+        Optional<LearningPlan> existing = findOwned(planId, userId);
+        if (existing.isEmpty()) {
+            return Optional.empty();
+        }
+        LearningPlan current = existing.get();
+        LearningPlan updatedPlan = new LearningPlan(
+                current.id(),
+                current.goal(),
+                current.availableMinutesPerDay(),
+                current.estimatedWeeks(),
+                current.status(),
+                progressPercent,
+                note,
+                current.courses(),
+                current.dailyRoutine(),
+                adjustments,
+                current.createdAt(),
+                current.updatedAt());
+        List<LearningPlan> plans = jdbcTemplate.query(
+                """
+                UPDATE ai_learning_plan
+                SET progress_percent = ?,
+                    progress_note = ?,
+                    plan_json = CAST(? AS jsonb),
+                    last_progress_at = now(),
+                    updated_at = now()
+                WHERE id = ?
+                  AND user_id = ?
+                RETURNING
+                    id,
+                    goal,
+                    status,
+                    progress_percent,
+                    progress_note,
+                    plan_json::text AS plan_json,
+                    created_at,
+                    updated_at
+                """,
+                this::map,
+                progressPercent,
+                note,
+                writeJson(updatedPlan),
+                planId,
+                userId);
+        return plans.stream().findFirst();
     }
 
     private LearningPlan map(ResultSet resultSet, int rowNum)
@@ -124,8 +206,11 @@ public class LearningPlanRepository {
                     stored.availableMinutesPerDay(),
                     stored.estimatedWeeks(),
                     resultSet.getString("status"),
+                    resultSet.getInt("progress_percent"),
+                    resultSet.getString("progress_note"),
                     stored.courses(),
                     stored.dailyRoutine(),
+                    stored.adjustments(),
                     instant(resultSet, "created_at"),
                     instant(resultSet, "updated_at"));
         } catch (JsonProcessingException exception) {

@@ -1,7 +1,0 @@
-<view class="update-email-board">
-    <van-field label="电子邮箱" model:value="{{ email }}"
-               custom-class="field" right-icon="eye-o" placeholder="请输入电子邮箱" border="{{ false }}"/>
-    <van-button bind:tap="updateEmail" custom-class="submit-btn" type="info" block>
-        确认修改
-    </van-button>
-</view>
