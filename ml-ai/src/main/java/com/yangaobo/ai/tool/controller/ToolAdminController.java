@@ -32,6 +32,7 @@ public class ToolAdminController {
     public List<ToolCallView> calls(
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) String toolName,
+            @RequestParam(required = false) String toolSource,
             @RequestParam(required = false) String accessType,
             @RequestParam(required = false) String status,
             @RequestParam(required = false)
@@ -40,6 +41,7 @@ public class ToolAdminController {
         return repository.recentCalls(
                 userId,
                 toolName,
+                toolSource,
                 accessType,
                 status,
                 limit == null ? 100 : limit);

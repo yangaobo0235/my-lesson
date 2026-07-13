@@ -3,6 +3,12 @@ package com.yangaobo.ai.conversation.model;
 public enum ConversationEventType {
     RUN_STARTED("run_started"),
     INTENT_DETECTED("intent_detected"),
+    AGENT_SELECTED("agent_selected"),
+    AGENT_STARTED("agent_started"),
+    AGENT_COMPLETED("agent_completed"),
+    WORKFLOW_NODE_STARTED("workflow_node_started"),
+    WORKFLOW_NODE_COMPLETED("workflow_node_completed"),
+    WORKFLOW_WAITING_APPROVAL("workflow_waiting_approval"),
     RETRIEVAL_STARTED("retrieval_started"),
     RETRIEVAL_COMPLETED("retrieval_completed"),
     TOOL_STARTED("tool_started"),

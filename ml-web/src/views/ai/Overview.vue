@@ -17,6 +17,13 @@ const userCapabilities = [
     prompt: '我想学习睡眠改善和低强度运动，帮我检索平台里适合的课程，并说明依据。'
   },
   {
+    icon: 'Connection',
+    title: '多 Agent 编排',
+    tag: 'Agent',
+    text: '按意图路由到知识问答、课程推荐、个人查询、购物车和学习计划 Agent。',
+    prompt: '查询我的购物车，并根据我想提升表达能力这个目标推荐下一步课程。'
+  },
+  {
     icon: 'Aim',
     title: '目标选课推荐',
     tag: '推荐',
@@ -26,8 +33,8 @@ const userCapabilities = [
   {
     icon: 'Notebook',
     title: '学习计划',
-    tag: '计划',
-    text: '把目标拆成阶段任务，后续可以在学习计划页维护完成进度。',
+    tag: 'Graph',
+    text: '通过 Graph 工作流生成草案、校验课程、保存待确认计划并展示节点时间线。',
     prompt: '帮我制定一个 14 天的摄影入门学习计划，每天安排一个可完成的小任务。'
   },
   {
@@ -233,7 +240,7 @@ h3, h4, p {
 
 .capability-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 

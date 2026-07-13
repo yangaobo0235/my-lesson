@@ -2,13 +2,15 @@ package com.yangaobo.ai.rag.service;
 
 import com.yangaobo.ai.agent.model.AgentAnswer;
 import com.yangaobo.ai.agent.model.AgentRoute;
+import com.yangaobo.ai.agent.model.AgentSelection;
 import com.yangaobo.ai.agent.model.IntentDecision;
 import com.yangaobo.ai.agent.model.UserIntent;
-import com.yangaobo.ai.agent.service.IntentRoutingPolicy;
+import com.yangaobo.ai.agent.service.AgentOrchestrator;
 import com.yangaobo.ai.agent.service.MyLessonReactAgentService;
 import com.yangaobo.ai.approval.model.ApprovalRequestResult;
 import com.yangaobo.ai.approval.service.ApprovalService;
 import com.yangaobo.ai.client.CourseAiClient;
+import com.yangaobo.ai.conversation.model.ConversationEventType;
 import com.yangaobo.ai.rag.config.RagProperties;
 import com.yangaobo.ai.rag.model.AiAnswer;
 import com.yangaobo.ai.rag.model.Citation;
@@ -68,7 +70,7 @@ public class KnowledgeAnswerService {
     private final CitationService citationService;
     private final RagProperties properties;
     private final ChatClient chatClient;
-    private final IntentRoutingPolicy routingPolicy;
+    private final AgentOrchestrator agentOrchestrator;
     private final MyLessonReactAgentService reactAgentService;
     private final AiBusinessGateway businessGateway;
     private final BusinessToolExecutor toolExecutor;
@@ -79,7 +81,7 @@ public class KnowledgeAnswerService {
             CitationService citationService,
             RagProperties properties,
             ChatClient.Builder chatClientBuilder,
-            IntentRoutingPolicy routingPolicy,
+            AgentOrchestrator agentOrchestrator,
             MyLessonReactAgentService reactAgentService,
             AiBusinessGateway businessGateway,
             BusinessToolExecutor toolExecutor) {
@@ -88,7 +90,7 @@ public class KnowledgeAnswerService {
         this.citationService = citationService;
         this.properties = properties;
         this.chatClient = chatClientBuilder.build();
-        this.routingPolicy = routingPolicy;
+        this.agentOrchestrator = agentOrchestrator;
         this.reactAgentService = reactAgentService;
         this.businessGateway = businessGateway;
         this.toolExecutor = toolExecutor;
@@ -148,11 +150,21 @@ public class KnowledgeAnswerService {
                     new HybridSearchResult(List.of(), 0.0, false));
             return new AiAnswer(CAPABILITY_ANSWER, List.of(), traceId);
         }
+        AgentSelection selection = toolRunContext == null
+                ? null
+                : agentOrchestrator.select(intentDecision);
+        AgentRoute route = selection == null ? null : selection.route();
+        publishAgentSelected(toolRunContext, selection, intentDecision);
+        publishAgentStarted(toolRunContext, selection);
+        boolean agentCompleted = false;
+        try {
         AiAnswer courseRecommendation =
                 deterministicCourseRecommendation(question, intentDecision, traceId);
         if (courseRecommendation != null) {
             retrievalObserver.accept(
                     new HybridSearchResult(List.of(), 0.0, false));
+            publishAgentCompleted(toolRunContext, selection, true);
+            agentCompleted = true;
             return courseRecommendation;
         }
         AiAnswer learningPlanApproval =
@@ -164,16 +176,17 @@ public class KnowledgeAnswerService {
         if (learningPlanApproval != null) {
             retrievalObserver.accept(
                     new HybridSearchResult(List.of(), 0.0, false));
+            publishAgentCompleted(toolRunContext, selection, true);
+            agentCompleted = true;
             return learningPlanApproval;
         }
-        AgentRoute route = toolRunContext == null
-                ? null
-                : routingPolicy.route(intentDecision);
         if (route != null
                 && !route.conservative()
                 && intentDecision.intent() == UserIntent.OUT_OF_SCOPE) {
             retrievalObserver.accept(
                     new HybridSearchResult(List.of(), 0.0, false));
+            publishAgentCompleted(toolRunContext, selection, true);
+            agentCompleted = true;
             return new AiAnswer(
                     "这个问题不属于 MyLesson 的学习或业务范围。"
                             + "你可以询问课程、知识点、订单、购物车或学习计划。",
@@ -216,9 +229,12 @@ public class KnowledgeAnswerService {
                     toolRunContext.run().conversationId(),
                     userPrompt,
                     toolRunContext,
-                    route);
+                    route,
+                    selection.profile());
             rawAnswer = agentAnswer.content();
         }
+        publishAgentCompleted(toolRunContext, selection, true);
+        agentCompleted = true;
         CitationService.ValidatedAnswer validated =
                 citationService.validate(rawAnswer, availableCitations);
         if (validated.answer().isBlank()) {
@@ -249,6 +265,57 @@ public class KnowledgeAnswerService {
                 validated.answer(),
                 validated.citations(),
                 traceId);
+        } catch (RuntimeException exception) {
+            if (!agentCompleted) {
+                publishAgentCompleted(toolRunContext, selection, false);
+            }
+            throw exception;
+        }
+    }
+
+    private void publishAgentSelected(
+            ToolRunContext toolRunContext,
+            AgentSelection selection,
+            IntentDecision decision) {
+        if (toolRunContext == null || selection == null) {
+            return;
+        }
+        toolRunContext.publish(
+                ConversationEventType.AGENT_SELECTED,
+                Map.of(
+                        "agentName", selection.profile().name(),
+                        "displayName", selection.profile().displayName(),
+                        "description", selection.profile().description(),
+                        "intent", decision.intent().name(),
+                        "conservative", selection.route().conservative()));
+    }
+
+    private void publishAgentStarted(
+            ToolRunContext toolRunContext,
+            AgentSelection selection) {
+        if (toolRunContext == null || selection == null) {
+            return;
+        }
+        toolRunContext.publish(
+                ConversationEventType.AGENT_STARTED,
+                Map.of(
+                        "agentName", selection.profile().name(),
+                        "displayName", selection.profile().displayName()));
+    }
+
+    private void publishAgentCompleted(
+            ToolRunContext toolRunContext,
+            AgentSelection selection,
+            boolean success) {
+        if (toolRunContext == null || selection == null) {
+            return;
+        }
+        toolRunContext.publish(
+                ConversationEventType.AGENT_COMPLETED,
+                Map.of(
+                        "agentName", selection.profile().name(),
+                        "displayName", selection.profile().displayName(),
+                        "success", success));
     }
 
     private String buildUserPrompt(

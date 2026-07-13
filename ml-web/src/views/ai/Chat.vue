@@ -29,13 +29,22 @@ const currentConversation = computed(() =>
     conversations.value.find(item => item.id === conversationId.value));
 
 function eventLabel(type, data) {
+  const toolLabel = data.toolSource === 'MCP'
+      ? `MCP 工具：${data.toolName || '-'}`
+      : `工具：${data.toolName || '-'}`;
   const labels = {
     run_started: '开始处理',
     intent_detected: `识别意图：${data.intent || '-'}`,
+    agent_selected: `选择 Agent：${data.displayName || data.agentName || '-'}`,
+    agent_started: `${data.displayName || data.agentName || 'Agent'} 开始处理`,
+    agent_completed: `${data.displayName || data.agentName || 'Agent'} 处理完成`,
+    workflow_node_started: `工作流节点开始：${data.displayName || data.nodeName || '-'}`,
+    workflow_node_completed: `${data.displayName || data.nodeName || '工作流节点'}${data.success === false ? '失败' : '完成'}`,
+    workflow_waiting_approval: `学习计划待确认：${data.goal || data.draftId || '-'}`,
     retrieval_started: '开始检索',
     retrieval_completed: '检索完成',
-    tool_started: `调用工具：${data.toolName || '-'}`,
-    tool_completed: `工具完成：${data.toolName || '-'}`,
+    tool_started: `调用${toolLabel}`,
+    tool_completed: `${toolLabel}完成`,
     approval_required: `等待确认：${data.actionType || '-'}`,
     run_completed: '回答完成',
     run_failed: `处理失败：${data.message || '请稍后重试'}`

@@ -2,57 +2,73 @@
 
 [![CI](https://github.com/yangaobo0235/my-lesson/actions/workflows/ci.yml/badge.svg)](https://github.com/yangaobo0235/my-lesson/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-17-ED8B00)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-6DB33F)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F)
 ![Spring AI Alibaba](https://img.shields.io/badge/Spring%20AI%20Alibaba-1.1.2.2-FF6A00)
 ![Vue](https://img.shields.io/badge/Vue-3.4-42B883)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-MyLesson 是一个面向在线教育场景的微服务平台，包含课程内容、用户体系、营销活动、购物车、订单支付、弹幕互动、后台管理和 AI 学习助手等模块。
+MyLesson 是一个在线教育微服务项目，覆盖课程内容、用户权限、营销活动、购物车、订单支付、弹幕互动、后台管理和 AI 学习助手等业务场景。
 
-系统采用 Spring Cloud Alibaba 拆分业务服务，由网关统一接入请求；前端由 Vue 3 Web 端统一承载课程、用户、营销、订单和 AI 工作台。AI 服务作为独立微服务接入课程、订单、用户和营销数据，提供课程问答、选课推荐、学习计划、知识库同步和受控工具调用能力。
+项目主体采用 Spring Cloud Alibaba 微服务架构，由网关统一入口，业务服务按用户、课程、营销、订单、弹幕和 AI 能力拆分；前端使用 Vue 3 + Element Plus 构建统一管理端和学习端。`ml-ai` 作为独立 AI 服务接入课程、用户、订单和营销数据，围绕 Agent、Graph、RAG、MCP 和审批流提供智能学习助手能力。
 
-## 功能范围
+## 核心能力
+
+- 在线教育业务闭环：课程、学习、营销、购物车、订单、支付和弹幕互动。
+- 微服务统一治理：网关入口、Nacos 配置注册、OpenFeign 服务调用和内部身份透传。
+- AI 学习助手：流式对话、课程问答、课程推荐、学习计划、知识库同步和管理端评测。
+- Agent 编排：按意图选择专业 Agent，并为不同场景分配只读工具、受控写工具或安全路由。
+- Graph 工作流：学习计划按节点执行，输出可追踪、可审计的 Workflow 时间线。
+- 工具治理：本地业务工具和 MCP 外部工具统一注册、调用、超时控制和审计。
+- 审批保护：涉及业务状态变更的 AI 操作先生成确认任务，用户确认后再执行。
+
+## 功能概览
 
 ### 用户与权限
 
 - 账号密码登录、手机号验证码登录、注册和 Token 管理
 - 用户资料、头像、手机号、密码和角色维护
 - 后台用户、角色、菜单和权限配置
+- 网关鉴权、身份透传和服务间内部调用校验
 
 ### 课程与学习
 
 - 课程分类、课程、季度、分集和媒资管理
-- 课程检索、课程详情、收藏、评论、回复和举报
+- 课程检索、详情展示、收藏、评论、回复和举报
 - 分集视频播放、学习记录和 WebSocket 弹幕
+- 课程数据变更后通过 Outbox + RocketMQ 同步到 AI 知识库
 
 ### 营销与交易
 
-- 公告、文章、Banner、优惠券和秒杀活动
+- 公告、文章、Banner、优惠券和秒杀活动管理
 - 购物车、订单、订单明细、支付宝沙箱支付和支付回调
 - 秒杀库存缓存、异步下单和订单状态流转
+- 订单、课程、用户等数据通过内部接口供 AI 服务只读查询
 
 ### AI 学习助手
 
-- 流式 AI 会话、历史消息和会话摘要记忆
-- 课程知识问答、混合检索、引用生成和引用校验
-- 根据学习目标生成课程推荐，并结合课程详情、资料文章、用户资料、已购课程和购物车状态
+- 流式 AI 会话、历史消息、会话摘要记忆和运行时间线
+- ReactAgent 工具调用，支持最大模型调用次数、超时和重试控制
+- Spring AI Alibaba Graph 学习计划工作流
+- Redis 持久化 Agent Checkpoint，支持执行状态跨进程保留
+- 多 Agent 编排和保守路由，低置信度或高风险请求自动收敛到只读能力
+- MCP 外部工具接入，支持启停、白名单、黑名单、超时和审计
+- 混合检索、向量检索、关键词检索、RRF 融合、DashScope rerank 和引用生成
 - 学习计划草案、用户确认、正式计划、进度更新和调整建议
-- 业务工具调用，写操作进入确认流程后再执行
-- 课程、文章、公告等业务数据增量同步到知识库
-- 管理端查看知识源状态、失败重试、Tool 调用审计和 RAG 评测结果
+- 写操作进入审批流程，用户确认后再执行实际业务调用
+- 知识库全量重建、增量同步、失败重试和 RAG 评测管理
 
 ## 系统架构
 
 ```mermaid
 flowchart LR
-    Web["Vue 3 Web 端"] --> Gateway["API Gateway :24101"]
+    Web["Vue 3 Web :24108"] --> Gateway["API Gateway :24101"]
 
-    Gateway --> User["用户服务 :24102"]
-    Gateway --> Course["课程服务 :24103"]
-    Gateway --> Sale["营销服务 :24104"]
-    Gateway --> Order["订单服务 :24105"]
-    Gateway --> Barrage["弹幕服务 :24106"]
-    Gateway --> AI["AI 服务 :24107"]
+    Gateway --> User["ml-user :24102"]
+    Gateway --> Course["ml-course :24103"]
+    Gateway --> Sale["ml-sale :24104"]
+    Gateway --> Order["ml-order :24105"]
+    Gateway --> Barrage["ml-barrage :24106"]
+    Gateway --> AI["ml-ai :24107"]
 
     User --> MySQL[("MySQL")]
     Course --> MySQL
@@ -61,13 +77,13 @@ flowchart LR
     Barrage --> ES[("Elasticsearch")]
 
     AI --> PG[("PostgreSQL + pgvector")]
+    AI --> Redis[("Redis")]
     AI --> ES
     AI --> DashScope["DashScope"]
+    AI --> MCP["MCP Servers"]
 
     User & Course & Sale & Order --> MQ["RocketMQ"]
-    User & Course & Sale & Order --> Redis[("Redis")]
     User & Course & Sale & Order --> MinIO[("MinIO")]
-
     Gateway & User & Course & Sale & Order & Barrage & AI --> Nacos["Nacos"]
 ```
 
@@ -75,13 +91,13 @@ flowchart LR
 
 | 模块 | 默认端口 | 说明 |
 | --- | ---: | --- |
-| `ml-gateway` | 24101 | 统一入口、路由转发、跨域处理和身份透传 |
+| `ml-gateway` | 24101 | 统一入口、路由转发、跨域处理、鉴权和身份透传 |
 | `ml-user` | 24102 | 用户、角色、菜单、登录注册、短信验证码和资料管理 |
-| `ml-course` | 24103 | 课程、分类、分集、媒资、学习记录、评论和检索 |
+| `ml-course` | 24103 | 课程、分类、分集、媒资、学习记录、评论和课程检索 |
 | `ml-sale` | 24104 | 公告、文章、Banner、优惠券和秒杀活动 |
-| `ml-order` | 24105 | 购物车、订单、订单明细、支付和支付回调 |
-| `ml-barrage` | 24106 | WebSocket 弹幕与 Elasticsearch 存储 |
-| `ml-ai` | 24107 | AI 会话、RAG、工具调用、学习计划、知识同步和评测 |
+| `ml-order` | 24105 | 购物车、订单、订单明细、支付宝沙箱支付和回调 |
+| `ml-barrage` | 24106 | WebSocket 弹幕和 Elasticsearch 弹幕存储 |
+| `ml-ai` | 24107 | AI 会话、RAG、Agent、Graph、MCP、工具调用、学习计划和评测 |
 | `ml-common` | - | 通用模型、异常、工具类、鉴权上下文和服务间契约 |
 | `ml-generator` | - | MyBatis-Flex 代码生成工具 |
 | `ml-web` | 24108 | Vue 3 + Element Plus Web 前端 |
@@ -90,45 +106,92 @@ flowchart LR
 
 | 分类 | 技术 |
 | --- | --- |
-| 后端 | Java 17、Spring Boot 3.2.5、Spring Cloud 2023.0.1 |
+| 后端基础 | Java 17、Maven、Spring Boot、Spring Cloud |
 | 微服务 | Spring Cloud Alibaba、Nacos、OpenFeign、Sentinel |
-| AI 应用 | Spring AI 1.1.2、Spring AI Alibaba 1.1.2.2、DashScope、ReactAgent |
+| AI 应用 | Spring AI 1.1.2、Spring AI Alibaba 1.1.2.2、DashScope、ReactAgent、Graph、MCP Client |
 | 数据访问 | MyBatis-Flex、Flyway、MySQL、PostgreSQL、pgvector |
 | 搜索与缓存 | Elasticsearch、Redis、Redisson |
 | 消息与任务 | RocketMQ、XXL-JOB |
-| 文件与观测 | MinIO、Micrometer Tracing、Zipkin |
+| 文件与观测 | MinIO、Micrometer、OpenTelemetry、Prometheus、Zipkin |
 | 第三方服务 | 阿里云短信认证、支付宝沙箱 |
-| 前端 | Vue 3、Vite、Element Plus、ECharts |
-| 工程化 | Maven、npm、GitHub Actions |
+| 前端 | Vue 3、Vite、Element Plus、Vue Router、Vuex、ECharts、xgplayer |
+| 工程化 | GitHub Actions、npm、Maven |
 
-## AI 服务
+说明：`ml-ai` 当前使用独立 POM，版本线为 Spring Boot `3.5.10`、Spring Cloud `2025.0.0`、Spring Cloud Alibaba `2025.0.0.0`；其他业务服务由根 POM 统一管理，版本线为 Spring Boot `3.2.5`、Spring Cloud `2023.0.1`、Spring Cloud Alibaba `2023.0.1.0`。
 
-`ml-ai` 是平台中的独立业务服务，通过内部接口读取课程、订单、用户和营销数据。它不直接修改其他服务的数据，所有会改变业务状态的 Tool 都会生成确认任务，确认通过后再调用对应业务服务。
+## AI 服务设计
 
-主要流程：
+`ml-ai` 不直接修改其他业务服务的数据。所有会改变业务状态的工具调用都会先生成审批任务，用户确认后再通过内部 Feign 接口调用对应业务服务。
+
+### 会话执行链路
 
 ```text
 用户输入
  -> 意图识别
- -> 检索课程知识或选择业务工具
- -> 生成回答、推荐或计划草案
- -> 写操作创建确认任务
- -> 用户确认后执行
- -> 记录消息、引用、Tool 调用和评测数据
+ -> AgentOrchestrator 选择专业 Agent
+ -> 组装只读或受控工具集合
+ -> ReactAgent 调用模型、RAG 和工具
+ -> 写操作创建审批任务
+ -> 用户确认后执行业务调用
+ -> 记录消息、引用、工具调用、Agent 事件和评测数据
 ```
 
-知识库同步流程：
+### 学习计划 Graph
+
+学习计划创建由 Spring AI Alibaba Graph 编排，当前节点如下：
 
 ```text
-业务数据变更
- -> Outbox 事件
- -> RocketMQ
- -> AI 服务消费事件
- -> 拉取业务详情
- -> 文档切分
- -> 写入 Elasticsearch / pgvector
- -> 更新知识源状态
+normalize_goal
+ -> load_user_profile
+ -> search_candidate_courses
+ -> verify_courses
+ -> generate_draft
+ -> validate_draft
+ -> persist_draft
+ -> request_approval
 ```
+
+每个节点都会发布开始、完成、失败或等待确认事件，前端可在 AI 会话时间线中展示 Workflow 执行过程。
+
+### Agent Checkpoint
+
+`ml-ai` 通过 `ai.agent.checkpoint` 配置 Agent 状态保存策略：
+
+```yaml
+ai:
+  agent:
+    checkpoint:
+      type: redis
+      fallback-to-memory: true
+      release-thread: false
+```
+
+- `type=redis`：使用 Spring AI Alibaba Graph 的 `RedisSaver`，依赖 Redis 和 Redisson。
+- `type=memory`：使用进程内 `MemorySaver`，适合本地临时调试。
+- `fallback-to-memory=true`：Redis Saver 不可用时回退到 MemorySaver。
+
+### MCP 工具接入
+
+MCP Client 默认关闭，可通过环境变量或 Nacos 配置开启：
+
+```yaml
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: ${MCP_CLIENT_ENABLED:false}
+        type: SYNC
+
+ai:
+  mcp:
+    enabled: ${MCP_CLIENT_ENABLED:false}
+    tool-name-prefix: "mcp_"
+    allow-all-tools: true
+    disabled-tools: []
+    timeout: 12s
+```
+
+接入后的 MCP 工具会被包装为 `mcp_` 前缀工具，统一进入 `ai_tool_call` 审计表，并记录工具来源、MCP Server 名称和外部原始工具名。
 
 ## 快速开始
 
@@ -145,7 +208,7 @@ flowchart LR
 - Elasticsearch 8.x
 - MinIO
 
-Sentinel、Zipkin、XXL-JOB、阿里云短信和支付宝沙箱可按需要启用。
+Sentinel、Zipkin、XXL-JOB、阿里云短信、支付宝沙箱和 MCP Server 可按需要启用。
 
 ### 2. 克隆项目
 
@@ -156,7 +219,7 @@ cd my-lesson
 
 ### 3. 配置环境变量
 
-复制环境变量模板，并将占位值替换为自己的开发环境配置：
+复制环境变量模板：
 
 ```bash
 cp .env.example .env
@@ -173,18 +236,24 @@ Copy-Item .env.example .env
 ```dotenv
 NACOS_SERVER_ADDR=127.0.0.1:8848
 MYSQL_USERNAME=root
-MYSQL_PASSWORD=your-password
+MYSQL_PASSWORD=change-me
 
 AI_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/mylesson_ai
 AI_DATASOURCE_USERNAME=postgres
-AI_DATASOURCE_PASSWORD=your-password
-DASHSCOPE_API_KEY=your-api-key
+AI_DATASOURCE_PASSWORD=change-me
+DASHSCOPE_API_KEY=change-me
 
-AI_IDENTITY_SECRET=your-random-secret
-AI_INTERNAL_TOKEN=your-another-random-token
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+ROCKETMQ_NAME_SERVER=127.0.0.1:9876
+ELASTICSEARCH_URIS=http://127.0.0.1:9200
+
+AI_IDENTITY_SECRET=generate-at-least-32-random-bytes
+AI_INTERNAL_TOKEN=generate-at-least-32-random-bytes
+MCP_CLIENT_ENABLED=false
 ```
 
-`.env` 不会被 Spring Boot 自动读取。可以在启动配置、操作系统环境变量或容器编排文件中注入这些配置。
+`.env` 不会被 Spring Boot 自动读取。可以在 IDE 启动配置、操作系统环境变量、Docker Compose 或部署平台中注入这些变量。
 
 不要提交 `.env`、AccessKey、API Key、数据库密码、支付宝私钥或其他真实凭据。
 
@@ -194,15 +263,15 @@ AI_INTERNAL_TOKEN=your-another-random-token
 
 | Data ID | 对应服务 |
 | --- | --- |
-| `common-config.yaml` | 公共数据库、缓存、链路追踪等配置 |
-| `ml-gateway-dev.yaml` | 网关 |
+| `common-config.yaml` | 公共数据库、Redis、Nacos、链路追踪、内部 Token 等配置 |
+| `ml-gateway-dev.yaml` | 网关服务 |
 | `ml-user-dev.yaml` | 用户服务 |
 | `ml-course-dev.yaml` | 课程服务 |
 | `ml-sale-dev.yaml` | 营销服务 |
 | `ml-order-dev.yaml` | 订单服务 |
-| `ml-ai-dev.yaml` | AI 服务 |
+| `ml-ai-dev.yaml` | AI 服务、DashScope、pgvector、RAG、Agent、Graph、MCP 和审批配置 |
 
-配置中的密码和密钥建议继续使用 `${ENV_NAME}` 占位符，由运行环境提供真实值。
+配置中的密码、Token 和密钥建议继续使用 `${ENV_NAME}` 占位符，由运行环境提供真实值。
 
 ### 5. 初始化数据库
 
@@ -216,9 +285,15 @@ CREATE DATABASE mylesson_ai;
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
+AI 服务数据库迁移包含 MCP 工具审计字段：
+
+```text
+ml-ai/src/main/resources/db/migration/V11__add_mcp_tool_audit_fields.sql
+```
+
 ### 6. 启动后端服务
 
-构建全部模块：
+构建全部后端模块：
 
 ```bash
 mvn clean package -DskipTests
@@ -256,12 +331,34 @@ npm run dev
 
 默认访问地址：`http://localhost:24108`
 
+## 常用 AI 接口
+
+| 能力 | 接口 |
+| --- | --- |
+| 会话列表与创建 | `GET/POST /api/v1/ai/conversations` |
+| 发送消息 | `POST /api/v1/ai/conversations/{conversationId}/messages` |
+| 会话流式事件 | `GET /api/v1/ai/conversations/{conversationId}/events` |
+| 知识库搜索 | `GET /api/v1/ai/knowledge/search` |
+| 知识库问答 | `POST /api/v1/ai/knowledge/ask` |
+| 学习计划列表 | `GET /api/v1/ai/plans` |
+| 审批任务 | `GET /api/v1/ai/approvals` |
+| 通过审批 | `POST /api/v1/ai/approvals/{id}/approve` |
+| 拒绝审批 | `POST /api/v1/ai/approvals/{id}/reject` |
+| 工具调用审计 | `GET /api/v1/ai/admin/tools/calls` |
+| 知识库重建 | `POST /api/v1/ai/admin/knowledge/rebuild` |
+
 ## 测试与构建
 
 运行后端测试：
 
 ```bash
 mvn test
+```
+
+构建后端：
+
+```bash
+mvn clean package -DskipTests
 ```
 
 构建 Web 前端：
@@ -272,14 +369,15 @@ npm ci
 npm run build
 ```
 
-GitHub Actions 会在 Push 和 Pull Request 时执行后端构建与管理端构建。
+GitHub Actions 会在 Push 和 Pull Request 时执行后端构建、前端依赖审计和前端构建。
 
 ## 项目结构
 
 ```text
 my-lesson/
 ├── .github/workflows/   # CI 工作流
-├── ml-ai/               # AI 服务
+├── demo-data/           # 示例数据
+├── ml-ai/               # AI 服务：RAG、Agent、Graph、MCP、学习计划和评测
 ├── ml-barrage/          # 弹幕服务
 ├── ml-common/           # 公共模块
 ├── ml-course/           # 课程服务
@@ -294,13 +392,33 @@ my-lesson/
 └── pom.xml              # Maven 聚合工程
 ```
 
+## 开发检查
+
+建议在本地开发完成后至少执行：
+
+```bash
+mvn clean package -DskipTests
+cd ml-web
+npm ci
+npm run build
+```
+
+如果涉及数据库迁移、Nacos 配置或环境变量，请同步检查：
+
+- `NACOS_CONFIG.md` 是否包含相关配置项
+- `.env.example` 是否包含相关环境变量
+- Flyway 迁移是否可重复、可空库执行
+- README 中的端口、版本和启动命令是否仍然准确
+
 ## 安全说明
 
-- 开发、测试和生产环境必须使用不同的密钥。
+- 开发、测试和生产环境必须使用不同密钥。
 - `AI_IDENTITY_SECRET` 与 `AI_INTERNAL_TOKEN` 必须使用两个不同的高强度随机值。
+- MCP Client 默认关闭，接入外部 MCP Server 前需要评估工具权限、网络边界和审计策略。
+- 写操作必须保留审批流程，不能让 Agent 直接绕过用户确认修改业务数据。
 - 支付回调地址必须是支付宝可访问的公网 HTTPS 地址。
 - 云账号 AccessKey 应使用最小权限 RAM 用户。
-- 生产环境应关闭验证码、Token、支付参数等敏感调试日志。
+- 生产环境应关闭验证码、Token、支付参数和模型输入输出中的敏感调试日志。
 - 生产部署前需要结合实际数据量补充容量评估、安全审计和容灾设计。
 
 ## License

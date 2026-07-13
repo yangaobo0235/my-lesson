@@ -486,6 +486,18 @@ spring:
         index-type: hnsw
         distance-type: cosine-distance
         table-name: vector_store
+    mcp:
+      client:
+        enabled: ${MCP_CLIENT_ENABLED:false}
+        type: SYNC
+        request-timeout: 12s
+        toolcallback:
+          enabled: true
+        sse:
+          connections:
+            course-resource:
+              url: ${MCP_COURSE_RESOURCE_URL:http://127.0.0.1:24200}
+              sse-endpoint: /sse
 
   cloud:
     openfeign:
@@ -591,6 +603,17 @@ ai:
     model-retry-count: 1
     intent-timeout: 10s
     model-timeout: 45s
+    checkpoint:
+      type: redis
+      fallback-to-memory: true
+      release-thread: false
+
+  mcp:
+    enabled: ${MCP_CLIENT_ENABLED:false}
+    tool-name-prefix: "mcp_"
+    allow-all-tools: true
+    disabled-tools: []
+    timeout: 12s
 
   approval:
     ttl: 30m

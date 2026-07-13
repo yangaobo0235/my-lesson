@@ -1,6 +1,7 @@
 package com.yangaobo.ai.tool.service;
 
 import com.yangaobo.ai.knowledge.service.KnowledgeAdminGuard;
+import com.yangaobo.ai.mcp.tool.McpToolRegistry;
 import com.yangaobo.ai.tool.dto.CourseIdRequest;
 import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
 import com.yangaobo.ai.tool.dto.LimitRequest;
@@ -29,6 +30,7 @@ public class BusinessToolRegistry {
             "rebuild_knowledge_index");
 
     private final BusinessToolExecutor executor;
+    private final McpToolRegistry mcpToolRegistry;
     private final List<ToolCallback> callbacks;
     private final Map<String, ToolCallback> callbacksByName;
 
@@ -39,8 +41,10 @@ public class BusinessToolRegistry {
             UserTools userTools,
             LearningPlanTools learningPlanTools,
             KnowledgeTools knowledgeTools,
-            KnowledgeAdminGuard knowledgeAdminGuard) {
+            KnowledgeAdminGuard knowledgeAdminGuard,
+            McpToolRegistry mcpToolRegistry) {
         this.executor = executor;
+        this.mcpToolRegistry = mcpToolRegistry;
         List<ToolCallback> registered = List.of(
                 callback(new BusinessToolSpec<>(
                         "search_courses",
@@ -128,19 +132,31 @@ public class BusinessToolRegistry {
     }
 
     public List<ToolCallback> callbacks() {
-        return callbacks;
+        List<ToolCallback> mcpCallbacks = mcpToolRegistry.callbacks();
+        if (mcpCallbacks.isEmpty()) {
+            return callbacks;
+        }
+        java.util.ArrayList<ToolCallback> result =
+                new java.util.ArrayList<>(callbacks);
+        result.addAll(mcpCallbacks);
+        return List.copyOf(result);
     }
 
     public List<ToolCallback> callbacks(
             Set<String> names,
             boolean allowWrites) {
-        return callbacks.stream()
+        java.util.ArrayList<ToolCallback> result = callbacks.stream()
                 .filter(callback -> names.contains(
                         callback.getToolDefinition().name()))
                 .filter(callback -> allowWrites
                         || !WRITE_TOOL_NAMES.contains(
                                 callback.getToolDefinition().name()))
-                .toList();
+                .collect(java.util.stream.Collectors.toCollection(
+                        java.util.ArrayList::new));
+        if (!names.isEmpty()) {
+            result.addAll(mcpToolRegistry.callbacks(names));
+        }
+        return List.copyOf(result);
     }
 
     public boolean isWriteTool(String name) {

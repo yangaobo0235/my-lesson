@@ -196,7 +196,8 @@ public class ApprovalService {
         LearningPlanDraftRecord draft =
                 learningPlanWorkflow.prepare(
                         context.run().id(),
-                        planRequest);
+                        planRequest,
+                        context);
         ObjectNode payload = objectMapper.createObjectNode()
                 .put("draftId", draft.id().toString())
                 .put("goal", draft.state().goal())

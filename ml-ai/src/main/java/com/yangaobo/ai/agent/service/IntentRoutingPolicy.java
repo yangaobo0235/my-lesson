@@ -12,6 +12,8 @@ import java.util.Set;
 @Component
 public class IntentRoutingPolicy {
 
+    private static final String MCP_READ_TOOLS = "mcp:*";
+
     private static final Set<String> READ_ONLY_TOOLS = Set.of(
             "search_courses",
             "get_course_detail",
@@ -23,9 +25,15 @@ public class IntentRoutingPolicy {
     private static final Map<UserIntent, Set<String>> TOOLS_BY_INTENT =
             Map.of(
                     UserIntent.KNOWLEDGE_QA,
-                    Set.of("search_courses", "get_course_detail"),
+                    Set.of(
+                            "search_courses",
+                            "get_course_detail",
+                            MCP_READ_TOOLS),
                     UserIntent.COURSE_SEARCH,
-                    Set.of("search_courses", "get_course_detail"),
+                    Set.of(
+                            "search_courses",
+                            "get_course_detail",
+                            MCP_READ_TOOLS),
                     UserIntent.PERSONAL_QUERY,
                     Set.of(
                             "get_my_recent_orders",
@@ -44,7 +52,8 @@ public class IntentRoutingPolicy {
                             "search_courses",
                             "get_course_detail",
                             "get_learning_plan",
-                            "create_learning_plan"),
+                            "create_learning_plan",
+                            MCP_READ_TOOLS),
                     UserIntent.ADMIN_OPERATION,
                     Set.of("rebuild_knowledge_index"),
                     UserIntent.OUT_OF_SCOPE,

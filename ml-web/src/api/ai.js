@@ -3,7 +3,9 @@ import {GATEWAY_HOST} from '../const/index.js';
 
 const AI_BASE = '/api/v1/ai';
 export const AI_EVENT_TYPES = [
-    'run_started', 'intent_detected', 'retrieval_started',
+    'run_started', 'intent_detected', 'agent_selected',
+    'agent_started', 'agent_completed', 'workflow_node_started',
+    'workflow_node_completed', 'workflow_waiting_approval', 'retrieval_started',
     'retrieval_completed', 'tool_started', 'tool_completed',
     'answer_delta', 'citation', 'approval_required',
     'run_completed', 'run_failed'

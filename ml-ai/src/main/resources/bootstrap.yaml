@@ -21,3 +21,8 @@ spring:
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:192.168.23.66:8848}
         group: DEFAULT_GROUP # 与现有网关和业务服务的注册分组保持一致
+
+  ai:
+    mcp:
+      client:
+        enabled: ${MCP_CLIENT_ENABLED:false}
