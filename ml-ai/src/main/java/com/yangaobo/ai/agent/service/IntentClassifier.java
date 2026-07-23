@@ -6,6 +6,7 @@ import com.yangaobo.ai.agent.model.UserIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -94,11 +95,19 @@ public class IntentClassifier {
             String message,
             String conversationContext) {
         String result = chatClient.prompt()
+                .options(routerOptions())
                 .system(SYSTEM_PROMPT)
                 .user(buildPrompt(message, conversationContext))
                 .call()
                 .content();
         return converter.convert(result);
+    }
+
+    ChatOptions routerOptions() {
+        return ChatOptions.builder()
+                .model(properties.getRouterModel())
+                .temperature(0.0)
+                .build();
     }
 
     IntentDecision classifyByRule(String message) {

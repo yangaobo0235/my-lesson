@@ -24,7 +24,7 @@ public class ConversationWriteService {
             ConversationRepository conversationRepository,
             ConversationMessageRepository messageRepository,
             ConversationRunRepository runRepository,
-            @Value("${spring.ai.dashscope.chat.options.model:qwen-plus}")
+            @Value("${spring.ai.dashscope.chat.options.model:qwen3-max}")
             String modelName) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;

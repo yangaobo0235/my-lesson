@@ -4,7 +4,7 @@
 ![Java](https://img.shields.io/badge/Java-17-ED8B00)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F)
 ![Spring AI Alibaba](https://img.shields.io/badge/Spring%20AI%20Alibaba-1.1.2.2-FF6A00)
-![Vue](https://img.shields.io/badge/Vue-3.4-42B883)
+![Vue](https://img.shields.io/badge/Vue-3.5-42B883)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 MyLesson 是一个在线教育微服务项目，覆盖课程内容、用户权限、营销活动、购物车、订单支付、弹幕互动、后台管理和 AI 学习助手等业务场景。
@@ -32,30 +32,32 @@ MyLesson 是一个在线教育微服务项目，覆盖课程内容、用户权�
 
 ### 课程与学习
 
-- 课程分类、课程、季度、分集和媒资管理
+- 课程分类、课程、季、分集和媒资管理
 - 课程检索、详情展示、收藏、评论、回复和举报
 - 分集视频播放、学习记录和 WebSocket 弹幕
-- 课程数据变更后通过 Outbox + RocketMQ 同步到 AI 知识库
+- 课程、季和分集变更后通过 Outbox + RocketMQ 增量同步到 AI 知识库
 
 ### 营销与交易
 
 - 公告、文章、Banner、优惠券和秒杀活动管理
 - 购物车、订单、订单明细、支付宝沙箱支付和支付回调
-- 秒杀库存缓存、异步下单和订单状态流转
+- Redis 预热及扣减秒杀库存，Redisson 控制并发，RocketMQ 异步投递下单请求
+- 文章和公告变更后通过 Outbox + RocketMQ 增量同步到 AI 知识库
 - 订单、课程、用户等数据通过内部接口供 AI 服务只读查询
 
 ### AI 学习助手
 
 - 流式 AI 会话、历史消息、会话摘要记忆和运行时间线
-- ReactAgent 工具调用，支持最大模型调用次数、超时和重试控制
+- 双模型 Agent：`qwen3-max` 负责主对话与工具调用，`qwen-flash` 负责低时延意图路由
 - Spring AI Alibaba Graph 学习计划工作流
-- Redis 持久化 Agent Checkpoint，支持执行状态跨进程保留
+- ReActAgent 与学习计划 Graph 共用 Redis Checkpoint，支持执行状态跨进程保留
 - 多 Agent 编排和保守路由，低置信度或高风险请求自动收敛到只读能力
 - MCP 外部工具接入，支持启停、白名单、黑名单、超时和审计
-- 混合检索、向量检索、关键词检索、RRF 融合、DashScope rerank 和引用生成
+- PostgreSQL/pgvector 向量召回与 Elasticsearch 课程关键词召回，经 RRF 融合、DashScope rerank 和引用校验后生成答案
+- 工具审计记录来源、读写类型、耗时、请求/响应 Hash、错误码及 MCP 服务信息
 - 学习计划草案、用户确认、正式计划、进度更新和调整建议
 - 写操作进入审批流程，用户确认后再执行实际业务调用
-- 知识库全量重建、增量同步、失败重试和 RAG 评测管理
+- 知识库支持全量重建，以及带 eventId 幂等、版本控制、失败重试和定时对账的增量同步
 
 ## 系统架构
 
@@ -74,16 +76,22 @@ flowchart LR
     Course --> MySQL
     Sale --> MySQL
     Order --> MySQL
-    Barrage --> ES[("Elasticsearch")]
+    Course --> ES[("Elasticsearch")]
+    Barrage --> ES
 
     AI --> PG[("PostgreSQL + pgvector")]
     AI --> Redis[("Redis")]
-    AI --> ES
     AI --> DashScope["DashScope"]
     AI --> MCP["MCP Servers"]
+    AI --> InternalAPI["OpenFeign 内部只读接口"]
+    InternalAPI --> User & Course & Sale & Order
 
-    User & Course & Sale & Order --> MQ["RocketMQ"]
-    User & Course & Sale & Order --> MinIO[("MinIO")]
+    Course & Sale --> Outbox["Outbox"]
+    Outbox --> KnowledgeMQ["RocketMQ 知识事件"]
+    KnowledgeMQ --> AI
+    Sale --> SeckillMQ["RocketMQ 秒杀请求"]
+    SeckillMQ --> Order
+    User & Course & Sale --> MinIO[("MinIO")]
     Gateway & User & Course & Sale & Order & Barrage & AI --> Nacos["Nacos"]
 ```
 
@@ -93,8 +101,8 @@ flowchart LR
 | --- | ---: | --- |
 | `ml-gateway` | 24101 | 统一入口、路由转发、跨域处理、鉴权和身份透传 |
 | `ml-user` | 24102 | 用户、角色、菜单、登录注册、短信验证码和资料管理 |
-| `ml-course` | 24103 | 课程、分类、分集、媒资、学习记录、评论和课程检索 |
-| `ml-sale` | 24104 | 公告、文章、Banner、优惠券和秒杀活动 |
+| `ml-course` | 24103 | 课程、分类、分集、媒资、学习记录、评论和 Elasticsearch 课程检索 |
+| `ml-sale` | 24104 | 公告、文章、Banner、优惠券、秒杀及知识事件生产 |
 | `ml-order` | 24105 | 购物车、订单、订单明细、支付宝沙箱支付和回调 |
 | `ml-barrage` | 24106 | WebSocket 弹幕和 Elasticsearch 弹幕存储 |
 | `ml-ai` | 24107 | AI 会话、RAG、Agent、Graph、MCP、工具调用、学习计划和评测 |
@@ -108,7 +116,7 @@ flowchart LR
 | --- | --- |
 | 后端基础 | Java 17、Maven、Spring Boot、Spring Cloud |
 | 微服务 | Spring Cloud Alibaba、Nacos、OpenFeign、Sentinel |
-| AI 应用 | Spring AI 1.1.2、Spring AI Alibaba 1.1.2.2、DashScope、ReactAgent、Graph、MCP Client |
+| AI 应用 | Spring AI 1.1.2、Spring AI Alibaba 1.1.2.2、DashScope、ReactAgent（ReAct）、Graph、MCP Client |
 | 数据访问 | MyBatis-Flex、Flyway、MySQL、PostgreSQL、pgvector |
 | 搜索与缓存 | Elasticsearch、Redis、Redisson |
 | 消息与任务 | RocketMQ、XXL-JOB |
@@ -123,14 +131,20 @@ flowchart LR
 
 `ml-ai` 不直接修改其他业务服务的数据。所有会改变业务状态的工具调用都会先生成审批任务，用户确认后再通过内部 Feign 接口调用对应业务服务。
 
+### 双模型与工具边界
+
+- 主对话和 ReactAgent 使用 `qwen3-max`，意图分类显式使用 `qwen-flash`；两者可分别通过 `AI_CHAT_MODEL`、`AI_ROUTER_MODEL` 覆盖。
+- 本地工具按只读和受控写入分类，MCP 工具使用 `mcp_` 前缀单独注册；写工具只有在审批通过后才调用业务服务。
+- 每次工具调用写入 `ai_tool_call`，保存工具来源、读写类型、耗时、请求/响应 SHA-256 Hash、状态和错误码。
+
 ### 会话执行链路
 
 ```text
 用户输入
- -> 意图识别
+ -> qwen-flash 意图识别
  -> AgentOrchestrator 选择专业 Agent
  -> 组装只读或受控工具集合
- -> ReactAgent 调用模型、RAG 和工具
+ -> ReactAgent 使用 qwen3-max 调用 RAG 和工具
  -> 写操作创建审批任务
  -> 用户确认后执行业务调用
  -> 记录消息、引用、工具调用、Agent 事件和评测数据
@@ -153,9 +167,19 @@ normalize_goal
 
 每个节点都会发布开始、完成、失败或等待确认事件，前端可在 AI 会话时间线中展示 Workflow 执行过程。
 
-### Agent Checkpoint
+模型生成失败时，`LearningPlanDraftGenerator` 会退回确定性草案；草案仍需经过课程存在性和每日时长等 Java 规则校验后才能进入确认流程。
 
-`ml-ai` 通过 `ai.agent.checkpoint` 配置 Agent 状态保存策略：
+### 混合 RAG
+
+向量通道使用 PostgreSQL/pgvector，关键词通道通过课程服务访问 Elasticsearch，并补充文章、公告的业务检索结果。两路结果使用 RRF 融合，随后执行 DashScope rerank、相关性阈值判断和 `CitationService` 引用校验；无有效证据时返回资料不足，不生成无来源结论。
+
+### 增量知识同步
+
+课程、季、分集、文章和公告的业务事务写入本地 Outbox，Relay 将事件投递到 RocketMQ。`ml-ai` 消费后先写 Inbox，以 `eventId` 去重并按聚合版本拒绝旧事件；处理失败会记录错误并由消息重投或定时对账任务恢复。
+
+### Agent 与 Graph Checkpoint
+
+`ml-ai` 通过 `ai.agent.checkpoint` 配置 ReActAgent 和学习计划 Graph 共用的状态保存策略：
 
 ```yaml
 ai:
@@ -242,6 +266,8 @@ AI_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/mylesson_ai
 AI_DATASOURCE_USERNAME=postgres
 AI_DATASOURCE_PASSWORD=change-me
 DASHSCOPE_API_KEY=change-me
+AI_CHAT_MODEL=qwen3-max
+AI_ROUTER_MODEL=qwen-flash
 
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
@@ -253,7 +279,7 @@ AI_INTERNAL_TOKEN=generate-at-least-32-random-bytes
 MCP_CLIENT_ENABLED=false
 ```
 
-`.env` 不会被 Spring Boot 自动读取。可以在 IDE 启动配置、操作系统环境变量、Docker Compose 或部署平台中注入这些变量。
+根目录 `.env` 仅作为本地变量清单，不会被 Spring Boot 自动读取；后端变量需要通过 IDE 启动配置、操作系统环境变量、Docker Compose 或部署平台注入。前端变量应放在 `ml-web/.env.local`，详见 [ml-web/README.md](ml-web/README.md)。
 
 不要提交 `.env`、AccessKey、API Key、数据库密码、支付宝私钥或其他真实凭据。
 
@@ -269,7 +295,7 @@ MCP_CLIENT_ENABLED=false
 | `ml-course-dev.yaml` | 课程服务 |
 | `ml-sale-dev.yaml` | 营销服务 |
 | `ml-order-dev.yaml` | 订单服务 |
-| `ml-ai-dev.yaml` | AI 服务、DashScope、pgvector、RAG、Agent、Graph、MCP 和审批配置 |
+| `ml-ai-dev.yaml` | AI 服务、双模型 Agent、Graph、pgvector/RAG、MCP、审批和知识同步配置 |
 
 配置中的密码、Token 和密钥建议继续使用 `${ENV_NAME}` 占位符，由运行环境提供真实值。
 
@@ -369,14 +395,13 @@ npm ci
 npm run build
 ```
 
-GitHub Actions 会在 Push 和 Pull Request 时执行后端构建、前端依赖审计和前端构建。
+GitHub Actions 会在 Push 和 Pull Request 时执行后端测试与打包、前端生产依赖审计和前端构建。
 
 ## 项目结构
 
 ```text
 my-lesson/
 ├── .github/workflows/   # CI 工作流
-├── demo-data/           # 示例数据
 ├── ml-ai/               # AI 服务：RAG、Agent、Graph、MCP、学习计划和评测
 ├── ml-barrage/          # 弹幕服务
 ├── ml-common/           # 公共模块

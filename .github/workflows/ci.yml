@@ -14,8 +14,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - name: Build all backend modules
-        run: mvn -B -DskipTests package
+      - name: Test and build all backend modules
+        run: mvn -B package
 
   web-build:
     runs-on: ubuntu-latest

@@ -138,6 +138,9 @@ public class LearningPlanService {
 
     private List<String> searchKeywords(String goal) {
         List<String> keywords = new ArrayList<>();
+        if (goal != null && !goal.isBlank()) {
+            keywords.add(goal.trim());
+        }
         if (containsAny(goal, "表达", "沟通", "公开分享", "汇报")) {
             keywords.add("表达");
         }

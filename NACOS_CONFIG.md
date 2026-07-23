@@ -23,7 +23,7 @@ MyLesson 后端服务使用 Nacos 作为配置中心和服务发现中心。启�
 | `ml-course-dev.yaml` | 课程服务端口、数据源、Elasticsearch、RocketMQ、AI 知识同步配置 |
 | `ml-sale-dev.yaml` | 营销服务端口、数据源、XXL-JOB、RocketMQ、AI 知识同步配置 |
 | `ml-order-dev.yaml` | 订单服务端口、数据源、RocketMQ、支付宝沙箱配置 |
-| `ml-ai-dev.yaml` | AI 服务端口、PostgreSQL、DashScope、pgvector、RAG、Agent、审批和知识同步配置 |
+| `ml-ai-dev.yaml` | AI 服务端口、PostgreSQL、双模型 Agent、Graph/Agent Checkpoint、pgvector/RAG、MCP、审批和知识同步配置 |
 
 ## 本地服务如何加载 Nacos
 
@@ -76,8 +76,11 @@ AI_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/mylesson_ai
 AI_DATASOURCE_USERNAME=postgres
 AI_DATASOURCE_PASSWORD=your-postgres-password
 DASHSCOPE_API_KEY=your-dashscope-api-key
+AI_CHAT_MODEL=qwen3-max
+AI_ROUTER_MODEL=qwen-flash
 AI_IDENTITY_SECRET=your-random-secret
 AI_INTERNAL_TOKEN=your-random-token
+MCP_CLIENT_ENABLED=false
 
 CORS_ALLOWED_ORIGINS=http://localhost:24108
 
@@ -473,7 +476,7 @@ spring:
       api-key: ${DASHSCOPE_API_KEY}
       chat:
         options:
-          model: qwen-plus
+          model: ${AI_CHAT_MODEL:qwen3-max}
           temperature: 0.2
       embedding:
         options:
@@ -599,6 +602,7 @@ ai:
 
   agent:
     intent-confidence-threshold: 0.65
+    router-model: ${AI_ROUTER_MODEL:qwen-flash}
     max-model-calls: 6
     model-retry-count: 1
     intent-timeout: 10s

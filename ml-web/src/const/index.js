@@ -1,13 +1,14 @@
-// 环境IP地址
+// 本地默认地址可被 Vite 环境变量覆盖
 const HOST = 'http://localhost';
-export const GATEWAY_HOST = `${HOST}:24101`;
+export const GATEWAY_HOST = import.meta.env.VITE_GATEWAY_URL
+    || `${HOST}:24101`;
 export const USER_EXCEL_HOST = `${GATEWAY_HOST}/user-server/api/v1/user/excel`;
 export const EPISODE_EXCEL_HOST = `${GATEWAY_HOST}/course-server/api/v1/episode/excel`;
 export const ORDER_EXCEL_HOST = `${GATEWAY_HOST}/order-server/api/v1/order/excel`;
 
 // Minio函数
 export const MINIO_HOST = import.meta.env.VITE_MINIO_PUBLIC_URL
-    || 'http://192.168.23.66:9001/mylesson';
+    || 'http://localhost:9001/mylesson';
 export const MINIO_AVATAR = url => MINIO_HOST + '/avatar/' + url;
 export const MINIO_BANNER = url => MINIO_HOST + '/banner/' + url;
 export const MINIO_COURSE_COVER = url => MINIO_HOST + '/course-cover/' + url;
@@ -57,63 +58,30 @@ export const PROJECT_INFO = {
 
 // 项目技术栈信息
 export const PROJECT_SKILLS = [
-    {label: '底层操作系统', value: 'Windows', version: '11'},
-    {label: '语言开发环境', value: 'JDK', version: '17.0.9'},
-    {label: '集成开发工具', value: 'IntelliJ IDEA', version: '2023.3.3.win Ultimate Edition'},
-    {label: '项目管理工具', value: 'Maven', version: '3.9.9'},
-    {label: '版本控制工具', value: 'Git', version: '2.28.0.windows.1'},
-    {label: '代码托管中心', value: 'GitHub', version: 'latest'},
-    {label: '前端服务容器', value: 'Node', version: '22.12+'},
-    {label: '前端测试软件', value: 'Edge', version: '120.0.2210.77'},
-    {label: '压力测试工具', value: 'JMeter', version: '5.4.1'},
-    {label: '虚拟管理工具', value: 'VmWare', version: '17.5.1 build-23298084'},
-    {label: '虚拟操作系统', value: 'OpenEuler', version: '24.03-LTS'},
-    {label: '容器管理引擎', value: 'Docker', version: '18.09.0'},
-    {label: '数据存储仓库', value: 'MySQL', version: '8.0.27'},
-    {label: '对象存储仓库', value: 'MinIO', version: 'RELEASE.2023-08-31T15-31-16Z'},
-    {label: '数据缓存仓库', value: 'Redis', version: '7.0.5'},
-    {label: '反向代理组件', value: 'Nginx', version: '1.25.2'},
-    {label: '搜索引擎组件', value: 'ElasticSearch', version: '8.4.0'},
-    {label: '搜索引擎界面', value: 'Kibana', version: '8.4.0'},
-    {label: '日志收集组件', value: 'Logstash', version: '8.4.0'},
-    {label: '单元测试', value: 'junit', version: '4.13.2'},
-    {label: '代码简化', value: 'lombok', version: '1.18.24'},
-    {label: '通用工具', value: 'hutool', version: '5.8.25'},
-    {label: '数据库驱动', value: 'mysql-connector-j', version: '8.2.0'},
-    {label: '持久层框架', value: 'mybatis-flex-spring-boot3-starter', version: '1.10.2'},
-    {label: '控制层框架', value: 'spring-boot-starter-web', version: '3.1.5'},
-    {label: '切面编程', value: 'spring-boot-starter-aop', version: '3.1.5'},
-    {label: '搜索引擎', value: 'spring-boot-starter-data-elasticsearch', version: '3.1.5'},
-    {label: '缓存容器', value: 'spring-boot-starter-data-redis', version: '3.1.5'},
-    {label: '缓存工具', value: 'spring-boot-starter-cache', version: '3.1.5'},
-    {label: '登录校验', value: 'jjwt', version: '0.9.1'},
-    {label: '参数校验', value: 'hibernate-validator', version: '8.0.1.Final'},
-    {label: '报表打印', value: 'easyexcel', version: '3.3.4 '},
-    {label: '对象存储', value: 'minio', version: '3.0.10'},
-    {label: '文档工具', value: 'knife4j-openapi3-jakarta-spring-boot-starter', version: '4.4.0'},
-    {label: '注册中心', value: 'spring-cloud-starter-alibaba-nacos-discovery', version: '2022.0.0.0'},
-    {label: '配置中心', value: 'spring-cloud-starter-alibaba-nacos-config', version: '2022.0.0.0 '},
-    {label: '服务容错', value: 'spring-cloud-starter-alibaba-sentinel', version: '2022.0.0.0'},
-    {label: '分布式事务', value: 'spring-cloud-starter-alibaba-seata', version: '2022.0.0.0'},
-    {label: '分布式调度', value: 'xxl-job', version: '2.4.2'},
-    {label: '远程调用', value: 'spring-cloud-starter-openfeign', version: '4.0.4'},
-    {label: '链路追踪', value: 'micrometer-tracing', version: '1.11.5'},
-    {label: '消息队列', value: 'rocketmq-spring-boot-starter', version: '2.2.2'},
-    {label: '页面布局', value: 'HTML', version: '5'},
-    {label: '页面美化', value: 'CSS', version: '3'},
-    {label: '脚本功能', value: 'ECMAScript', version: ''},
-    {label: '前端服务器', value: 'node', version: '22.12+'},
-    {label: 'Vue脚手架', value: 'vite', version: '8.0.16'},
-    {label: 'Vue路由', value: 'vue-router', version: '4.0.3'},
-    {label: 'Vue样式预处理器', value: 'sass-embedded', version: '1.77.8'},
-    {label: 'Vue状态管理', value: 'vuex', version: '4.0.0'},
-    {label: 'AJAX产品', value: 'axios', version: '1.17.0'},
-    {label: 'WEB框架', value: 'element-plus', version: '2.14.2'},
-    {label: 'WEB框架图标库', value: 'icons-vue', version: '2.3.1'},
-    {label: 'WEB框架暗黑库', value: '@vueuse/core', version: '10.7.2'},
-    {label: '视频播放器', value: 'xgplayer', version: '3.0.11'},
-    {label: '图表库', value: 'ApacheEcharts', version: '5.4.3'},
-    {label: 'Web 前端', value: 'Vue3 + Element Plus', version: 'Vite'}
+    {label: 'Java', value: 'JDK', version: '17'},
+    {label: '业务服务框架', value: 'Spring Boot', version: '3.2.5'},
+    {label: 'AI 服务框架', value: 'Spring Boot', version: '3.5.10'},
+    {label: '微服务', value: 'Spring Cloud Alibaba', version: '2023.0.1.0 / 2025.0.0.0'},
+    {label: 'AI 应用', value: 'Spring AI Alibaba', version: '1.1.2.2'},
+    {label: 'Agent', value: 'ReactAgent + Graph', version: '1.1.2.2'},
+    {label: '关系数据库', value: 'MySQL', version: '8.x'},
+    {label: '向量数据库', value: 'PostgreSQL + pgvector', version: '15+'},
+    {label: '持久层', value: 'MyBatis-Flex', version: '1.10.2'},
+    {label: '缓存与锁', value: 'Redis + Redisson', version: '6+'},
+    {label: '搜索', value: 'Elasticsearch', version: '8.x'},
+    {label: '消息队列', value: 'RocketMQ', version: '4.x'},
+    {label: '注册与配置', value: 'Nacos', version: '2.x'},
+    {label: '对象存储', value: 'MinIO', version: 'S3 API'},
+    {label: '接口调用', value: 'OpenFeign', version: 'Spring Cloud'},
+    {label: '工作流状态', value: 'Redis Checkpoint', version: 'Graph Saver'},
+    {label: '工具协议', value: 'MCP Client', version: 'Spring AI 1.1.2'},
+    {label: '测试', value: 'JUnit Jupiter + Mockito', version: 'Spring Boot Test'},
+    {label: '前端框架', value: 'Vue', version: '3.5'},
+    {label: '前端构建', value: 'Vite', version: '6.4'},
+    {label: 'UI 框架', value: 'Element Plus', version: '2.14'},
+    {label: '网络请求', value: 'Axios', version: '1.18'},
+    {label: '图表', value: 'ECharts', version: '6.1'},
+    {label: '视频播放', value: 'xgplayer', version: '3.0'}
 ];
 
 /* ==================== 下拉菜单预设选项 ==================== */

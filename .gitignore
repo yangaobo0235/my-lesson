@@ -37,9 +37,8 @@ application-*-local.yaml
 bootstrap-*-local.yml
 bootstrap-*-local.yaml
 
-### Test sources and test output ###
-**/src/test/
-**/src/test/**
+### Test output ###
+**/src/test/**/*.zip
 **/test-results/
 **/surefire-reports/
 **/failsafe-reports/

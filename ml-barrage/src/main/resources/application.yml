@@ -4,4 +4,4 @@ spring:
   application:
     name: ml-socket # 服务名
   elasticsearch:
-    uris: ${ELASTICSEARCH_URIS:http://192.168.23.66:9200} # 指定ES服务器，集群用数组
+    uris: ${ELASTICSEARCH_URIS:http://127.0.0.1:9200} # 指定ES服务器，集群用数组

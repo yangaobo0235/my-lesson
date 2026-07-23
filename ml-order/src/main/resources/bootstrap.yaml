@@ -5,7 +5,7 @@ spring:
     nacos:
       config:
         file-extension: yaml # NacosConfig配置文件后缀
-        server-addr: ${NACOS_SERVER_ADDR:192.168.23.66:8848}
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
         group: ml-group # NacosConfig配置文件分组
         shared-configs:
           - group: ml-group # NacosConfig配置文件分组

@@ -15,14 +15,19 @@ spring:
     nacos:
       config:
         file-extension: yaml # NacosConfig 配置文件后缀
-        server-addr: ${NACOS_SERVER_ADDR:192.168.23.66:8848}
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
         group: ml-group # NacosConfig 配置文件分组
         encode: UTF-8
       discovery:
-        server-addr: ${NACOS_SERVER_ADDR:192.168.23.66:8848}
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
         group: DEFAULT_GROUP # 与现有网关和业务服务的注册分组保持一致
 
   ai:
+    dashscope:
+      chat:
+        options:
+          model: ${AI_CHAT_MODEL:qwen3-max}
+          temperature: 0.2
     mcp:
       client:
         enabled: ${MCP_CLIENT_ENABLED:false}

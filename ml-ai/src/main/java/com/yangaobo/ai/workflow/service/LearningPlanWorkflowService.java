@@ -17,6 +17,7 @@ import com.yangaobo.ai.workflow.model.LearningPlanDraft;
 import com.yangaobo.ai.workflow.model.LearningPlanDraftRecord;
 import com.yangaobo.ai.workflow.model.LearningPlanState;
 import com.yangaobo.ai.workflow.repository.LearningPlanDraftRepository;
+import com.alibaba.cloud.ai.graph.CompileConfig;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.KeyStrategy;
 import com.alibaba.cloud.ai.graph.OverAllState;
@@ -24,6 +25,8 @@ import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeActionWithConfig;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
+import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
+import com.alibaba.cloud.ai.graph.checkpoint.config.SaverConfig;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,6 +67,7 @@ public class LearningPlanWorkflowService {
     private final LearningPlanValidator validator;
     private final LearningPlanDraftRepository draftRepository;
     private final LearningPlanRepository planRepository;
+    private final BaseCheckpointSaver checkpointSaver;
     private final CompiledGraph graph;
 
     public LearningPlanWorkflowService(
@@ -71,12 +75,14 @@ public class LearningPlanWorkflowService {
             LearningPlanDraftGenerator generator,
             LearningPlanValidator validator,
             LearningPlanDraftRepository draftRepository,
-            LearningPlanRepository planRepository) {
+            LearningPlanRepository planRepository,
+            BaseCheckpointSaver checkpointSaver) {
         this.businessGateway = businessGateway;
         this.generator = generator;
         this.validator = validator;
         this.draftRepository = draftRepository;
         this.planRepository = planRepository;
+        this.checkpointSaver = checkpointSaver;
         try {
             this.graph = buildGraph();
         } catch (Exception exception) {
@@ -191,7 +197,12 @@ public class LearningPlanWorkflowService {
                 .addEdge("validate_draft", "persist_draft")
                 .addEdge("persist_draft", "request_approval")
                 .addEdge("request_approval", StateGraph.END);
-        return graph.compile();
+        SaverConfig saverConfig = SaverConfig.builder()
+                .register(checkpointSaver)
+                .build();
+        return graph.compile(CompileConfig.builder()
+                .saverConfig(saverConfig)
+                .build());
     }
 
     private AsyncNodeActionWithConfig node(
@@ -617,6 +628,9 @@ public class LearningPlanWorkflowService {
 
     private List<String> searchKeywords(String goal) {
         List<String> keywords = new ArrayList<>();
+        if (goal != null && !goal.isBlank()) {
+            keywords.add(goal.trim());
+        }
         if (containsAny(goal, "表达", "沟通", "公开分享", "汇报")) {
             keywords.add("表达");
         }

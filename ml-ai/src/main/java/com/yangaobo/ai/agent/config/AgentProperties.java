@@ -10,6 +10,7 @@ import java.time.Duration;
 public class AgentProperties {
 
     private double intentConfidenceThreshold = 0.65;
+    private String routerModel = "qwen-flash";
     private int maxModelCalls = 6;
     private int modelRetryCount = 1;
     private Duration intentTimeout = Duration.ofSeconds(10);
@@ -22,6 +23,14 @@ public class AgentProperties {
     public void setIntentConfidenceThreshold(
             double intentConfidenceThreshold) {
         this.intentConfidenceThreshold = intentConfidenceThreshold;
+    }
+
+    public String getRouterModel() {
+        return routerModel;
+    }
+
+    public void setRouterModel(String routerModel) {
+        this.routerModel = routerModel;
     }
 
     public int getMaxModelCalls() {
