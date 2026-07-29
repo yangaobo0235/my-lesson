@@ -57,6 +57,10 @@ public class IntentClassifier {
     public IntentDecision classify(
             String message,
             String conversationContext) {
+        IntentDecision guardedDecision = classifyGuardedOperation(message);
+        if (guardedDecision != null) {
+            return guardedDecision;
+        }
         int attempts = Math.max(
                 1,
                 properties.getModelRetryCount() + 1);
@@ -89,6 +93,49 @@ public class IntentClassifier {
             }
         }
         return classifyByRule(message);
+    }
+
+    public IntentDecision classifyStrict(
+            String message,
+            String conversationContext) {
+        IntentDecision guardedDecision = classifyGuardedOperation(message);
+        if (guardedDecision != null) {
+            return guardedDecision;
+        }
+        int attempts = Math.max(
+                1,
+                properties.getModelRetryCount() + 1);
+        Throwable lastFailure = null;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            Future<IntentDecision> future =
+                    taskExecutor.submit(() -> classifyWithModel(
+                            message,
+                            conversationContext));
+            try {
+                IntentDecision decision = future.get(
+                        properties.getIntentTimeout().toMillis(),
+                        TimeUnit.MILLISECONDS);
+                if (decision != null) {
+                    return decision.normalized();
+                }
+                lastFailure = new IllegalStateException(
+                        "Intent model returned no decision");
+            } catch (TimeoutException exception) {
+                future.cancel(true);
+                lastFailure = exception;
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                future.cancel(true);
+                throw new IllegalStateException(
+                        "External intent classification was interrupted",
+                        exception);
+            } catch (ExecutionException | RuntimeException exception) {
+                lastFailure = exception;
+            }
+        }
+        throw new IllegalStateException(
+                "External intent model is unavailable",
+                lastFailure);
     }
 
     private IntentDecision classifyWithModel(
@@ -158,6 +205,27 @@ public class IntentClassifier {
                 UserIntent.OUT_OF_SCOPE,
                 0.4,
                 "模型分类不可用且规则无法确认意图");
+    }
+
+    private IntentDecision classifyGuardedOperation(String message) {
+        String text = message == null
+                ? ""
+                : message.toLowerCase(Locale.ROOT);
+        if (containsAny(
+                text,
+                "重建索引",
+                "重建知识",
+                "刷新索引",
+                "rebuild")) {
+            return decision(
+                    UserIntent.ADMIN_OPERATION,
+                    "明确的高风险管理命令，强制进入审批路由");
+        }
+        return null;
+    }
+
+    public IntentDecision classifyDeterministically(String message) {
+        return classifyByRule(message);
     }
 
     private String buildPrompt(

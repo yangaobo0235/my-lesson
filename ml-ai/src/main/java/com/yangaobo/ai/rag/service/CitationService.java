@@ -34,7 +34,9 @@ public class CitationService {
                     hit.sourceId(),
                     hit.title(),
                     hit.sourceUrl(),
-                    excerpt(hit.snippet())));
+                    excerpt(hit.snippet()),
+                    hit.version(),
+                    hit.visibilityStatus()));
         }
         return List.copyOf(citations);
     }
@@ -46,8 +48,9 @@ public class CitationService {
             return new ValidatedAnswer("", List.of());
         }
         Set<Integer> validIndexes = new LinkedHashSet<>();
-        availableCitations.forEach(
-                citation -> validIndexes.add(citation.index()));
+        availableCitations.stream()
+                .filter(this::visible)
+                .forEach(citation -> validIndexes.add(citation.index()));
         Set<Integer> referenced = new LinkedHashSet<>();
 
         Matcher matcher = REFERENCE_PATTERN.matcher(answer);
@@ -67,9 +70,43 @@ public class CitationService {
         List<Citation> citations = availableCitations.stream()
                 .filter(citation -> referenced.contains(citation.index()))
                 .toList();
+        String sanitizedAnswer = sanitized.toString()
+                .replaceAll("[ \\t]{2,}", " ").trim();
         return new ValidatedAnswer(
-                sanitized.toString().replaceAll("[ \\t]{2,}", " ").trim(),
-                citations);
+                sanitizedAnswer,
+                citations,
+                factMappings(sanitizedAnswer, referenced));
+    }
+
+    private boolean visible(Citation citation) {
+        return citation.sourceId() != null
+                && !citation.sourceId().isBlank()
+                && citation.version() > 0
+                && Set.of("ACTIVE", "PUBLISHED")
+                        .contains(citation.visibilityStatus());
+    }
+
+    private List<FactCitation> factMappings(
+            String answer,
+            Set<Integer> referenced) {
+        if (answer.isBlank() || referenced.isEmpty()) {
+            return List.of();
+        }
+        List<FactCitation> mappings = new ArrayList<>();
+        for (String sentence : answer.split("(?<=[。！？!?])")) {
+            Matcher matcher = REFERENCE_PATTERN.matcher(sentence);
+            List<Integer> indexes = new ArrayList<>();
+            while (matcher.find()) {
+                int index = Integer.parseInt(matcher.group(1));
+                if (referenced.contains(index)) {
+                    indexes.add(index);
+                }
+            }
+            if (!indexes.isEmpty()) {
+                mappings.add(new FactCitation(sentence.trim(), indexes));
+            }
+        }
+        return List.copyOf(mappings);
     }
 
     private String excerpt(String content) {
@@ -85,7 +122,21 @@ public class CitationService {
 
     public record ValidatedAnswer(
             String answer,
-            List<Citation> citations
+            List<Citation> citations,
+            List<FactCitation> factCitations
     ) {
+
+        public ValidatedAnswer(String answer, List<Citation> citations) {
+            this(answer, citations, List.of());
+        }
+    }
+
+    public record FactCitation(
+            String fact,
+            List<Integer> citationIndexes
+    ) {
+        public FactCitation {
+            citationIndexes = List.copyOf(citationIndexes);
+        }
     }
 }

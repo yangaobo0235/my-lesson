@@ -5,6 +5,7 @@ import com.yangaobo.ai.client.UserAiClient;
 import com.yangaobo.ai.workflow.model.LearningPlanDraft;
 import com.yangaobo.ai.workflow.model.LearningPlanDraft.DraftCourse;
 import com.yangaobo.ai.workflow.model.LearningPlanDraft.DraftRoutine;
+import com.yangaobo.ai.workflow.model.LearningPlanReview;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -21,7 +22,7 @@ public class LearningPlanDraftGenerator {
             LoggerFactory.getLogger(LearningPlanDraftGenerator.class);
 
     private static final String SYSTEM_PROMPT = """
-            你是 MyLesson 学习计划建议生成器。
+            你是 MyLesson 的 PlanDesignerAgent。
             只能从输入的候选课程中选择课程，不得创造或修改课程 ID。
             输出建议计划即可，最终课程真实性、时长、重复项和天数由 Java 校验。
             每日安排的分钟数总和不得超过用户提供的 minutesPerDay。
@@ -43,25 +44,51 @@ public class LearningPlanDraftGenerator {
             UserAiClient.UserProfile profile,
             List<CourseAiClient.CourseSummary> candidates) {
         try {
-            String content = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(buildPrompt(
-                            goal,
-                            minutesPerDay,
-                            profile,
-                            candidates))
-                    .call()
-                    .content();
-            LearningPlanDraft result = converter.convert(content);
-            if (result != null) {
-                return result;
-            }
+            return call(buildPrompt(
+                    goal, minutesPerDay, profile, candidates));
         } catch (RuntimeException exception) {
             log.warn(
                     "Learning plan model generation failed, using deterministic fallback: {}",
                     exception.getClass().getSimpleName());
         }
-        return fallback(goal, minutesPerDay, candidates);
+        return deterministicFallback(goal, minutesPerDay, candidates);
+    }
+
+    public LearningPlanDraft repair(
+            String goal,
+            int minutesPerDay,
+            UserAiClient.UserProfile profile,
+            List<CourseAiClient.CourseSummary> candidates,
+            LearningPlanDraft currentDraft,
+            List<String> validationErrors,
+            LearningPlanReview review) {
+        StringBuilder repair = new StringBuilder(buildPrompt(
+                goal, minutesPerDay, profile, candidates))
+                .append("\n当前草案：").append(currentDraft)
+                .append("\nJava 硬规则错误：")
+                .append(validationErrors == null ? List.of() : validationErrors)
+                .append("\nReviewer 结果：").append(review)
+                .append("\n仅修复明确问题，课程 ID、用户目标和每日时间预算不可改变。");
+        try {
+            return call(repair.toString());
+        } catch (RuntimeException exception) {
+            log.warn("Learning plan repair failed, using deterministic fallback: {}",
+                    exception.getClass().getSimpleName());
+            return deterministicFallback(goal, minutesPerDay, candidates);
+        }
+    }
+
+    private LearningPlanDraft call(String prompt) {
+        String content = chatClient.prompt()
+                .system(SYSTEM_PROMPT)
+                .user(prompt)
+                .call()
+                .content();
+        LearningPlanDraft result = converter.convert(content);
+        if (result == null) {
+            throw new IllegalStateException("PlanDesignerAgent returned no draft");
+        }
+        return result;
     }
 
     private String buildPrompt(
@@ -92,7 +119,7 @@ public class LearningPlanDraftGenerator {
                 .toString();
     }
 
-    private LearningPlanDraft fallback(
+    public LearningPlanDraft deterministicFallback(
             String goal,
             int minutesPerDay,
             List<CourseAiClient.CourseSummary> candidates) {

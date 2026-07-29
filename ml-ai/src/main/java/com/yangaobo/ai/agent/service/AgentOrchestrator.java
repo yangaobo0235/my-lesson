@@ -38,8 +38,8 @@ public class AgentOrchestrator {
         result.put(
                 UserIntent.KNOWLEDGE_QA,
                 new AgentProfile(
-                        "knowledge_qa_agent",
-                        "知识问答 Agent",
+                        "KNOWLEDGE_QA",
+                        "知识问答",
                         "负责课程知识解释、RAG 引用和学习资料问答",
                         """
                         你是知识问答 Agent。优先解释课程知识点、学习方法和平台资料。
@@ -49,8 +49,8 @@ public class AgentOrchestrator {
         result.put(
                 UserIntent.COURSE_SEARCH,
                 new AgentProfile(
-                        "course_recommendation_agent",
-                        "课程推荐 Agent",
+                        "COURSE_RECOMMENDATION",
+                        "课程推荐",
                         "负责课程搜索、课程详情分析和选课建议",
                         """
                         你是课程推荐 Agent。围绕用户目标搜索课程、比较课程适配度，
@@ -60,8 +60,8 @@ public class AgentOrchestrator {
         result.put(
                 UserIntent.PERSONAL_QUERY,
                 new AgentProfile(
-                        "personal_query_agent",
-                        "个人查询 Agent",
+                        "PERSONAL_QUERY",
+                        "个人查询",
                         "负责当前用户资料、订单、购物车和已有学习计划查询",
                         """
                         你是个人查询 Agent。只查询当前登录用户自己的资料、订单、购物车和学习计划。
@@ -71,8 +71,8 @@ public class AgentOrchestrator {
         result.put(
                 UserIntent.CART_ACTION,
                 new AgentProfile(
-                        "cart_action_agent",
-                        "购物车操作 Agent",
+                        "COURSE_RECOMMENDATION",
+                        "课程推荐",
                         "负责加入或移除购物车，并确保写操作进入确认流程",
                         """
                         你是购物车操作 Agent。执行加入或移除购物车前，必须确认目标课程。
@@ -82,8 +82,8 @@ public class AgentOrchestrator {
         result.put(
                 UserIntent.LEARNING_PLAN,
                 new AgentProfile(
-                        "learning_plan_agent",
-                        "学习计划 Agent",
+                        "LEARNING_PLAN",
+                        "学习计划",
                         "负责学习目标拆解、计划草案、计划查询和进度建议",
                         """
                         你是学习计划 Agent。先理解目标、每日可用时间和课程候选，
@@ -93,8 +93,8 @@ public class AgentOrchestrator {
         result.put(
                 UserIntent.ADMIN_OPERATION,
                 new AgentProfile(
-                        "admin_operation_agent",
-                        "运营管理 Agent",
+                        "PERSONAL_QUERY",
+                        "个人查询",
                         "负责知识库重建等管理员操作",
                         """
                         你是运营管理 Agent。只处理管理员允许的知识库和评测运维操作。
@@ -103,8 +103,8 @@ public class AgentOrchestrator {
         result.put(
                 UserIntent.OUT_OF_SCOPE,
                 new AgentProfile(
-                        "safety_agent",
-                        "安全路由 Agent",
+                        "KNOWLEDGE_QA",
+                        "知识问答",
                         "负责拒绝 MyLesson 范围外请求",
                         """
                         你是安全路由 Agent。只处理 MyLesson 学习、课程、订单、购物车和学习计划相关问题。

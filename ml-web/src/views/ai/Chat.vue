@@ -18,6 +18,11 @@ const liveAnswer = ref('');
 const liveCitations = ref([]);
 const liveApproval = ref(null);
 const traceId = ref('');
+const runId = ref('');
+const currentProfile = ref(null);
+const toolStates = ref([]);
+const evidenceNotice = ref('');
+const retrievalTraces = ref([]);
 const lastMessage = ref('');
 const recommendationGoal = ref('');
 const recommendation = ref(null);
@@ -71,6 +76,36 @@ function connectStream() {
 function handleEvent(type, event) {
   const data = event.data || {};
   traceId.value = event.traceId || traceId.value;
+  runId.value = event.runId || runId.value;
+  if (type === 'agent_selected') {
+    currentProfile.value = {
+      name: data.profileName || data.agentName,
+      version: data.profileVersion,
+      displayName: data.displayName,
+      conservative: data.conservative
+    };
+  }
+  if (type === 'tool_started') {
+    toolStates.value.push({
+      key: `${data.toolName}-${event.timestamp}`,
+      name: data.toolName,
+      source: data.toolSource || 'LOCAL',
+      status: 'STARTED'
+    });
+  }
+  if (type === 'tool_completed') {
+    const pending = [...toolStates.value].reverse().find(
+        item => item.name === data.toolName && item.status === 'STARTED');
+    if (pending) pending.status = data.success === false ? 'FAILED' : (data.status || 'SUCCEEDED');
+  }
+  if (type === 'retrieval_completed') {
+    evidenceNotice.value = Number(data.hitCount || 0) === 0 ? '资料不足，回答将拒答或仅使用已验证业务数据' : '';
+  }
+  if (type === 'workflow_waiting_approval' && data.terminationReason) {
+    evidenceNotice.value = data.terminationReason === 'INSUFFICIENT_DATA'
+        ? '候选课程资料不足，草案未进入确认'
+        : `计划生成已降级：${data.terminationReason}`;
+  }
   if (type === 'answer_delta') {
     liveAnswer.value += data.delta || '';
     scrollBottom();
@@ -84,12 +119,34 @@ function handleEvent(type, event) {
   timeline.value.push({type, label: eventLabel(type, data), timestamp: event.timestamp});
   if (type === 'run_completed') {
     sending.value = false;
+    loadRunDetails();
     loadMessages().finally(() => {
       liveAnswer.value = '';
       liveCitations.value = [];
     });
   }
   if (type === 'run_failed') sending.value = false;
+}
+
+async function loadRunDetails() {
+  if (!runId.value) return;
+  try {
+    const [savedTimeline, traces] = await Promise.all([
+      aiApi.runTimeline(runId.value),
+      aiApi.retrievalTrace(runId.value)
+    ]);
+    retrievalTraces.value = traces;
+    if (savedTimeline.profileName) {
+      currentProfile.value = {
+        name: savedTimeline.profileName,
+        version: savedTimeline.profileVersion,
+        displayName: savedTimeline.profileName,
+        conservative: savedTimeline.conservativeMode
+      };
+    }
+  } catch {
+    // Live SSE information remains available when persistence is delayed.
+  }
 }
 
 async function loadConversations() {
@@ -130,6 +187,11 @@ async function send(message = input.value) {
   liveCitations.value = [];
   liveApproval.value = null;
   timeline.value = [];
+  toolStates.value = [];
+  evidenceNotice.value = '';
+  retrievalTraces.value = [];
+  currentProfile.value = null;
+  runId.value = '';
   lastMessage.value = content;
   input.value = '';
   sending.value = true;
@@ -137,6 +199,7 @@ async function send(message = input.value) {
   try {
     const result = await aiApi.sendMessage(conversationId.value, content, crypto.randomUUID());
     traceId.value = result.traceId || '';
+    runId.value = result.runId || '';
   } catch (error) {
     sending.value = false;
     ElMessage.error(error.response?.data?.message || '消息提交失败');
@@ -214,8 +277,16 @@ onBeforeUnmount(closeStream);
       <el-card class="message-card">
         <template #header><div class="panel-title">
           <strong>{{ currentConversation?.title || '请选择会话' }}</strong>
-          <el-tag :type="streamState === '已连接' ? 'success' : 'info'">{{ streamState }}</el-tag>
+          <div class="header-tags">
+            <el-tag v-if="currentProfile" type="primary">
+              {{ currentProfile.displayName || currentProfile.name }} · {{ currentProfile.version || 'v1' }}
+            </el-tag>
+            <el-tag v-if="currentProfile?.conservative" type="warning">保守路由</el-tag>
+            <el-tag :type="streamState === '已连接' ? 'success' : 'info'">{{ streamState }}</el-tag>
+          </div>
         </div></template>
+        <el-alert v-if="evidenceNotice" :title="evidenceNotice" type="warning"
+                  show-icon :closable="false" class="run-notice"/>
         <div ref="messagePanel" class="message-panel">
           <div v-for="message in messages" :key="message.id" class="message" :class="message.role.toLowerCase()">
             <div class="message-role">{{ message.role === 'USER' ? '你' : 'MyLesson AI' }}</div>
@@ -290,8 +361,27 @@ onBeforeUnmount(closeStream);
           </el-timeline-item>
         </el-timeline>
         <el-empty v-if="!timeline.length" description="发送消息后显示执行过程"/>
+        <el-divider v-if="toolStates.length"/>
+        <div v-if="toolStates.length" class="tool-status-list">
+          <div v-for="tool in toolStates" :key="tool.key" class="tool-status">
+            <span>{{ tool.name }} <small>{{ tool.source }}</small></span>
+            <el-tag size="small" :type="tool.status === 'SUCCEEDED' ? 'success' : tool.status === 'FAILED' ? 'danger' : 'warning'">
+              {{ tool.status }}
+            </el-tag>
+          </div>
+        </div>
+        <el-divider v-if="retrievalTraces.length"/>
+        <div v-for="trace in retrievalTraces" :key="trace.id" class="retrieval-summary">
+          <strong>RAG</strong>
+          <span>向量 {{ trace.vectorCandidateCount }} · 关键词 {{ trace.keywordCandidateCount }} · 融合 {{ trace.fusedCandidateCount }}</span>
+          <el-tag v-if="trace.rerankFallback" size="small" type="warning">Rerank 降级</el-tag>
+          <el-tag v-if="trace.noAnswerReason" size="small" type="danger">{{ trace.noAnswerReason }}</el-tag>
+        </div>
         <el-divider/>
-        <div class="trace"><strong>traceId</strong><code>{{ traceId || '-' }}</code></div>
+        <div class="trace">
+          <strong>runId</strong><code>{{ runId || '-' }}</code>
+          <strong>traceId</strong><code>{{ traceId || '-' }}</code>
+        </div>
       </el-card>
       </div>
     </div>
@@ -302,6 +392,8 @@ onBeforeUnmount(closeStream);
 .chat-layout { display:grid; grid-template-columns:220px minmax(420px,1fr) 280px; gap:16px; }
 .side-column { display:grid; gap:16px; align-content:start; }
 .panel-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.header-tags { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.run-notice { margin-bottom:10px; }
 .conversation-item { width:100%; padding:12px; margin-bottom:8px; text-align:left; border:0; border-radius:8px; background:var(--el-fill-color-light); cursor:pointer; }
 .conversation-item.active { color:var(--el-color-primary); background:var(--el-color-primary-light-9); }
 .conversation-item strong,.conversation-item small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -325,5 +417,9 @@ onBeforeUnmount(closeStream);
 .course-card small { display:block; margin-top:4px; color:var(--el-text-color-secondary); }
 .course-card p { margin:8px 0; line-height:1.6; }
 .trace { display:grid; gap:8px; } .trace code { overflow-wrap:anywhere; }
+.tool-status-list { display:grid; gap:8px; }
+.tool-status { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.tool-status small { color:var(--el-text-color-secondary); }
+.retrieval-summary { display:grid; gap:6px; color:var(--el-text-color-secondary); font-size:12px; }
 @media (max-width:1250px) { .chat-layout { grid-template-columns:200px 1fr; } .side-column { grid-column:1 / -1; } }
 </style>

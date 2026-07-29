@@ -7,6 +7,7 @@ import com.yangaobo.ai.knowledge.repository.KnowledgeSourceRepository;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,14 +24,22 @@ public class KnowledgeSourceIndexer {
     private final VectorStore vectorStore;
     private final KnowledgeSourceRepository sourceRepository;
     private final DeterministicKnowledgeChunker chunker;
+    private final String embeddingModel;
+    private final String embeddingVersion;
 
     public KnowledgeSourceIndexer(
             VectorStore vectorStore,
             KnowledgeSourceRepository sourceRepository,
-            DeterministicKnowledgeChunker chunker) {
+            DeterministicKnowledgeChunker chunker,
+            @Value("${spring.ai.dashscope.embedding.options.model:text-embedding-v4}")
+            String embeddingModel,
+            @Value("${mylesson.ai.knowledge.embedding-version:v1}")
+            String embeddingVersion) {
         this.vectorStore = vectorStore;
         this.sourceRepository = sourceRepository;
         this.chunker = chunker;
+        this.embeddingModel = embeddingModel;
+        this.embeddingVersion = embeddingVersion;
     }
 
     @Transactional
@@ -49,7 +58,9 @@ public class KnowledgeSourceIndexer {
         if (unchanged
                 && sourceRepository.countChunks(
                         source.sourceType(),
-                        source.sourceId()) == chunks.size()) {
+                        source.sourceId(),
+                        embeddingModel,
+                        embeddingVersion) == chunks.size()) {
             return new IndexOutcome(false, chunks.size());
         }
 
@@ -99,8 +110,11 @@ public class KnowledgeSourceIndexer {
             metadata.put("title", source.title());
             metadata.put("source_url", source.sourceUrl());
             metadata.put("version", source.version());
+            metadata.put("visibility_status", "ACTIVE");
             metadata.put("chunk_index", chunk.index());
             metadata.put("content_hash", source.contentHash());
+            metadata.put("embedding_model", embeddingModel);
+            metadata.put("embedding_version", embeddingVersion);
 
             String idSeed = source.sourceType()
                     + ":"

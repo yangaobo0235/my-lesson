@@ -9,16 +9,16 @@
 
 MyLesson 是一个在线教育微服务项目，覆盖课程内容、用户权限、营销活动、购物车、订单支付、弹幕互动、后台管理和 AI 学习助手等业务场景。
 
-项目主体采用 Spring Cloud Alibaba 微服务架构，由网关统一入口，业务服务按用户、课程、营销、订单、弹幕和 AI 能力拆分；前端使用 Vue 3 + Element Plus 构建统一管理端和学习端。`ml-ai` 作为独立 AI 服务接入课程、用户、订单和营销数据，围绕 Agent、Graph、RAG、MCP 和审批流提供智能学习助手能力。
+项目主体采用 Spring Cloud Alibaba 微服务架构，由网关统一入口，业务服务按用户、课程、营销、订单、弹幕和 AI 能力拆分；前端使用 Vue 3 + Element Plus 构建统一管理端和学习端。`ml-ai` 作为独立 AI 服务接入课程、用户、订单和营销数据，围绕 Profile 路由的 ReActAgent、有限修正 Graph、混合 RAG 和受控 Tool Calling 提供智能学习助手能力。
 
 ## 核心能力
 
 - 在线教育业务闭环：课程、学习、营销、购物车、订单、支付和弹幕互动。
 - 微服务统一治理：网关入口、Nacos 配置注册、OpenFeign 服务调用和内部身份透传。
 - AI 学习助手：流式对话、课程问答、课程推荐、学习计划、知识库同步和管理端评测。
-- Agent 编排：按意图选择专业 Agent，并为不同场景分配只读工具、受控写工具或安全路由。
-- Graph 工作流：学习计划按节点执行，输出可追踪、可审计的 Workflow 时间线。
-- 工具治理：本地业务工具和 MCP 外部工具统一注册、调用、超时控制和审计。
+- Agent 路由：按意图选择知识问答、课程推荐、个人查询或学习计划 Profile，并分配最小 Tool 白名单。
+- Graph 工作流：学习计划由 Designer/Reviewer 双角色协作，经真实条件边、一次检索改写和最多两次修正稳定退出。
+- 工具治理：本地业务 Tool 区分只读与受控写，分别限制调用次数、超时和重试；MCP 仅作为默认关闭的可选扩展。
 - 审批保护：涉及业务状态变更的 AI 操作先生成确认任务，用户确认后再执行。
 
 ## 功能概览
@@ -41,23 +41,25 @@ MyLesson 是一个在线教育微服务项目，覆盖课程内容、用户权�
 
 - 公告、文章、Banner、优惠券和秒杀活动管理
 - 购物车、订单、订单明细、支付宝沙箱支付和支付回调
-- Redis 预热及扣减秒杀库存，Redisson 控制并发，RocketMQ 异步投递下单请求
+- Redis Lua 原子校验资格并扣减秒杀库存，Redisson 控制入口热点并发，RocketMQ 同步确认投递异步下单请求
+- 稳定 `requestId`、消费幂等表和发送失败幂等返还，防止重复请求创建多笔订单或永久丢失库存
 - 文章和公告变更后通过 Outbox + RocketMQ 增量同步到 AI 知识库
 - 订单、课程、用户等数据通过内部接口供 AI 服务只读查询
 
 ### AI 学习助手
 
-- 流式 AI 会话、历史消息、会话摘要记忆和运行时间线
+- 流式 AI 会话、有限历史窗口、权威业务状态和持久化运行时间线
 - 双模型 Agent：`qwen3-max` 负责主对话与工具调用，`qwen-flash` 负责低时延意图路由
-- Spring AI Alibaba Graph 学习计划工作流
+- Spring AI Alibaba Graph 条件工作流与 Designer/Reviewer 有界协作
 - ReActAgent 与学习计划 Graph 共用 Redis Checkpoint，支持执行状态跨进程保留
-- 多 Agent 编排和保守路由，低置信度或高风险请求自动收敛到只读能力
-- MCP 外部工具接入，支持启停、白名单、黑名单、超时和审计
+- Profile 驱动的单一 ReAct 执行入口，低置信度请求自动收敛到只读知识问答能力
+- 可选 MCP 外部工具接入，默认关闭，支持启停、白名单、黑名单、超时和审计
 - PostgreSQL/pgvector 向量召回与 Elasticsearch 课程关键词召回，经 RRF 融合、DashScope rerank 和引用校验后生成答案
 - 工具审计记录来源、读写类型、耗时、请求/响应 Hash、错误码及 MCP 服务信息
-- 学习计划草案、用户确认、正式计划、进度更新和调整建议
+- 版本化学习计划草案、Reviewer 问题、V1/V2 用户调整、CAS 确认、正式计划和进度更新
 - 写操作进入审批流程，用户确认后再执行实际业务调用
-- 知识库支持全量重建，以及带 eventId 幂等、版本控制、失败重试和定时对账的增量同步
+- 知识库支持全量重建，以及带 eventId 幂等、版本控制、失败重试、指标观测和定时对账的增量同步
+- 60 条评测数据支持 deterministic CI 基线和 external 手动执行，输出 JSON/Markdown 失败明细
 
 ## 系统架构
 
@@ -105,7 +107,7 @@ flowchart LR
 | `ml-sale` | 24104 | 公告、文章、Banner、优惠券、秒杀及知识事件生产 |
 | `ml-order` | 24105 | 购物车、订单、订单明细、支付宝沙箱支付和回调 |
 | `ml-barrage` | 24106 | WebSocket 弹幕和 Elasticsearch 弹幕存储 |
-| `ml-ai` | 24107 | AI 会话、RAG、Agent、Graph、MCP、工具调用、学习计划和评测 |
+| `ml-ai` | 24107 | AI 会话、混合 RAG、Profile 路由 Agent、条件 Graph、本地 Tool、学习计划和评测；MCP 为可选扩展 |
 | `ml-common` | - | 通用模型、异常、工具类、鉴权上下文和服务间契约 |
 | `ml-generator` | - | MyBatis-Flex 代码生成工具 |
 | `ml-web` | 24108 | Vue 3 + Element Plus Web 前端 |
@@ -116,7 +118,7 @@ flowchart LR
 | --- | --- |
 | 后端基础 | Java 17、Maven、Spring Boot、Spring Cloud |
 | 微服务 | Spring Cloud Alibaba、Nacos、OpenFeign、Sentinel |
-| AI 应用 | Spring AI 1.1.2、Spring AI Alibaba 1.1.2.2、DashScope、ReactAgent（ReAct）、Graph、MCP Client |
+| AI 应用 | Spring AI 1.1.2、Spring AI Alibaba 1.1.2.2、DashScope、ReactAgent（ReAct）、Graph；可选 MCP Client |
 | 数据访问 | MyBatis-Flex、Flyway、MySQL、PostgreSQL、pgvector |
 | 搜索与缓存 | Elasticsearch、Redis、Redisson |
 | 消息与任务 | RocketMQ、XXL-JOB |
@@ -134,7 +136,8 @@ flowchart LR
 ### 双模型与工具边界
 
 - 主对话和 ReactAgent 使用 `qwen3-max`，意图分类显式使用 `qwen-flash`；两者可分别通过 `AI_CHAT_MODEL`、`AI_ROUTER_MODEL` 覆盖。
-- 本地工具按只读和受控写入分类，MCP 工具使用 `mcp_` 前缀单独注册；写工具只有在审批通过后才调用业务服务。
+- 本地 Tool 是主执行链路，按只读和受控写入分类；只读瞬时超时最多重试一次，写 Tool 不做无状态重试。MCP 工具使用 `mcp_` 前缀作为可选扩展。
+- 模型调用与 Tool 调用分别计数，并使用独立的 `maxModelCalls`、`maxToolCalls`、读写超时预算。
 - 每次工具调用写入 `ai_tool_call`，保存工具来源、读写类型、耗时、请求/响应 SHA-256 Hash、状态和错误码。
 
 ### 会话执行链路
@@ -142,9 +145,9 @@ flowchart LR
 ```text
 用户输入
  -> qwen-flash 意图识别
- -> AgentOrchestrator 选择专业 Agent
+ -> Java Router 选择场景 Profile
  -> 组装只读或受控工具集合
- -> ReactAgent 使用 qwen3-max 调用 RAG 和工具
+ -> 唯一 ReActAgent 入口使用 qwen3-max 调用最小 Tool 集
  -> 写操作创建审批任务
  -> 用户确认后执行业务调用
  -> 记录消息、引用、工具调用、Agent 事件和评测数据
@@ -152,22 +155,25 @@ flowchart LR
 
 ### 学习计划 Graph
 
-学习计划创建由 Spring AI Alibaba Graph 编排，当前节点如下：
+学习计划创建由 Spring AI Alibaba Graph 编排，当前条件图如下：
 
 ```text
-normalize_goal
- -> load_user_profile
- -> search_candidate_courses
- -> verify_courses
- -> generate_draft
- -> validate_draft
- -> persist_draft
- -> request_approval
+normalize_goal -> load_user_profile -> search_candidate_courses -> verify_courses
+ -> candidate_quality_gate
+    -> 候选不足且未改写: rewrite_search_query -> search_candidate_courses
+    -> 候选仍不足: deterministic_fallback
+    -> 候选足够: design_draft -> validate_hard_rules
+       -> 硬规则失败且 repairAttempts < 2: repair_draft -> validate_hard_rules
+       -> 硬规则通过: review_draft
+          -> Reviewer 要求修改且未超限: repair_draft
+          -> Reviewer 通过: persist_versioned_draft
+       -> 任一循环超限: deterministic_fallback
+ -> persist_versioned_draft -> request_user_approval
 ```
 
 每个节点都会发布开始、完成、失败或等待确认事件，前端可在 AI 会话时间线中展示 Workflow 执行过程。
 
-模型生成失败时，`LearningPlanDraftGenerator` 会退回确定性草案；草案仍需经过课程存在性和每日时长等 Java 规则校验后才能进入确认流程。
+State 显式保存 `searchAttempts <= 1`、`repairAttempts <= 2`、`reviewAttempts <= 2`、模型调用次数和终止原因。模型失败或循环超限时退回确定性草案；正式计划只能由用户确认后通过 Java CAS 状态迁移创建，用户调整会生成新 Run 和 V2 草案，不覆盖历史版本。
 
 ### 混合 RAG
 
@@ -194,9 +200,9 @@ ai:
 - `type=memory`：使用进程内 `MemorySaver`，适合本地临时调试。
 - `fallback-to-memory=true`：Redis Saver 不可用时回退到 MemorySaver。
 
-### MCP 工具接入
+### 可选 MCP 工具接入
 
-MCP Client 默认关闭，可通过环境变量或 Nacos 配置开启：
+MCP 不属于 MyLesson 核心 Tool 主线。Client 默认关闭，仅在需要外部工具扩展时通过环境变量或 Nacos 配置开启：
 
 ```yaml
 spring:
@@ -295,7 +301,7 @@ MCP_CLIENT_ENABLED=false
 | `ml-course-dev.yaml` | 课程服务 |
 | `ml-sale-dev.yaml` | 营销服务 |
 | `ml-order-dev.yaml` | 订单服务 |
-| `ml-ai-dev.yaml` | AI 服务、双模型 Agent、Graph、pgvector/RAG、MCP、审批和知识同步配置 |
+| `ml-ai-dev.yaml` | AI 服务、Profile Agent、模型/Tool 双预算、条件 Graph、pgvector/RAG、评测、审批和知识同步；MCP 为可选配置 |
 
 配置中的密码、Token 和密钥建议继续使用 `${ENV_NAME}` 占位符，由运行环境提供真实值。
 
@@ -311,11 +317,15 @@ CREATE DATABASE mylesson_ai;
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-AI 服务数据库迁移包含 MCP 工具审计字段：
+本轮改造涉及的数据库迁移：
 
 ```text
 ml-ai/src/main/resources/db/migration/V11__add_mcp_tool_audit_fields.sql
+ml-ai/src/main/resources/db/migration/V12__learning_plan_graph_and_retrieval_trace.sql
+ml-order/src/main/resources/db/migration/V4__add_seckill_order_idempotency.sql
 ```
+
+V12 增加版本化草案、Agent Run 诊断字段和 Retrieval Trace；订单 V4 增加秒杀消费幂等记录。Flyway 会在对应服务启动时执行迁移。
 
 ### 6. 启动后端服务
 
@@ -363,15 +373,20 @@ npm run dev
 | --- | --- |
 | 会话列表与创建 | `GET/POST /api/v1/ai/conversations` |
 | 发送消息 | `POST /api/v1/ai/conversations/{conversationId}/messages` |
-| 会话流式事件 | `GET /api/v1/ai/conversations/{conversationId}/events` |
+| 会话流式事件 | `GET /api/v1/ai/conversations/{conversationId}/stream` |
 | 知识库搜索 | `GET /api/v1/ai/knowledge/search` |
 | 知识库问答 | `POST /api/v1/ai/knowledge/ask` |
 | 学习计划列表 | `GET /api/v1/ai/plans` |
+| 学习计划草案与版本 | `GET /api/v1/ai/learning-plan-drafts`、`GET /api/v1/ai/learning-plan-drafts/{id}/versions` |
+| 调整学习计划草案 | `POST /api/v1/ai/learning-plan-drafts/{id}/adjustments` |
+| 确认或取消草案 | `POST /api/v1/ai/learning-plan-drafts/{id}/approve`、`POST /api/v1/ai/learning-plan-drafts/{id}/cancel` |
+| Run 时间线与检索 Trace | `GET /api/v1/ai/runs/{runId}/timeline`、`GET /api/v1/ai/runs/{runId}/retrieval-trace` |
 | 审批任务 | `GET /api/v1/ai/approvals` |
 | 通过审批 | `POST /api/v1/ai/approvals/{id}/approve` |
 | 拒绝审批 | `POST /api/v1/ai/approvals/{id}/reject` |
 | 工具调用审计 | `GET /api/v1/ai/admin/tools/calls` |
 | 知识库重建 | `POST /api/v1/ai/admin/knowledge/rebuild` |
+| 执行评测与查看报告 | `POST /api/v1/ai/admin/evaluations/run`、`GET /api/v1/ai/admin/evaluations/{id}` |
 
 ## 测试与构建
 
@@ -380,6 +395,16 @@ npm run dev
 ```bash
 mvn test
 ```
+
+运行 60 条 deterministic 评测基线：
+
+```bash
+mvn -pl ml-ai -Pdeterministic-eval test
+```
+
+该模式使用 Mock 模型与固定检索数据建立可复现基线；真实模型指标必须通过 external 模式实际执行后再报告，不能把 deterministic 的 60/60 表述为线上准确率。
+
+最近一次本地验证（2026-07-28）：后端共 87 项测试通过，deterministic 60 条基线通过，Web 生产构建通过。该结果不包含 external 真实模型评测和完整微服务依赖环境的端到端验收。
 
 构建后端：
 
@@ -402,7 +427,7 @@ GitHub Actions 会在 Push 和 Pull Request 时执行后端测试与打包、前
 ```text
 my-lesson/
 ├── .github/workflows/   # CI 工作流
-├── ml-ai/               # AI 服务：RAG、Agent、Graph、MCP、学习计划和评测
+├── ml-ai/               # AI 服务：RAG、Profile Agent、条件 Graph、本地 Tool、学习计划和评测
 ├── ml-barrage/          # 弹幕服务
 ├── ml-common/           # 公共模块
 ├── ml-course/           # 课程服务

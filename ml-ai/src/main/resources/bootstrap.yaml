@@ -28,6 +28,14 @@ spring:
         options:
           model: ${AI_CHAT_MODEL:qwen3-max}
           temperature: 0.2
+      embedding:
+        options:
+          model: ${AI_EMBEDDING_MODEL:text-embedding-v4}
     mcp:
       client:
         enabled: ${MCP_CLIENT_ENABLED:false}
+
+mylesson:
+  ai:
+    knowledge:
+      embedding-version: ${AI_EMBEDDING_VERSION:v1}

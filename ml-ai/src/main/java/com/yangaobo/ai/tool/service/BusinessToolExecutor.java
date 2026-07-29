@@ -81,6 +81,11 @@ public class BusinessToolExecutor {
             ToolContext springToolContext) {
         ToolRunContext runContext = requireRunContext(springToolContext);
         runContext.toolCalled();
+        if (runContext.toolCallLimitExceeded(properties.getMaxToolCalls())) {
+            return ToolResult.failure(
+                    "TOOL_CALL_LIMIT_REACHED",
+                    "已达到本轮最多工具调用次数，请缩小问题范围后重试");
+        }
         if (runContext.hasApprovalPending()) {
             return ToolResult.failure(
                     "APPROVAL_PENDING",
@@ -160,7 +165,7 @@ public class BusinessToolExecutor {
                             request));
             try {
                 O data = future.get(
-                        properties.getTimeout().toMillis(),
+                        timeout(spec).toMillis(),
                         TimeUnit.MILLISECONDS);
                 long latencyMillis = elapsed(startedAt);
                 ToolResult<O> result = ToolResult.success(data);
@@ -505,5 +510,11 @@ public class BusinessToolExecutor {
         return Math.max(
                 0L,
                 Duration.between(startedAt, Instant.now()).toMillis());
+    }
+
+    private Duration timeout(BusinessToolSpec<?, ?> spec) {
+        return spec.writeOperation()
+                ? properties.getWriteTimeout()
+                : properties.getReadTimeout();
     }
 }

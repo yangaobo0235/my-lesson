@@ -1,7 +1,6 @@
 package com.yangaobo.component;
 
 import cn.hutool.core.util.ObjectUtil;
-import cn.hutool.core.util.RandomUtil;
 import com.yangaobo.constant.ML;
 import com.yangaobo.dto.OrderMessage;
 import com.yangaobo.entity.Course;
@@ -22,6 +21,8 @@ import org.apache.rocketmq.spring.annotation.MessageModel;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.stereotype.Component;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
@@ -54,6 +55,8 @@ public class OrderMessageListener implements RocketMQListener<OrderMessage> {
     private OrderMapper orderMapper;
     @Resource
     private OrderDetailMapper orderDetailMapper;
+    @Resource
+    private JdbcTemplate jdbcTemplate;
 
     /**
      * 该方法在Broker投递消息时触发并执行
@@ -61,7 +64,17 @@ public class OrderMessageListener implements RocketMQListener<OrderMessage> {
      * @param orderMessage 消息内容
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void onMessage(OrderMessage orderMessage) {
+
+        if (orderMessage == null || orderMessage.getRequestId() == null) {
+            throw new IllegalArgumentException("Seckill order requestId is required");
+        }
+        if (!reserve(orderMessage)) {
+            log.info("重复秒杀订单消息已幂等忽略, requestId={}",
+                    orderMessage.getRequestId());
+            return;
+        }
 
         Long fkUserId = orderMessage.getFkUserId();
         Long fkCourseId = orderMessage.getFkCourseId();
@@ -72,7 +85,8 @@ public class OrderMessageListener implements RocketMQListener<OrderMessage> {
 
         // 准备实体类
         Order order = new Order();
-        order.setSn(RandomUtil.randomNumbers(19));
+        order.setSn("SK" + orderMessage.getRequestId()
+                .toString().replace("-", ""));
         order.setTotalAmount(price);
         order.setPayAmount(skPrice);
         order.setPayType(ML.Order.NO_PAY);
@@ -117,5 +131,30 @@ public class OrderMessageListener implements RocketMQListener<OrderMessage> {
         if (orderDetailMapper.insert(orderDetail) <= 0) {
             throw new ServiceException(ResultCode.MYSQL_ERROR, "数据库添加订单明细失败");
         }
+        jdbcTemplate.update(
+                """
+                UPDATE seckill_order_consume
+                SET status = 'SUCCEEDED', order_id = ?, updated_at = now()
+                WHERE request_id = ?
+                """,
+                orderId,
+                orderMessage.getRequestId().toString());
+    }
+
+    private boolean reserve(OrderMessage message) {
+        return jdbcTemplate.update(
+                """
+                INSERT IGNORE INTO seckill_order_consume (
+                    request_id, qualification_id, seckill_id,
+                    user_id, course_id, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'PROCESSING', now(), now())
+                """,
+                message.getRequestId().toString(),
+                message.getQualificationId() == null
+                        ? message.getRequestId().toString()
+                        : message.getQualificationId().toString(),
+                message.getFkSeckillId(),
+                message.getFkUserId(),
+                message.getFkCourseId()) == 1;
     }
 }

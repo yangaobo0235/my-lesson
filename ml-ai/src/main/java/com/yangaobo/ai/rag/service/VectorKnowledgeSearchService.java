@@ -54,7 +54,9 @@ public class VectorKnowledgeSearchService {
                 value(metadata, "title"),
                 document.getText(),
                 value(metadata, "source_url"),
-                score);
+                score,
+                longValue(metadata.get("version")),
+                valueOrDefault(metadata, "visibility_status", "ACTIVE"));
         return new RetrievalCandidate(
                 hit,
                 fusionKey(sourceType, sourceId, chunkIndex),
@@ -75,6 +77,25 @@ public class VectorKnowledgeSearchService {
         } catch (NumberFormatException exception) {
             return 0;
         }
+    }
+
+    private long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(value == null ? "1" : value.toString());
+        } catch (NumberFormatException exception) {
+            return 1L;
+        }
+    }
+
+    private String valueOrDefault(
+            Map<String, Object> metadata,
+            String key,
+            String defaultValue) {
+        String result = value(metadata, key);
+        return result.isBlank() ? defaultValue : result;
     }
 
     private String fusionKey(

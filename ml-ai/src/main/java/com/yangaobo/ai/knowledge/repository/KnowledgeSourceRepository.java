@@ -40,17 +40,25 @@ public class KnowledgeSourceRepository {
         return states.stream().findFirst();
     }
 
-    public long countChunks(String sourceType, String sourceId) {
+    public long countChunks(
+            String sourceType,
+            String sourceId,
+            String embeddingModel,
+            String embeddingVersion) {
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT count(*)
                 FROM vector_store
                 WHERE metadata->>'source_type' = ?
                   AND metadata->>'source_id' = ?
+                  AND metadata->>'embedding_model' = ?
+                  AND metadata->>'embedding_version' = ?
                 """,
                 Long.class,
                 sourceType,
-                sourceId);
+                sourceId,
+                embeddingModel,
+                embeddingVersion);
         return count == null ? 0L : count;
     }
 

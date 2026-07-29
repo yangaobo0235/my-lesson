@@ -220,7 +220,14 @@ public class ConversationService {
                             user.id(),
                             run,
                             type,
-                            data));
+                            data),
+                    route -> runRepository.updateRoute(
+                            run.id(),
+                            route.profileName(),
+                            route.profileVersion(),
+                            route.intent(),
+                            route.confidence(),
+                            route.conservative()));
             publish(
                     user.id(),
                     run,
@@ -236,6 +243,8 @@ public class ConversationService {
                             result),
                     toolRunContext,
                     intentDecision);
+            runRepository.updateToolCallCount(
+                    run.id(), toolRunContext.toolCallCount());
             long latencyMillis = Duration
                     .between(startedAt, Instant.now())
                     .toMillis();

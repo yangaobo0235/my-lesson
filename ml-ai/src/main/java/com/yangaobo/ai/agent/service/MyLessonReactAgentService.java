@@ -47,7 +47,7 @@ public class MyLessonReactAgentService {
             工具参数不得包含 userId、role、internalToken、price 或 orderOwner。
             执行写操作前，先向用户复述目标对象；目标不明确时停止写入并询问。
             如果系统或工具表示需要审批，立即停止执行并返回需要审批的说明。
-            最多执行 6 次模型调用；达到限制时停止继续调用并总结已经完成的步骤。
+            模型和工具调用次数由 Java 运行预算控制；达到限制时停止继续调用并总结已经完成的步骤。
             工具失败时不得编造成成功，需给出简短且可恢复的说明。
             仅引用实际提供的知识资料编号，不得伪造引用。
             """;
@@ -207,8 +207,9 @@ public class MyLessonReactAgentService {
             return BASE_SYSTEM_PROMPT;
         }
         return BASE_SYSTEM_PROMPT
-                + "\n\n当前专业 Agent："
+                + "\n\n当前场景 Profile："
                 + profile.displayName()
+                + "（" + profile.name() + "/" + profile.version() + "）"
                 + "\n"
                 + profile.systemPrompt();
     }

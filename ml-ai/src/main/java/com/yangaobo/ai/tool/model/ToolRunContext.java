@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public final class ToolRunContext {
@@ -21,6 +22,7 @@ public final class ToolRunContext {
     private final ConversationRun run;
     private final BiConsumer<ConversationEventType, Map<String, Object>>
             eventSink;
+    private final Consumer<RouteMetadata> routeSink;
     private final AtomicInteger callCount = new AtomicInteger();
     private final AtomicBoolean approvalPending =
             new AtomicBoolean();
@@ -32,9 +34,18 @@ public final class ToolRunContext {
             ConversationRun run,
             BiConsumer<ConversationEventType, Map<String, Object>>
                     eventSink) {
+        this(user, run, eventSink, metadata -> { });
+    }
+
+    public ToolRunContext(
+            AuthenticatedUser user,
+            ConversationRun run,
+            BiConsumer<ConversationEventType, Map<String, Object>> eventSink,
+            Consumer<RouteMetadata> routeSink) {
         this.user = user;
         this.run = run;
         this.eventSink = eventSink;
+        this.routeSink = routeSink;
     }
 
     public AuthenticatedUser user() {
@@ -49,8 +60,16 @@ public final class ToolRunContext {
         callCount.incrementAndGet();
     }
 
+    public boolean toolCallLimitExceeded(int maxToolCalls) {
+        return callCount.get() > Math.max(1, maxToolCalls);
+    }
+
     public boolean hasToolCalls() {
         return callCount.get() > 0;
+    }
+
+    public int toolCallCount() {
+        return callCount.get();
     }
 
     public void approvalRequested() {
@@ -87,6 +106,29 @@ public final class ToolRunContext {
             ConversationEventType type,
             Map<String, Object> data) {
         eventSink.accept(type, data);
+    }
+
+    public void routeSelected(
+            String profileName,
+            String profileVersion,
+            String intent,
+            double confidence,
+            boolean conservative) {
+        routeSink.accept(new RouteMetadata(
+                profileName,
+                profileVersion,
+                intent,
+                confidence,
+                conservative));
+    }
+
+    public record RouteMetadata(
+            String profileName,
+            String profileVersion,
+            String intent,
+            double confidence,
+            boolean conservative
+    ) {
     }
 
     private record ToolStep(

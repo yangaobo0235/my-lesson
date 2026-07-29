@@ -34,6 +34,8 @@ public class ML {
         String SECKILL_COURSE_INFO_PREFIX = "seckill:course_info:";
         /** 秒杀活动商品库存缓存前缀 */
         String SECKILL_COURSE_COUNT_PREFIX = "seckill:course_count:";
+        /** 秒杀资格缓存前缀，值为稳定 requestId。 */
+        String SECKILL_QUALIFICATION_PREFIX = "seckill:qualification:";
     }
 
     public interface MinIO {

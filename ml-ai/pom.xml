@@ -205,4 +205,13 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>deterministic-eval</id>
+            <properties>
+                <test>DeterministicEvaluationRunnerTest</test>
+            </properties>
+        </profile>
+    </profiles>
 </project>

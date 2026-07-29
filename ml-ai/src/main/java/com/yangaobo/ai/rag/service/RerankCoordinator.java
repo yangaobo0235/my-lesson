@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.time.Duration;
+import java.time.Instant;
 
 @Service
 public class RerankCoordinator {
@@ -36,25 +38,47 @@ public class RerankCoordinator {
         if (!properties.getRerank().isEnabled()) {
             return new RerankOutcome(
                     noOpRerankService.rerank(query, candidates, topN),
-                    false);
+                    false,
+                    false,
+                    topN,
+                    0L);
         }
+        Instant startedAt = Instant.now();
         try {
             return new RerankOutcome(
                     dashScopeRerankService.rerank(query, candidates, topN),
-                    true);
+                    true,
+                    false,
+                    topN,
+                    elapsed(startedAt));
         } catch (RuntimeException exception) {
             log.warn(
                     "DashScope rerank failed, falling back to RRF: {}",
                     exception.getClass().getSimpleName());
             return new RerankOutcome(
                     noOpRerankService.rerank(query, candidates, topN),
-                    false);
+                    false,
+                    true,
+                    topN,
+                    elapsed(startedAt));
         }
+    }
+
+    private long elapsed(Instant startedAt) {
+        return Math.max(0L, Duration.between(
+                startedAt, Instant.now()).toMillis());
     }
 
     public record RerankOutcome(
             List<SearchHit> hits,
-            boolean applied
+            boolean applied,
+            boolean fallback,
+            int topN,
+            long latencyMillis
     ) {
+
+        public RerankOutcome(List<SearchHit> hits, boolean applied) {
+            this(hits, applied, false, hits == null ? 0 : hits.size(), 0L);
+        }
     }
 }

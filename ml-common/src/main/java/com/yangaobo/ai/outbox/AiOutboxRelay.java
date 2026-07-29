@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 
 @Component
 @ConditionalOnProperty(
@@ -25,6 +27,7 @@ public class AiOutboxRelay {
     public AiOutboxRelay(
             AiOutboxRepository repository,
             RocketMQTemplate rocketMQTemplate,
+            MeterRegistry meterRegistry,
             @Value("${ai.knowledge-sync.topic:ml-ai-knowledge-events}")
             String topic,
             @Value("${ai.knowledge-sync.outbox-batch-size:100}")
@@ -33,6 +36,17 @@ public class AiOutboxRelay {
         this.rocketMQTemplate = rocketMQTemplate;
         this.topic = topic;
         this.batchSize = batchSize;
+        Gauge.builder(
+                        "outbox_pending_total",
+                        repository,
+                        value -> value.pendingCount())
+                .register(meterRegistry);
+        Gauge.builder(
+                        "outbox_oldest_age",
+                        repository,
+                        value -> value.oldestAgeSeconds())
+                .baseUnit("seconds")
+                .register(meterRegistry);
     }
 
     @Scheduled(

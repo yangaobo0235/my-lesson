@@ -18,6 +18,7 @@ import com.yangaobo.ai.rag.model.HybridSearchResult;
 import com.yangaobo.ai.rag.model.SearchHit;
 import com.yangaobo.ai.service.AiBusinessGateway;
 import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
+import com.yangaobo.ai.tool.dto.NoArgsRequest;
 import com.yangaobo.ai.tool.model.BusinessToolSpec;
 import com.yangaobo.ai.tool.model.ToolRunContext;
 import com.yangaobo.ai.tool.model.ToolResult;
@@ -180,6 +181,18 @@ public class KnowledgeAnswerService {
             agentCompleted = true;
             return learningPlanApproval;
         }
+        AiAnswer knowledgeRebuildApproval =
+                deterministicKnowledgeRebuildApproval(
+                        toolRunContext,
+                        intentDecision,
+                        traceId);
+        if (knowledgeRebuildApproval != null) {
+            retrievalObserver.accept(
+                    new HybridSearchResult(List.of(), 0.0, false));
+            publishAgentCompleted(toolRunContext, selection, true);
+            agentCompleted = true;
+            return knowledgeRebuildApproval;
+        }
         if (route != null
                 && !route.conservative()
                 && intentDecision.intent() == UserIntent.OUT_OF_SCOPE) {
@@ -201,6 +214,13 @@ public class KnowledgeAnswerService {
         boolean knowledgeAnswerable = relevanceEvaluator.isAnswerable(
                 retrievalQuery,
                 searchResult);
+        if (!knowledgeAnswerable) {
+            searchService.markNoAnswer(
+                    searchResult,
+                    searchResult.hits().isEmpty()
+                            ? "NO_CANDIDATES"
+                            : "BELOW_RELEVANCE_THRESHOLD");
+        }
         if (!knowledgeAnswerable && toolRunContext == null) {
             return new AiAnswer(NO_ANSWER, List.of(), traceId);
         }
@@ -280,10 +300,18 @@ public class KnowledgeAnswerService {
         if (toolRunContext == null || selection == null) {
             return;
         }
+        toolRunContext.routeSelected(
+                selection.profile().name(),
+                selection.profile().version(),
+                decision.intent().name(),
+                decision.confidence(),
+                selection.route().conservative());
         toolRunContext.publish(
                 ConversationEventType.AGENT_SELECTED,
                 Map.of(
                         "agentName", selection.profile().name(),
+                        "profileName", selection.profile().name(),
+                        "profileVersion", selection.profile().version(),
                         "displayName", selection.profile().displayName(),
                         "description", selection.profile().description(),
                         "intent", decision.intent().name(),
@@ -300,6 +328,8 @@ public class KnowledgeAnswerService {
                 ConversationEventType.AGENT_STARTED,
                 Map.of(
                         "agentName", selection.profile().name(),
+                        "profileName", selection.profile().name(),
+                        "profileVersion", selection.profile().version(),
                         "displayName", selection.profile().displayName()));
     }
 
@@ -314,6 +344,8 @@ public class KnowledgeAnswerService {
                 ConversationEventType.AGENT_COMPLETED,
                 Map.of(
                         "agentName", selection.profile().name(),
+                        "profileName", selection.profile().name(),
+                        "profileVersion", selection.profile().version(),
                         "displayName", selection.profile().displayName(),
                         "success", success));
     }
@@ -496,6 +528,47 @@ public class KnowledgeAnswerService {
         }
         return new AiAnswer(
                 "学习计划草案已提交确认，请到“待确认操作”页面处理。",
+                List.of(),
+                traceId);
+    }
+
+    private AiAnswer deterministicKnowledgeRebuildApproval(
+            ToolRunContext toolRunContext,
+            IntentDecision intentDecision,
+            String traceId) {
+        if (toolRunContext == null
+                || intentDecision == null
+                || intentDecision.intent() != UserIntent.ADMIN_OPERATION) {
+            return null;
+        }
+        String toolName = ApprovalService.REBUILD_INDEX;
+        ToolResult<ApprovalRequestResult> result = toolExecutor.execute(
+                new BusinessToolSpec<>(
+                        toolName,
+                        "为管理员创建知识索引重建审批任务。",
+                        NoArgsRequest.class,
+                        true,
+                        Set.of("ADMIN"),
+                        ignored -> null),
+                new NoArgsRequest(),
+                new ToolContext(Map.of(
+                        ToolRunContext.CONTEXT_KEY,
+                        toolRunContext)));
+        if (!result.success()) {
+            return new AiAnswer(
+                    result.message() == null || result.message().isBlank()
+                            ? "知识索引重建审批创建失败，请稍后重试。"
+                            : result.message(),
+                    List.of(),
+                    traceId);
+        }
+        ApprovalRequestResult approval = result.data();
+        return new AiAnswer(
+                approval == null
+                        ? "知识索引重建已提交审批，请到“待确认操作”页面处理。"
+                        : "已创建知识索引重建审批："
+                                + approval.reason()
+                                + "。确认后系统将异步重建索引。",
                 List.of(),
                 traceId);
     }

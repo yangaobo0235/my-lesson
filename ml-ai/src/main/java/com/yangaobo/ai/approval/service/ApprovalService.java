@@ -198,6 +198,14 @@ public class ApprovalService {
                         context.run().id(),
                         planRequest,
                         context);
+        if (!"WAITING_APPROVAL".equals(draft.state().status())) {
+            String details = draft.state().validationErrors().isEmpty()
+                    ? "当前资料不足，请调整学习目标后重试"
+                    : String.join("；", draft.state().validationErrors());
+            throw new BusinessOperationException(
+                    "LEARNING_PLAN_NEEDS_ADJUSTMENT",
+                    details);
+        }
         ObjectNode payload = objectMapper.createObjectNode()
                 .put("draftId", draft.id().toString())
                 .put("goal", draft.state().goal())

@@ -11,9 +11,12 @@ import com.yangaobo.ai.knowledge.service.KnowledgeSourceIndexer;
 import com.yangaobo.ai.service.AiBusinessGateway;
 import com.yangaobo.ai.sync.model.KnowledgeChangeEvent;
 import com.yangaobo.ai.sync.repository.KnowledgeInboxRepository;
+import com.yangaobo.ai.observability.AiMetrics;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.time.Duration;
+import java.time.Instant;
 
 @Service
 public class IncrementalKnowledgeSyncService {
@@ -23,23 +26,31 @@ public class IncrementalKnowledgeSyncService {
     private final KnowledgeSourceIndexer sourceIndexer;
     private final KnowledgeDocumentFactory documentFactory;
     private final AiBusinessGateway businessGateway;
+    private final AiMetrics aiMetrics;
 
     public IncrementalKnowledgeSyncService(
             KnowledgeInboxRepository inboxRepository,
             KnowledgeSourceRepository sourceRepository,
             KnowledgeSourceIndexer sourceIndexer,
             KnowledgeDocumentFactory documentFactory,
-            AiBusinessGateway businessGateway) {
+            AiBusinessGateway businessGateway,
+            AiMetrics aiMetrics) {
         this.inboxRepository = inboxRepository;
         this.sourceRepository = sourceRepository;
         this.sourceIndexer = sourceIndexer;
         this.documentFactory = documentFactory;
         this.businessGateway = businessGateway;
+        this.aiMetrics = aiMetrics;
     }
 
     public void handle(KnowledgeChangeEvent event) {
         validate(event);
+        if (event.occurredAt() != null) {
+            aiMetrics.knowledgeEventLag(Duration.between(
+                    event.occurredAt(), Instant.now()).toMillis());
+        }
         if (!inboxRepository.start(event)) {
+            aiMetrics.inboxDuplicate();
             return;
         }
         try {
@@ -52,8 +63,10 @@ public class IncrementalKnowledgeSyncService {
                         "Unsupported knowledge event type: " + event.eventType());
             };
             inboxRepository.succeeded(event, !changed);
+            aiMetrics.indexSuccess();
         } catch (RuntimeException exception) {
             inboxRepository.failed(event, exception);
+            aiMetrics.indexFailure();
             throw exception;
         }
     }
@@ -130,9 +143,13 @@ public class IncrementalKnowledgeSyncService {
     }
 
     private boolean newerOrEqual(String sourceType, KnowledgeChangeEvent event) {
-        return sourceRepository.find(sourceType, event.aggregateId())
+        boolean stale = sourceRepository.find(sourceType, event.aggregateId())
                 .filter(state -> state.version() >= event.version())
                 .isPresent();
+        if (stale) {
+            aiMetrics.staleVersionSkipped();
+        }
+        return stale;
     }
 
     private KnowledgeSourceKey key(String sourceType, KnowledgeChangeEvent event) {

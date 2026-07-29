@@ -13,6 +13,9 @@ const loading = ref(false);
 const sourceLoading = ref(false);
 const toolLoading = ref(false);
 const activeTab = ref('knowledge');
+const evaluationMode = ref('deterministic');
+const evaluationReport = ref(null);
+const evaluationRunning = ref(false);
 
 const sourceFilters = reactive({
   sourceType: '',
@@ -87,6 +90,19 @@ async function retrySource(row) {
     await Promise.all([loadOverview(), loadSources()]);
   } finally {
     sourceLoading.value = false;
+  }
+}
+
+async function runEvaluation() {
+  evaluationRunning.value = true;
+  try {
+    evaluationReport.value = await aiApi.runEvaluation(evaluationMode.value);
+    ElMessage.success(`评测完成：${evaluationReport.value.passedCount}/${evaluationReport.value.totalCount}`);
+    await loadOverview();
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '评测执行失败');
+  } finally {
+    evaluationRunning.value = false;
   }
 }
 
@@ -239,7 +255,42 @@ onMounted(load);
 
         <el-tab-pane label="RAG 评测" name="evaluation">
           <el-card>
-            <template #header><strong>最近评测结果</strong></template>
+            <template #header>
+              <div class="evaluation-header">
+                <strong>可执行评测</strong>
+                <div class="evaluation-actions">
+                  <el-segmented v-model="evaluationMode" :options="[
+                    {label: 'Deterministic', value: 'deterministic'},
+                    {label: 'External', value: 'external'}
+                  ]"/>
+                  <el-button type="primary" :loading="evaluationRunning" @click="runEvaluation">运行</el-button>
+                </div>
+              </div>
+            </template>
+            <el-alert v-if="evaluationMode === 'external'" title="External 模式将调用真实模型和业务依赖"
+                      type="warning" show-icon :closable="false"/>
+            <el-descriptions v-if="evaluationReport" :column="4" border class="report-summary">
+              <el-descriptions-item label="报告 ID" :span="2">{{ evaluationReport.id }}</el-descriptions-item>
+              <el-descriptions-item label="数据集">{{ evaluationReport.datasetVersion }}</el-descriptions-item>
+              <el-descriptions-item label="模型">{{ evaluationReport.modelVersion }}</el-descriptions-item>
+              <el-descriptions-item label="通过">{{ evaluationReport.passedCount }}/{{ evaluationReport.totalCount }}</el-descriptions-item>
+              <el-descriptions-item label="失败">{{ evaluationReport.failedCount }}</el-descriptions-item>
+              <el-descriptions-item label="P95">{{ evaluationReport.p95LatencyMs }} ms</el-descriptions-item>
+              <el-descriptions-item label="门禁">
+                <el-tag :type="evaluationReport.gatePassed ? 'success' : evaluationReport.thresholdGateActive ? 'danger' : 'info'">
+                  {{ evaluationReport.thresholdGateActive ? (evaluationReport.gatePassed ? '通过' : '失败') : '仅基线' }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="指标" :span="4"><code>{{ JSON.stringify(evaluationReport.metrics) }}</code></el-descriptions-item>
+            </el-descriptions>
+            <el-table v-if="evaluationReport?.failures?.length" :data="evaluationReport.failures" class="failure-table">
+              <el-table-column prop="caseId" label="失败用例" width="180"/>
+              <el-table-column prop="caseType" label="类型" width="110"/>
+              <el-table-column prop="failureReason" label="失败原因" min-width="280" show-overflow-tooltip/>
+              <el-table-column prop="latencyMs" label="耗时(ms)" width="100"/>
+            </el-table>
+            <el-divider/>
+            <strong>最近评测结果</strong>
             <el-table :data="results">
               <el-table-column prop="caseType" label="类型" width="110"/>
               <el-table-column prop="question" label="问题" min-width="260"/>
@@ -272,6 +323,13 @@ onMounted(load);
   gap:10px;
   margin-bottom:14px;
 }
+.evaluation-header,.evaluation-actions {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.report-summary,.failure-table { margin-top:16px; }
 code {
   white-space:pre-wrap;
   word-break:break-word;

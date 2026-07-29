@@ -107,6 +107,40 @@ public class ConversationRunRepository {
                 runId);
     }
 
+    public void updateRoute(
+            UUID runId,
+            String profileName,
+            String profileVersion,
+            String intent,
+            double confidence,
+            boolean conservative) {
+        jdbcTemplate.update(
+                """
+                UPDATE ai_agent_run
+                SET agent_name = ?,
+                    agent_profile_version = ?,
+                    intent = ?,
+                    route_confidence = ?,
+                    conservative_mode = ?,
+                    prompt_version = ?
+                WHERE id = ?
+                """,
+                profileName,
+                profileVersion,
+                intent,
+                confidence,
+                conservative,
+                profileName + "-" + profileVersion,
+                runId);
+    }
+
+    public void updateToolCallCount(UUID runId, int toolCallCount) {
+        jdbcTemplate.update(
+                "UPDATE ai_agent_run SET tool_call_count = ? WHERE id = ?",
+                Math.max(0, toolCallCount),
+                runId);
+    }
+
     public void markSucceeded(
             UUID runId,
             UUID assistantMessageId,

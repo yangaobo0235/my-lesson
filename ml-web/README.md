@@ -5,8 +5,9 @@ MyLesson 的统一 Web 客户端，包含学生学习端、后台管理端和 AI
 ## 功能
 
 - 学生端：课程大厅、课程详情、购物车、订单、已购课程、收藏、视频播放、评论与弹幕。
-- AI 助手：流式对话、历史会话、课程推荐、学习计划、待确认操作和执行时间线。
-- 管理端：用户与权限、课程内容、文章公告、营销活动、订单、知识库状态、RAG 评测和工具审计。
+- AI 助手：流式对话、历史会话、Profile 路由结果、引用来源、课程推荐、受控写确认、Run Timeline 和 Retrieval Trace。
+- 学习计划：条件 Graph 状态、候选课程、Java 校验、Reviewer 结果、确定性降级、V1/V2 草案调整、CAS 确认和取消。
+- 管理端：用户与权限、课程内容、文章公告、营销活动、订单、知识库状态、deterministic/external 评测报告和工具审计。
 - 权限：根据登录用户角色生成导航，并由网关和后端服务完成最终鉴权。
 
 ## 技术栈
@@ -42,6 +43,8 @@ VITE_MINIO_PUBLIC_URL=http://127.0.0.1:9001/mylesson
 
 环境变量可以放在 `ml-web/.env.local`，不要提交包含真实地址或凭据的本地配置。
 
+AI 页面依赖 `ml-ai` 和网关。只启动 Vite 时可以检查页面布局和路由，但对话、计划、Trace、审批及评测数据需要网关、AI 服务及其 Redis/PostgreSQL 等依赖可用。
+
 ## 构建
 
 ```bash
@@ -51,6 +54,20 @@ npm run preview
 ```
 
 生产文件输出到 `dist/`。CI 会执行生产依赖审计和构建。
+
+最近一次本地生产构建于 2026-07-28 通过。Vite 的大 chunk 提示是构建建议，不影响产物生成。
+
+## AI 页面与接口
+
+| 页面 | 主要接口/数据 |
+| --- | --- |
+| `Chat.vue` | 会话流、Profile、Citation、Tool 事件、Run Timeline、Retrieval Trace |
+| `Plans.vue` | 草案列表/版本、V2 调整、Reviewer 结果、CAS 确认、取消、正式计划 |
+| `Approvals.vue` | 受控写 Tool 的待确认、批准和拒绝；不用于代替学习计划草案确认 |
+| `AdminEvaluation.vue` | 执行 deterministic/external 评测并查看 JSON/Markdown 报告摘要 |
+| `AdminKnowledge.vue` | 知识来源、同步状态、失败重试和全量重建 |
+
+前端不展示模型内部思维过程，只展示业务状态、结构化审查结果、引用、工具状态和可观测事件。deterministic 60/60 只表示固定数据的可复现基线，不显示为真实模型线上准确率。
 
 ## 目录
 

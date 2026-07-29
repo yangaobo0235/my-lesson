@@ -61,6 +61,28 @@ public class AiOutboxRepository {
                 limit);
     }
 
+    public long pendingCount() {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT count(*) FROM ai_outbox_event
+                WHERE status IN ('PENDING', 'FAILED')
+                """,
+                Long.class);
+        return count == null ? 0L : count;
+    }
+
+    public long oldestAgeSeconds() {
+        Long age = jdbcTemplate.queryForObject(
+                """
+                SELECT COALESCE(
+                    TIMESTAMPDIFF(SECOND, MIN(created_at), now()), 0)
+                FROM ai_outbox_event
+                WHERE status IN ('PENDING', 'FAILED')
+                """,
+                Long.class);
+        return age == null ? 0L : Math.max(0L, age);
+    }
+
     public void markSent(UUID eventId) {
         jdbcTemplate.update(
                 """

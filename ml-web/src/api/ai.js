@@ -20,6 +20,20 @@ export const aiApi = {
     deleteConversation: id => GATEWAY_AXIOS.delete(`${AI_BASE}/conversations/${id}`),
     recommendCourses: (goal, limit = 5) => GATEWAY_AXIOS.post(`${AI_BASE}/course-recommendations`, {goal, limit}).then(body),
     plans: () => GATEWAY_AXIOS.get(`${AI_BASE}/plans`).then(body),
+    learningPlanDrafts: () => GATEWAY_AXIOS.get(`${AI_BASE}/learning-plan-drafts`).then(body),
+    learningPlanDraftVersions: id => GATEWAY_AXIOS.get(
+        `${AI_BASE}/learning-plan-drafts/${id}/versions`
+    ).then(body),
+    adjustLearningPlanDraft: (id, adjustment, requestId) => GATEWAY_AXIOS.post(
+        `${AI_BASE}/learning-plan-drafts/${id}/adjustments`,
+        {adjustment, requestId}
+    ).then(body),
+    approveLearningPlanDraft: id => GATEWAY_AXIOS.post(
+        `${AI_BASE}/learning-plan-drafts/${id}/approve`
+    ).then(body),
+    cancelLearningPlanDraft: id => GATEWAY_AXIOS.post(
+        `${AI_BASE}/learning-plan-drafts/${id}/cancel`
+    ),
     updatePlanProgress: (id, progressPercent, note) => GATEWAY_AXIOS.patch(
         `${AI_BASE}/plans/${id}/progress`,
         {progressPercent, note}
@@ -34,6 +48,14 @@ export const aiApi = {
     ).then(body),
     evaluationSummary: () => GATEWAY_AXIOS.get(`${AI_BASE}/admin/evaluation/summary`).then(body),
     evaluationResults: (limit = 100) => GATEWAY_AXIOS.get(`${AI_BASE}/admin/evaluation/results`, {params: {limit}}).then(body),
+    runEvaluation: mode => GATEWAY_AXIOS.post(
+        `${AI_BASE}/admin/evaluations/run`, null, {params: {mode}}
+    ).then(body),
+    evaluationReport: id => GATEWAY_AXIOS.get(
+        `${AI_BASE}/admin/evaluations/${id}`
+    ).then(body),
+    runTimeline: id => GATEWAY_AXIOS.get(`${AI_BASE}/runs/${id}/timeline`).then(body),
+    retrievalTrace: id => GATEWAY_AXIOS.get(`${AI_BASE}/runs/${id}/retrieval-trace`).then(body),
     toolCalls: params => GATEWAY_AXIOS.get(`${AI_BASE}/admin/tools/calls`, {params}).then(body)
 };
 

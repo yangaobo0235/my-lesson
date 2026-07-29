@@ -9,7 +9,6 @@ import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryChain;
 import com.mybatisflex.core.update.UpdateChain;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
-import com.yangaobo.component.MyRedis;
 import com.yangaobo.constant.ML;
 import com.yangaobo.dto.*;
 import com.yangaobo.entity.Seckill;
@@ -20,6 +19,8 @@ import com.yangaobo.mapper.SeckillMapper;
 import com.yangaobo.result.ResultCode;
 import com.yangaobo.security.SecurityContext;
 import com.yangaobo.service.SeckillService;
+import com.yangaobo.service.SeckillStockReservationService;
+import com.yangaobo.service.SeckillStockReservationService.ReservationResult;
 import com.yangaobo.vo.PageVO;
 import com.yangaobo.vo.SeckillSimpleListVO;
 import jakarta.annotation.Resource;
@@ -28,6 +29,8 @@ import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.client.producer.SendStatus;
 
 import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
@@ -57,9 +60,9 @@ public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> impl
     @Resource
     private RedissonClient redissonClient;
     @Resource
-    private MyRedis redis;
-    @Resource
     private RocketMQTemplate rocketmqTemplate;
+    @Resource
+    private SeckillStockReservationService stockReservationService;
 
     @Override
     public boolean insert(SeckillInsertDTO dto) {
@@ -248,31 +251,70 @@ public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> impl
         if (status.equals(ML.Seckill.NOT_START)) {
             throw new ServiceException(ResultCode.SECKILL_NOT_START, fkSeckillId + "号秒杀活动未开始");
         } else if (status.equals(ML.Seckill.STARTED)) {
-            // 开始秒杀
-            final String KEY = ML.Redis.SECKILL_COURSE_COUNT_PREFIX + fkCourseId;
-
-            // 加锁：30秒后过期，线程存活状态下，每10秒自动续期一次
+            // Redisson 只控制入口热点并发，库存和资格由 Redis Lua 原子处理。
             RLock lock = redissonClient.getLock("skLock:" + fkSeckillId + ":" + fkCourseId);
-            lock.lock(30, TimeUnit.SECONDS);
-
+            boolean locked;
             try {
-                // 判断库存充足：扣减库存
-                if (Integer.parseInt(redis.get(KEY)) > 0) {
-                    redis.incr(KEY, -1);
-                    // MQ发送到订单微服务
-                    OrderMessage orderMessage = new OrderMessage();
-                    orderMessage.setFkUserId(dto.getFkUserId());
-                    orderMessage.setFkCourseId(fkCourseId);
-                    orderMessage.setPrice(dto.getPrice());
-                    orderMessage.setSkPrice(dto.getSkPrice());
-                    rocketmqTemplate.convertAndSend("ml-topic:ml-tag", orderMessage);
-                    log.info("订单消息发送成功！");
-                    return true;
-                } else {
-                    throw new ServiceException(ResultCode.SERVER_ERROR, "库存不足，秒杀失败");
-                }
+                locked = lock.tryLock(1, 5, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new ServiceException(ResultCode.SERVER_ERROR, "请求被中断，请重试");
+            }
+            if (!locked) {
+                throw new ServiceException(ResultCode.SERVER_ERROR, "请求繁忙，请稍后重试");
+            }
+
+            ReservationResult reservation;
+            try {
+                reservation = stockReservationService.reserve(
+                        fkSeckillId,
+                        fkCourseId,
+                        dto.getFkUserId(),
+                        dto.getRequestId());
             } finally {
                 lock.unlock();
+            }
+            if (reservation == ReservationResult.IDEMPOTENT_REPLAY) {
+                return true;
+            }
+            if (reservation == ReservationResult.OUT_OF_STOCK) {
+                throw new ServiceException(ResultCode.SERVER_ERROR, "库存不足，秒杀失败");
+            }
+            if (reservation == ReservationResult.ALREADY_QUALIFIED) {
+                throw new ServiceException(ResultCode.SERVER_ERROR, "当前用户已取得该课程秒杀资格");
+            }
+            if (reservation == ReservationResult.STOCK_NOT_READY) {
+                throw new ServiceException(ResultCode.SERVER_ERROR, "活动库存尚未就绪，请稍后重试");
+            }
+
+            OrderMessage orderMessage = new OrderMessage();
+            orderMessage.setRequestId(dto.getRequestId());
+            orderMessage.setQualificationId(dto.getRequestId());
+            orderMessage.setFkSeckillId(fkSeckillId);
+            orderMessage.setFkUserId(dto.getFkUserId());
+            orderMessage.setFkCourseId(fkCourseId);
+            orderMessage.setPrice(dto.getPrice());
+            orderMessage.setSkPrice(dto.getSkPrice());
+            try {
+                SendResult sendResult = rocketmqTemplate.syncSend(
+                        "ml-topic:ml-tag", orderMessage);
+                if (sendResult == null
+                        || sendResult.getSendStatus() != SendStatus.SEND_OK) {
+                    throw new IllegalStateException("RocketMQ send was not acknowledged");
+                }
+                log.info("秒杀订单消息发送成功, requestId={}", dto.getRequestId());
+                return true;
+            } catch (RuntimeException exception) {
+                stockReservationService.release(
+                        fkSeckillId,
+                        fkCourseId,
+                        dto.getFkUserId(),
+                        dto.getRequestId());
+                log.warn("秒杀订单消息发送失败并已补偿, requestId={}",
+                        dto.getRequestId(), exception);
+                throw new ServiceException(
+                        ResultCode.SERVER_ERROR,
+                        "下单消息发送失败，库存资格已恢复，请重试");
             }
         } else if (status.equals(ML.Seckill.ENDED)) {
             throw new ServiceException(ResultCode.SECKILL_END, fkSeckillId + "号秒杀活动已结束");
