@@ -1,7 +1,6 @@
 package com.yangaobo.ai.knowledge.service;
 
 import com.yangaobo.ai.client.CourseAiClient;
-import com.yangaobo.ai.client.SaleAiClient;
 import com.yangaobo.ai.knowledge.model.KnowledgeDocument;
 import com.yangaobo.ai.knowledge.model.KnowledgeIndexStatus;
 import com.yangaobo.ai.knowledge.model.KnowledgeSourceKey;
@@ -26,12 +25,9 @@ public class KnowledgeIndexService {
     private static final int PAGE_SIZE = 100;
     private static final Set<String> MANAGED_SOURCE_TYPES = Set.of(
             KnowledgeDocumentFactory.COURSE,
-            KnowledgeDocumentFactory.COURSE_EPISODES,
-            KnowledgeDocumentFactory.ARTICLE,
-            KnowledgeDocumentFactory.NOTICE);
+            KnowledgeDocumentFactory.COURSE_EPISODES);
 
     private final CourseAiClient courseClient;
-    private final SaleAiClient saleClient;
     private final KnowledgeDocumentFactory documentFactory;
     private final KnowledgeSourceIndexer sourceIndexer;
     private final KnowledgeSourceRepository sourceRepository;
@@ -41,7 +37,6 @@ public class KnowledgeIndexService {
 
     public KnowledgeIndexService(
             CourseAiClient courseClient,
-            SaleAiClient saleClient,
             KnowledgeDocumentFactory documentFactory,
             KnowledgeSourceIndexer sourceIndexer,
             KnowledgeSourceRepository sourceRepository,
@@ -49,7 +44,6 @@ public class KnowledgeIndexService {
             KnowledgeIndexStatusStore statusStore,
             @Qualifier("knowledgeIndexExecutor") TaskExecutor taskExecutor) {
         this.courseClient = courseClient;
-        this.saleClient = saleClient;
         this.documentFactory = documentFactory;
         this.sourceIndexer = sourceIndexer;
         this.sourceRepository = sourceRepository;
@@ -109,14 +103,6 @@ public class KnowledgeIndexService {
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException(
                             "Course episode knowledge document not found"));
-            case KnowledgeDocumentFactory.ARTICLE -> documentFactory.fromArticle(
-                    requireData(
-                            saleClient.getArticle(Long.valueOf(sourceId)),
-                            "article"));
-            case KnowledgeDocumentFactory.NOTICE -> documentFactory.fromNotice(
-                    requireData(
-                            saleClient.getNotice(Long.valueOf(sourceId)),
-                            "notice"));
             default -> throw new IllegalArgumentException(
                     "Unsupported knowledge source type: " + sourceType);
         };
@@ -127,8 +113,6 @@ public class KnowledgeIndexService {
         Set<KnowledgeSourceKey> seenSources = new HashSet<>();
         try {
             indexCourses(seenSources, counters);
-            indexArticles(seenSources, counters);
-            indexNotices(seenSources, counters);
             removeStaleSources(seenSources, counters);
             statusStore.finished(counters.snapshot());
         } catch (RuntimeException exception) {
@@ -162,50 +146,6 @@ public class KnowledgeIndexService {
                 return;
             }
             cursor = nextCursor(cursor, page.nextCursor(), "course");
-        }
-    }
-
-    private void indexArticles(
-            Set<KnowledgeSourceKey> seenSources,
-            MutableCounters counters) {
-        long cursor = 0L;
-        while (true) {
-            SaleAiClient.CursorPage<SaleAiClient.ArticleKnowledge> page =
-                    requireData(
-                            saleClient.articleKnowledge(cursor, PAGE_SIZE),
-                            "article");
-            for (SaleAiClient.ArticleKnowledge article : safeItems(page.items())) {
-                indexSource(
-                        documentFactory.fromArticle(article),
-                        seenSources,
-                        counters);
-            }
-            if (!page.hasMore()) {
-                return;
-            }
-            cursor = nextCursor(cursor, page.nextCursor(), "article");
-        }
-    }
-
-    private void indexNotices(
-            Set<KnowledgeSourceKey> seenSources,
-            MutableCounters counters) {
-        long cursor = 0L;
-        while (true) {
-            SaleAiClient.CursorPage<SaleAiClient.NoticeKnowledge> page =
-                    requireData(
-                            saleClient.noticeKnowledge(cursor, PAGE_SIZE),
-                            "notice");
-            for (SaleAiClient.NoticeKnowledge notice : safeItems(page.items())) {
-                indexSource(
-                        documentFactory.fromNotice(notice),
-                        seenSources,
-                        counters);
-            }
-            if (!page.hasMore()) {
-                return;
-            }
-            cursor = nextCursor(cursor, page.nextCursor(), "notice");
         }
     }
 

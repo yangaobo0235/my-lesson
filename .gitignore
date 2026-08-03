@@ -90,6 +90,7 @@ ml-ai/scripts/*-acceptance-results.*
 ### Runtime and local data ###
 *.log
 logs/
+tmp/
 *.pid
 *.dump
 *.bak

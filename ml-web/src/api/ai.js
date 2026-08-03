@@ -5,9 +5,9 @@ const AI_BASE = '/api/v1/ai';
 export const AI_EVENT_TYPES = [
     'run_started', 'intent_detected', 'agent_selected',
     'agent_started', 'agent_completed', 'workflow_node_started',
-    'workflow_node_completed', 'workflow_waiting_approval', 'retrieval_started',
+    'workflow_node_completed', 'workflow_waiting_confirmation', 'retrieval_started',
     'retrieval_completed', 'tool_started', 'tool_completed',
-    'answer_delta', 'citation', 'approval_required',
+    'answer_delta', 'citation',
     'run_completed', 'run_failed'
 ];
 const body = response => response.data;
@@ -28,8 +28,8 @@ export const aiApi = {
         `${AI_BASE}/learning-plan-drafts/${id}/adjustments`,
         {adjustment, requestId}
     ).then(body),
-    approveLearningPlanDraft: id => GATEWAY_AXIOS.post(
-        `${AI_BASE}/learning-plan-drafts/${id}/approve`
+    confirmLearningPlanDraft: id => GATEWAY_AXIOS.post(
+        `${AI_BASE}/learning-plan-drafts/${id}/confirm`
     ).then(body),
     cancelLearningPlanDraft: id => GATEWAY_AXIOS.post(
         `${AI_BASE}/learning-plan-drafts/${id}/cancel`
@@ -38,9 +38,6 @@ export const aiApi = {
         `${AI_BASE}/plans/${id}/progress`,
         {progressPercent, note}
     ).then(body),
-    approvals: () => GATEWAY_AXIOS.get(`${AI_BASE}/approvals`).then(body),
-    approve: id => GATEWAY_AXIOS.post(`${AI_BASE}/approvals/${id}/approve`).then(body),
-    reject: id => GATEWAY_AXIOS.post(`${AI_BASE}/approvals/${id}/reject`).then(body),
     knowledgeStatus: () => GATEWAY_AXIOS.get(`${AI_BASE}/admin/knowledge/status`).then(body),
     knowledgeSources: params => GATEWAY_AXIOS.get(`${AI_BASE}/admin/knowledge/sources`, {params}).then(body),
     retryKnowledgeSource: (sourceType, sourceId) => GATEWAY_AXIOS.post(

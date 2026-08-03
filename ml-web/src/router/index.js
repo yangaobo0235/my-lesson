@@ -150,7 +150,6 @@ const router = createRouter({
                 {path: '/ai/chat', name: 'AiChat', component: () => import('../views/ai/Chat.vue')},
                 {path: '/ai/conversations', name: 'AiConversations', component: () => import('../views/ai/Conversations.vue')},
                 {path: '/ai/plans', name: 'AiPlans', component: () => import('../views/ai/Plans.vue')},
-                {path: '/ai/approvals', name: 'AiApprovals', component: () => import('../views/ai/Approvals.vue')},
                 {path: '/ai/admin/evaluation', name: 'AiAdminEvaluation', component: () => import('../views/ai/AdminEvaluation.vue')},
                 {path: '/student/home', name: 'StudentHome', component: () => import('../views/student/Home.vue')},
                 {path: '/student/courses', name: 'StudentCourses', component: () => import('../views/student/Courses.vue')},

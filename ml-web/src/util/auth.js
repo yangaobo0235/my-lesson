@@ -6,7 +6,6 @@ const AI_NAV_ITEMS = [
     {path: '/ai/chat', label: 'AI 对话', icon: 'ChatLineRound', permission: 'ai:use'},
     {path: '/ai/conversations', label: '历史会话', icon: 'Clock', permission: 'ai:use'},
     {path: '/ai/plans', label: '学习计划', icon: 'Notebook', permission: 'ai:use'},
-    {path: '/ai/approvals', label: '待确认操作', icon: 'CircleCheck', permission: 'ai:approval'},
     {path: '/ai/admin/evaluation', label: '评测与知识库', icon: 'DataAnalysis', permission: 'ai:admin'},
 ];
 
@@ -161,7 +160,6 @@ export function canUseAi() {
 
 export function canAccessAiPermission(permission, roles = getLoginRoles()) {
     if (permission === 'ai:admin') return isAiAdmin(roles);
-    if (permission === 'ai:approval') return canUseAi();
     return canUseAi();
 }
 

@@ -7,7 +7,6 @@ import com.yangaobo.ai.security.AuthenticatedUser;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -24,8 +23,6 @@ public final class ToolRunContext {
             eventSink;
     private final Consumer<RouteMetadata> routeSink;
     private final AtomicInteger callCount = new AtomicInteger();
-    private final AtomicBoolean approvalPending =
-            new AtomicBoolean();
     private final List<ToolStep> completedSteps =
             new CopyOnWriteArrayList<>();
 
@@ -70,14 +67,6 @@ public final class ToolRunContext {
 
     public int toolCallCount() {
         return callCount.get();
-    }
-
-    public void approvalRequested() {
-        approvalPending.set(true);
-    }
-
-    public boolean hasApprovalPending() {
-        return approvalPending.get();
     }
 
     public void toolCompleted(

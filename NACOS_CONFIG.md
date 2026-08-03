@@ -23,7 +23,7 @@ MyLesson 后端服务使用 Nacos 作为配置中心和服务发现中心。启�
 | `ml-course-dev.yaml` | 课程服务端口、数据源、Elasticsearch、RocketMQ、AI 知识同步配置 |
 | `ml-sale-dev.yaml` | 营销服务端口、数据源、XXL-JOB、RocketMQ、AI 知识同步配置 |
 | `ml-order-dev.yaml` | 订单服务端口、数据源、RocketMQ、支付宝沙箱配置 |
-| `ml-ai-dev.yaml` | AI 服务端口、PostgreSQL、Profile Agent、模型/Tool 双预算、条件 Graph、pgvector/RAG、评测、审批和知识同步；MCP 为可选配置 |
+| `ml-ai-dev.yaml` | AI 服务端口、PostgreSQL、Agent、模型/Tool 调用预算、学习计划 Graph、pgvector/RAG、评测和知识同步 |
 
 ## 本地服务如何加载 Nacos
 
@@ -80,7 +80,6 @@ AI_CHAT_MODEL=qwen3-max
 AI_ROUTER_MODEL=qwen-flash
 AI_IDENTITY_SECRET=your-random-secret
 AI_INTERNAL_TOKEN=your-random-token
-MCP_CLIENT_ENABLED=false
 AI_EVALUATION_REPORT_DIR=target/evaluation
 
 CORS_ALLOWED_ORIGINS=http://localhost:24108
@@ -490,19 +489,6 @@ spring:
         index-type: hnsw
         distance-type: cosine-distance
         table-name: vector_store
-    mcp:
-      client:
-        enabled: ${MCP_CLIENT_ENABLED:false}
-        type: SYNC
-        request-timeout: 12s
-        toolcallback:
-          enabled: true
-        sse:
-          connections:
-            course-resource:
-              url: ${MCP_COURSE_RESOURCE_URL:http://127.0.0.1:24200}
-              sse-endpoint: /sse
-
   cloud:
     openfeign:
       client:
@@ -615,17 +601,6 @@ ai:
       fallback-to-memory: true
       release-thread: false
 
-  mcp:
-    enabled: ${MCP_CLIENT_ENABLED:false}
-    tool-name-prefix: "mcp_"
-    allow-all-tools: true
-    disabled-tools: []
-    timeout: 12s
-
-  approval:
-    ttl: 30m
-    list-limit: 100
-
   evaluation:
     report-dir: ${AI_EVALUATION_REPORT_DIR:target/evaluation}
 
@@ -633,7 +608,7 @@ ai:
     reconciliation-cron: "0 0 3 * * *"
 ```
 
-`max-model-calls` 与 `max-tool-calls` 是独立预算。只读 Tool 仅对明确的瞬时超时最多重试一次；受控写 Tool 使用独立超时且不进行无状态重试。学习计划的一次 Query Rewrite、最多两次 Repair/Review 是工作流代码中的固定上限，不通过 Nacos 放大为无界循环。
+`max-model-calls` 与 `max-tool-calls` 是独立预算。只读 Tool 仅对明确的瞬时超时最多重试一次。学习计划的一次 Query Rewrite、最多两次 Repair/Review 是工作流代码中的固定上限，不通过 Nacos 放大为无界循环。
 
 评测报告默认写入服务工作目录下的 `target/evaluation`。deterministic 模式使用固定数据建立 CI 基线；external 模式会调用真实模型，必须显式执行后才能报告结果。
 

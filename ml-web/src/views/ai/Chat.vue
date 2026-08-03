@@ -16,7 +16,6 @@ const streamState = ref('未连接');
 const timeline = ref([]);
 const liveAnswer = ref('');
 const liveCitations = ref([]);
-const liveApproval = ref(null);
 const traceId = ref('');
 const runId = ref('');
 const currentProfile = ref(null);
@@ -34,9 +33,7 @@ const currentConversation = computed(() =>
     conversations.value.find(item => item.id === conversationId.value));
 
 function eventLabel(type, data) {
-  const toolLabel = data.toolSource === 'MCP'
-      ? `MCP 工具：${data.toolName || '-'}`
-      : `工具：${data.toolName || '-'}`;
+  const toolLabel = `工具：${data.toolName || '-'}`;
   const labels = {
     run_started: '开始处理',
     intent_detected: `识别意图：${data.intent || '-'}`,
@@ -45,12 +42,11 @@ function eventLabel(type, data) {
     agent_completed: `${data.displayName || data.agentName || 'Agent'} 处理完成`,
     workflow_node_started: `工作流节点开始：${data.displayName || data.nodeName || '-'}`,
     workflow_node_completed: `${data.displayName || data.nodeName || '工作流节点'}${data.success === false ? '失败' : '完成'}`,
-    workflow_waiting_approval: `学习计划待确认：${data.goal || data.draftId || '-'}`,
+    workflow_waiting_confirmation: `学习计划待确认：${data.goal || data.draftId || '-'}`,
     retrieval_started: '开始检索',
     retrieval_completed: '检索完成',
     tool_started: `调用${toolLabel}`,
     tool_completed: `${toolLabel}完成`,
-    approval_required: `等待确认：${data.actionType || '-'}`,
     run_completed: '回答完成',
     run_failed: `处理失败：${data.message || '请稍后重试'}`
   };
@@ -89,7 +85,6 @@ function handleEvent(type, event) {
     toolStates.value.push({
       key: `${data.toolName}-${event.timestamp}`,
       name: data.toolName,
-      source: data.toolSource || 'LOCAL',
       status: 'STARTED'
     });
   }
@@ -101,7 +96,7 @@ function handleEvent(type, event) {
   if (type === 'retrieval_completed') {
     evidenceNotice.value = Number(data.hitCount || 0) === 0 ? '资料不足，回答将拒答或仅使用已验证业务数据' : '';
   }
-  if (type === 'workflow_waiting_approval' && data.terminationReason) {
+  if (type === 'workflow_waiting_confirmation' && data.terminationReason) {
     evidenceNotice.value = data.terminationReason === 'INSUFFICIENT_DATA'
         ? '候选课程资料不足，草案未进入确认'
         : `计划生成已降级：${data.terminationReason}`;
@@ -115,7 +110,6 @@ function handleEvent(type, event) {
     liveCitations.value.push(data.citation);
     return;
   }
-  if (type === 'approval_required') liveApproval.value = data;
   timeline.value.push({type, label: eventLabel(type, data), timestamp: event.timestamp});
   if (type === 'run_completed') {
     sending.value = false;
@@ -185,7 +179,6 @@ async function send(message = input.value) {
   if (!stream || stream.readyState === EventSource.CLOSED) connectStream();
   liveAnswer.value = '';
   liveCitations.value = [];
-  liveApproval.value = null;
   timeline.value = [];
   toolStates.value = [];
   evidenceNotice.value = '';
@@ -207,13 +200,6 @@ async function send(message = input.value) {
   await scrollBottom();
 }
 
-async function decide(approved) {
-  if (!liveApproval.value?.approvalId) return;
-  await (approved ? aiApi.approve(liveApproval.value.approvalId) : aiApi.reject(liveApproval.value.approvalId));
-  ElMessage.success(approved ? '已批准' : '已拒绝');
-  liveApproval.value = null;
-}
-
 async function recommendCourses() {
   const goal = (recommendationGoal.value || input.value || lastMessage.value).trim();
   if (!goal) {
@@ -229,10 +215,6 @@ async function recommendCourses() {
   } finally {
     recommendationLoading.value = false;
   }
-}
-
-async function addRecommendedToCart(course) {
-  await send(`把课程 ${course.courseId} 加入我的购物车`);
 }
 
 function fillPrompt(prompt) {
@@ -305,11 +287,6 @@ onBeforeUnmount(closeStream);
             </div>
           </div>
         </div>
-        <div v-if="liveApproval" class="approval-box">
-          <div><strong>需要你的确认</strong><p>{{ liveApproval.reason || liveApproval.actionType }}</p></div>
-          <el-button type="success" @click="decide(true)">批准</el-button>
-          <el-button type="danger" plain @click="decide(false)">拒绝</el-button>
-        </div>
         <div class="composer">
           <el-input v-model="input" type="textarea" :rows="3" maxlength="2000"
                     placeholder="例如：帮我找适合睡前放松的课程，并说明推荐依据"
@@ -345,10 +322,6 @@ onBeforeUnmount(closeStream);
                 {{ citation.title }}
               </a>
             </div>
-            <el-button v-if="!course.owned && !course.inCart" size="small" type="primary" plain
-                       @click="addRecommendedToCart(course)">
-              加入购物车
-            </el-button>
           </div>
         </div>
       </el-card>
@@ -364,7 +337,7 @@ onBeforeUnmount(closeStream);
         <el-divider v-if="toolStates.length"/>
         <div v-if="toolStates.length" class="tool-status-list">
           <div v-for="tool in toolStates" :key="tool.key" class="tool-status">
-            <span>{{ tool.name }} <small>{{ tool.source }}</small></span>
+            <span>{{ tool.name }}</span>
             <el-tag size="small" :type="tool.status === 'SUCCEEDED' ? 'success' : tool.status === 'FAILED' ? 'danger' : 'warning'">
               {{ tool.status }}
             </el-tag>
@@ -405,8 +378,6 @@ onBeforeUnmount(closeStream);
 .message.user .message-content { color:white; background:var(--el-color-primary); }
 .citation-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .citation-list a { color:var(--el-color-primary); font-size:12px; }
-.approval-box { display:flex; align-items:center; gap:10px; padding:12px; margin:8px 0; border:1px solid var(--el-color-warning); border-radius:10px; }
-.approval-box div { flex:1; } .approval-box p { margin:5px 0 0; color:var(--el-text-color-secondary); }
 .composer { border-top:1px solid var(--el-border-color-lighter); padding-top:14px; }
 .composer-actions { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:10px; color:var(--el-text-color-secondary); font-size:12px; }
 .recommend-button { width:100%; margin-top:10px; }

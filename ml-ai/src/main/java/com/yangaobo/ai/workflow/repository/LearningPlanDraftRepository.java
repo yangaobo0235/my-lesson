@@ -256,6 +256,7 @@ public class LearningPlanDraftRepository {
                     updated_at
                 FROM ai_learning_plan_draft
                 """ + where + """
+
                 LIMIT 1
                 """,
                 this::map,

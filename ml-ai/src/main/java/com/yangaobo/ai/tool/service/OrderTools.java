@@ -3,7 +3,6 @@ package com.yangaobo.ai.tool.service;
 import com.yangaobo.ai.client.OrderAiClient;
 import com.yangaobo.ai.service.AiBusinessGateway;
 import com.yangaobo.ai.tool.config.BusinessToolProperties;
-import com.yangaobo.ai.tool.dto.CourseIdRequest;
 import com.yangaobo.ai.tool.dto.LimitRequest;
 import com.yangaobo.ai.tool.dto.NoArgsRequest;
 import org.springframework.stereotype.Component;
@@ -41,13 +40,4 @@ public class OrderTools {
         return businessGateway.getMyCart();
     }
 
-    public OrderAiClient.CartItem addCourseToMyCart(
-            CourseIdRequest request) {
-        return businessGateway.addMyCartItem(request.courseId());
-    }
-
-    public boolean removeCourseFromMyCart(
-            CourseIdRequest request) {
-        return businessGateway.removeMyCartItem(request.courseId());
-    }
 }

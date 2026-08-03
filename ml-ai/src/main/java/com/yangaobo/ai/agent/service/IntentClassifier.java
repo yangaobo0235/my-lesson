@@ -29,9 +29,7 @@ public class IntentClassifier {
             KNOWLEDGE_QA：知识解释、课程内容问答。
             COURSE_SEARCH：搜索、推荐或查询课程详情。
             PERSONAL_QUERY：查询当前用户自己的订单、资料、购物车或已有学习计划。
-            CART_ACTION：添加或移除购物车课程。
             LEARNING_PLAN：创建、调整或查询学习计划。
-            ADMIN_OPERATION：管理员重建知识索引等后台操作。
             OUT_OF_SCOPE：与 MyLesson 学习和业务无关。
 
             只判断用户意图，不执行任务。对代词和连续问题可参考对话上下文，
@@ -57,10 +55,6 @@ public class IntentClassifier {
     public IntentDecision classify(
             String message,
             String conversationContext) {
-        IntentDecision guardedDecision = classifyGuardedOperation(message);
-        if (guardedDecision != null) {
-            return guardedDecision;
-        }
         int attempts = Math.max(
                 1,
                 properties.getModelRetryCount() + 1);
@@ -98,10 +92,6 @@ public class IntentClassifier {
     public IntentDecision classifyStrict(
             String message,
             String conversationContext) {
-        IntentDecision guardedDecision = classifyGuardedOperation(message);
-        if (guardedDecision != null) {
-            return guardedDecision;
-        }
         int attempts = Math.max(
                 1,
                 properties.getModelRetryCount() + 1);
@@ -161,30 +151,22 @@ public class IntentClassifier {
         String text = message == null
                 ? ""
                 : message.toLowerCase(Locale.ROOT);
-        if (containsAny(
-                text,
-                "重建索引",
-                "重建知识",
-                "刷新索引",
-                "rebuild")) {
+        if (containsAny(text, "加入购物车", "添加到购物车", "放进购物车",
+                "移出购物车", "从购物车删除", "清空购物车",
+                "结算购物车")) {
             return decision(
-                    UserIntent.ADMIN_OPERATION,
-                    "命中知识索引管理关键词");
+                    UserIntent.OUT_OF_SCOPE,
+                    "购物车写操作不属于 AI 助手能力范围");
         }
-        if (containsAny(text, "加入购物车", "添加购物车", "移出购物车",
-                "移除购物车", "删除购物车")) {
-            return decision(
-                    UserIntent.CART_ACTION,
-                    "命中购物车写操作关键词");
-        }
-        if (containsAny(text, "学习计划", "学习规划", "制定计划",
+        if (containsAny(text, "学习计划", "学习规划", "学习方案", "制定计划",
                 "每天学习", "学习目标")) {
             return decision(
                     UserIntent.LEARNING_PLAN,
                     "命中学习计划关键词");
         }
-        if (containsAny(text, "我的订单", "最近订单", "我的资料",
-                "个人资料", "我的购物车", "我的计划")) {
+        if (containsAny(text, "我的订单", "最近订单", "买过", "购买过",
+                "我的资料", "个人资料", "基本资料", "账号信息",
+                "账号的资料", "购物车", "订单", "我的计划")) {
             return decision(
                     UserIntent.PERSONAL_QUERY,
                     "命中当前用户数据查询关键词");
@@ -205,23 +187,6 @@ public class IntentClassifier {
                 UserIntent.OUT_OF_SCOPE,
                 0.4,
                 "模型分类不可用且规则无法确认意图");
-    }
-
-    private IntentDecision classifyGuardedOperation(String message) {
-        String text = message == null
-                ? ""
-                : message.toLowerCase(Locale.ROOT);
-        if (containsAny(
-                text,
-                "重建索引",
-                "重建知识",
-                "刷新索引",
-                "rebuild")) {
-            return decision(
-                    UserIntent.ADMIN_OPERATION,
-                    "明确的高风险管理命令，强制进入审批路由");
-        }
-        return null;
     }
 
     public IntentDecision classifyDeterministically(String message) {

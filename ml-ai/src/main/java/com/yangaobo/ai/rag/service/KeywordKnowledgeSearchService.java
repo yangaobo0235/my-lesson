@@ -1,7 +1,6 @@
 package com.yangaobo.ai.rag.service;
 
 import com.yangaobo.ai.client.CourseAiClient;
-import com.yangaobo.ai.client.SaleAiClient;
 import com.yangaobo.ai.exception.DownstreamServiceException;
 import com.yangaobo.ai.rag.config.RagProperties;
 import com.yangaobo.ai.rag.model.RetrievalCandidate;
@@ -10,7 +9,6 @@ import com.yangaobo.ai.service.AiBusinessGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.util.HtmlUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -38,7 +36,6 @@ public class KeywordKnowledgeSearchService {
     public List<RetrievalCandidate> search(String query) {
         List<SearchHit> hits = new ArrayList<>();
         searchCourses(query, hits);
-        searchSale(query, hits);
 
         List<SearchHit> ranked = hits.stream()
                 .sorted(Comparator.comparingDouble(SearchHit::score).reversed())
@@ -83,55 +80,6 @@ public class KeywordKnowledgeSearchService {
         } catch (DownstreamServiceException exception) {
             log.warn("Course keyword search unavailable");
         }
-    }
-
-    private void searchSale(String query, List<SearchHit> hits) {
-        try {
-            List<SaleAiClient.SaleSearchHit> saleHits =
-                    businessGateway.searchSale(
-                            query,
-                            properties.getKeywordTopK());
-            for (int index = 0; index < saleHits.size(); index++) {
-                SaleAiClient.SaleSearchHit saleHit = saleHits.get(index);
-                String snippet = normalizeSnippet(saleHit.snippet());
-                double score = scoreCalculator.score(
-                        query,
-                        saleHit.title(),
-                        snippet,
-                        index + 1);
-                String module = "ARTICLE".equals(saleHit.sourceType())
-                        ? "article"
-                        : "notice";
-                hits.add(new SearchHit(
-                        saleHit.sourceType(),
-                        saleHit.id().toString(),
-                        saleHit.title(),
-                        snippet,
-                        sourceUrl(
-                                "/sale-server/api/v1/"
-                                        + module
-                                        + "/select/"
-                                        + saleHit.id()),
-                        score));
-            }
-        } catch (DownstreamServiceException exception) {
-            log.warn("Sale keyword search unavailable");
-        }
-    }
-
-    private String normalizeSnippet(String content) {
-        if (content == null) {
-            return "";
-        }
-        String withoutTags = content
-                .replaceAll("(?i)<br\\s*/?>", "\n")
-                .replaceAll("<[^>]+>", "");
-        String normalized = HtmlUtils.htmlUnescape(withoutTags)
-                .replaceAll("\\s+", " ")
-                .trim();
-        return normalized.length() <= 600
-                ? normalized
-                : normalized.substring(0, 600);
     }
 
     private String sourceUrl(String path) {

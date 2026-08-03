@@ -69,36 +69,15 @@ public class AgentOrchestrator {
                         结合查询结果给出简短、可执行的学习建议。
                         """));
         result.put(
-                UserIntent.CART_ACTION,
-                new AgentProfile(
-                        "COURSE_RECOMMENDATION",
-                        "课程推荐",
-                        "负责加入或移除购物车，并确保写操作进入确认流程",
-                        """
-                        你是购物车操作 Agent。执行加入或移除购物车前，必须确认目标课程。
-                        写操作只允许通过工具创建审批任务，不得宣称已直接完成。
-                        如果出现待确认操作，立即停止继续写入并提示用户确认。
-                        """));
-        result.put(
                 UserIntent.LEARNING_PLAN,
                 new AgentProfile(
                         "LEARNING_PLAN",
                         "学习计划",
-                        "负责学习目标拆解、计划草案、计划查询和进度建议",
+                        "负责学习目标拆解、计划草案、用户调整和确认",
                         """
                         你是学习计划 Agent。先理解目标、每日可用时间和课程候选，
-                        再生成或查询学习计划。创建正式计划前必须走审批确认。
+                        再生成或查询学习计划。正式计划只能由用户确认版本化草案后创建。
                         对计划建议要具体到阶段、课程顺序和每日动作。
-                        """));
-        result.put(
-                UserIntent.ADMIN_OPERATION,
-                new AgentProfile(
-                        "PERSONAL_QUERY",
-                        "个人查询",
-                        "负责知识库重建等管理员操作",
-                        """
-                        你是运营管理 Agent。只处理管理员允许的知识库和评测运维操作。
-                        高风险操作必须走审批流程，并说明影响范围和恢复方式。
                         """));
         result.put(
                 UserIntent.OUT_OF_SCOPE,

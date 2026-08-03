@@ -40,26 +40,6 @@ public class ToolCallRepository {
             UUID requestId,
             String toolName,
             String requestJson) {
-        return startRead(
-                runId,
-                userId,
-                requestId,
-                toolName,
-                requestJson,
-                "LOCAL",
-                null,
-                null);
-    }
-
-    public UUID startRead(
-            UUID runId,
-            Long userId,
-            UUID requestId,
-            String toolName,
-            String requestJson,
-            String toolSource,
-            String mcpServerName,
-            String externalToolName) {
         UUID id = UUID.randomUUID();
         jdbcTemplate.update(
                 """
@@ -71,16 +51,13 @@ public class ToolCallRepository {
                     tool_name,
                     request_json,
                     request_hash,
-                    tool_source,
-                    mcp_server_name,
-                    external_tool_name,
                     success,
                     write_operation,
                     status,
                     created_at
                 )
                 VALUES (
-                    ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, CAST(? AS jsonb), ?,
                     false, false, 'STARTED', now()
                 )
                 """,
@@ -90,10 +67,7 @@ public class ToolCallRepository {
                 requestId,
                 toolName,
                 requestJson,
-                hash(requestJson),
-                toolSource,
-                mcpServerName,
-                externalToolName);
+                hash(requestJson));
         return id;
     }
 
@@ -210,7 +184,6 @@ public class ToolCallRepository {
     public List<ToolCallView> recentCalls(
             Long userId,
             String toolName,
-            String toolSource,
             String accessType,
             String status,
             int limit) {
@@ -221,9 +194,6 @@ public class ToolCallRepository {
                     user_id,
                     request_id,
                     tool_name,
-                    COALESCE(tool_source, 'LOCAL') AS tool_source,
-                    mcp_server_name,
-                    external_tool_name,
                     write_operation,
                     status,
                     success,
@@ -246,11 +216,6 @@ public class ToolCallRepository {
         if (toolName != null && !toolName.isBlank()) {
             sql.append(" AND tool_name = ?");
             args.add(toolName);
-        }
-        if ("LOCAL".equalsIgnoreCase(toolSource)
-                || "MCP".equalsIgnoreCase(toolSource)) {
-            sql.append(" AND tool_source = ?");
-            args.add(toolSource.toUpperCase());
         }
         if ("READ".equalsIgnoreCase(accessType)
                 || "WRITE".equalsIgnoreCase(accessType)) {
@@ -286,9 +251,6 @@ public class ToolCallRepository {
                 nullableLong(resultSet, "user_id"),
                 resultSet.getObject("request_id", UUID.class),
                 resultSet.getString("tool_name"),
-                resultSet.getString("tool_source"),
-                resultSet.getString("mcp_server_name"),
-                resultSet.getString("external_tool_name"),
                 writeOperation ? "WRITE" : "READ",
                 resultSet.getString("status"),
                 resultSet.getBoolean("success"),

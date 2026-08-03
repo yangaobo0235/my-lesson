@@ -19,7 +19,6 @@ public class AiMetrics {
     private final Counter toolErrorTotal;
     private final Timer retrievalLatency;
     private final Counter retrievalEmptyTotal;
-    private final Counter approvalTotal;
     private final Counter tokenUsage;
     private final DistributionSummary knowledgeEventLag;
     private final Counter inboxDuplicateTotal;
@@ -37,7 +36,6 @@ public class AiMetrics {
         toolErrorTotal = registry.counter("ai_tool_error_total");
         retrievalLatency = registry.timer("ai_retrieval_latency");
         retrievalEmptyTotal = registry.counter("ai_retrieval_empty_total");
-        approvalTotal = registry.counter("ai_approval_total");
         tokenUsage = registry.counter("ai_token_usage");
         knowledgeEventLag = registry.summary("knowledge_event_lag_ms");
         inboxDuplicateTotal = registry.counter("inbox_duplicate_total");
@@ -71,10 +69,6 @@ public class AiMetrics {
         if (empty) {
             retrievalEmptyTotal.increment();
         }
-    }
-
-    public void approval() {
-        approvalTotal.increment();
     }
 
     public void tokens(long total) {

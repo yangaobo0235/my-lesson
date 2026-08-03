@@ -25,7 +25,6 @@ const sourceFilters = reactive({
 const toolFilters = reactive({
   userId: '',
   toolName: '',
-  toolSource: '',
   accessType: '',
   status: '',
   limit: 100
@@ -153,8 +152,6 @@ onMounted(load);
               <el-select v-model="sourceFilters.sourceType" clearable placeholder="来源类型" style="width: 170px">
                 <el-option label="课程" value="COURSE"/>
                 <el-option label="课程分集" value="COURSE_EPISODES"/>
-                <el-option label="文章" value="ARTICLE"/>
-                <el-option label="公告" value="NOTICE"/>
               </el-select>
               <el-select v-model="sourceFilters.status" clearable placeholder="索引状态" style="width: 150px">
                 <el-option label="已索引" value="ACTIVE"/>
@@ -196,10 +193,6 @@ onMounted(load);
             <div class="toolbar">
               <el-input v-model="toolFilters.userId" clearable placeholder="用户 ID" style="width: 130px"/>
               <el-input v-model="toolFilters.toolName" clearable placeholder="Tool 名称" style="width: 180px"/>
-              <el-select v-model="toolFilters.toolSource" clearable placeholder="来源" style="width: 120px">
-                <el-option label="LOCAL" value="LOCAL"/>
-                <el-option label="MCP" value="MCP"/>
-              </el-select>
               <el-select v-model="toolFilters.accessType" clearable placeholder="读写类型" style="width: 130px">
                 <el-option label="READ" value="READ"/>
                 <el-option label="WRITE" value="WRITE"/>
@@ -214,17 +207,6 @@ onMounted(load);
             </div>
             <el-table v-loading="toolLoading" :data="toolCalls">
               <el-table-column prop="toolName" label="Tool" min-width="170"/>
-              <el-table-column label="来源" width="100">
-                <template #default="{row}">
-                  <el-tag :type="row.toolSource === 'MCP' ? 'success' : 'info'">{{ row.toolSource || 'LOCAL' }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="外部工具" min-width="170" show-overflow-tooltip>
-                <template #default="{row}">
-                  {{ row.toolSource === 'MCP' ? (row.externalToolName || '-') : '-' }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="mcpServerName" label="MCP Server" min-width="140" show-overflow-tooltip/>
               <el-table-column prop="userId" label="用户" width="100"/>
               <el-table-column label="类型" width="90">
                 <template #default="{row}">

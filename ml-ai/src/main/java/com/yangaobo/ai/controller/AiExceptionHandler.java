@@ -1,7 +1,5 @@
 package com.yangaobo.ai.controller;
 
-import com.yangaobo.ai.approval.exception.ApprovalNotFoundException;
-import com.yangaobo.ai.approval.exception.ApprovalStateException;
 import com.yangaobo.ai.exception.BusinessOperationException;
 import com.yangaobo.ai.exception.DownstreamServiceException;
 import com.yangaobo.ai.conversation.exception.ConversationBusyException;
@@ -48,24 +46,6 @@ public class AiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new AiErrorResponse(
                         "AI_CONVERSATION_BUSY",
-                        exception.getMessage()));
-    }
-
-    @ExceptionHandler(ApprovalNotFoundException.class)
-    public ResponseEntity<AiErrorResponse> approvalNotFound(
-            ApprovalNotFoundException exception) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new AiErrorResponse(
-                        "AI_APPROVAL_NOT_FOUND",
-                        exception.getMessage()));
-    }
-
-    @ExceptionHandler(ApprovalStateException.class)
-    public ResponseEntity<AiErrorResponse> approvalState(
-            ApprovalStateException exception) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new AiErrorResponse(
-                        exception.getCode(),
                         exception.getMessage()));
     }
 

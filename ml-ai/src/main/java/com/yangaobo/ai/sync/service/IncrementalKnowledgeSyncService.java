@@ -1,7 +1,6 @@
 package com.yangaobo.ai.sync.service;
 
 import com.yangaobo.ai.client.CourseAiClient;
-import com.yangaobo.ai.client.SaleAiClient;
 import com.yangaobo.ai.exception.BusinessOperationException;
 import com.yangaobo.ai.knowledge.model.KnowledgeDocument;
 import com.yangaobo.ai.knowledge.model.KnowledgeSourceKey;
@@ -57,8 +56,6 @@ public class IncrementalKnowledgeSyncService {
             boolean changed = switch (event.eventType()) {
                 case "COURSE_CREATED", "COURSE_UPDATED" -> syncCourse(event);
                 case "COURSE_DELETED" -> deleteCourse(event);
-                case "ARTICLE_UPDATED" -> syncArticle(event);
-                case "NOTICE_UPDATED" -> syncNotice(event);
                 default -> throw new IllegalArgumentException(
                         "Unsupported knowledge event type: " + event.eventType());
             };
@@ -106,40 +103,6 @@ public class IncrementalKnowledgeSyncService {
                 key(KnowledgeDocumentFactory.COURSE_EPISODES, event),
                 event.version());
         return course || episodes;
-    }
-
-    private boolean syncArticle(KnowledgeChangeEvent event) {
-        if (newerOrEqual(KnowledgeDocumentFactory.ARTICLE, event)) {
-            return false;
-        }
-        try {
-            SaleAiClient.ArticleKnowledge article =
-                    businessGateway.getArticle(Long.valueOf(event.aggregateId()));
-            return sourceIndexer.index(withEventVersion(
-                    documentFactory.fromArticle(article),
-                    event.version())).indexed();
-        } catch (BusinessOperationException notFound) {
-            return sourceIndexer.delete(
-                    key(KnowledgeDocumentFactory.ARTICLE, event),
-                    event.version());
-        }
-    }
-
-    private boolean syncNotice(KnowledgeChangeEvent event) {
-        if (newerOrEqual(KnowledgeDocumentFactory.NOTICE, event)) {
-            return false;
-        }
-        try {
-            SaleAiClient.NoticeKnowledge notice =
-                    businessGateway.getNotice(Long.valueOf(event.aggregateId()));
-            return sourceIndexer.index(withEventVersion(
-                    documentFactory.fromNotice(notice),
-                    event.version())).indexed();
-        } catch (BusinessOperationException notFound) {
-            return sourceIndexer.delete(
-                    key(KnowledgeDocumentFactory.NOTICE, event),
-                    event.version());
-        }
     }
 
     private boolean newerOrEqual(String sourceType, KnowledgeChangeEvent event) {

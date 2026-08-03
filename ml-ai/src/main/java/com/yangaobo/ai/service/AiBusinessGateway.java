@@ -3,7 +3,6 @@ package com.yangaobo.ai.service;
 import com.yangaobo.ai.client.CourseAiClient;
 import com.yangaobo.ai.client.InternalAiResponse;
 import com.yangaobo.ai.client.OrderAiClient;
-import com.yangaobo.ai.client.SaleAiClient;
 import com.yangaobo.ai.client.UserAiClient;
 import com.yangaobo.ai.exception.BusinessOperationException;
 import com.yangaobo.ai.exception.DownstreamServiceException;
@@ -21,17 +20,14 @@ public class AiBusinessGateway {
     private static final Logger log = LoggerFactory.getLogger(AiBusinessGateway.class);
 
     private final CourseAiClient courseClient;
-    private final SaleAiClient saleClient;
     private final OrderAiClient orderClient;
     private final UserAiClient userClient;
 
     public AiBusinessGateway(
             CourseAiClient courseClient,
-            SaleAiClient saleClient,
             OrderAiClient orderClient,
             UserAiClient userClient) {
         this.courseClient = courseClient;
-        this.saleClient = saleClient;
         this.orderClient = orderClient;
         this.userClient = userClient;
     }
@@ -58,32 +54,6 @@ public class AiBusinessGateway {
         return call("course", courseClient::categories);
     }
 
-    public SaleAiClient.CursorPage<SaleAiClient.ArticleKnowledge> articleKnowledge(
-            Long cursor,
-            int size) {
-        return call("sale", () -> saleClient.articleKnowledge(cursor, size));
-    }
-
-    public SaleAiClient.CursorPage<SaleAiClient.NoticeKnowledge> noticeKnowledge(
-            Long cursor,
-            int size) {
-        return call("sale", () -> saleClient.noticeKnowledge(cursor, size));
-    }
-
-    public SaleAiClient.ArticleKnowledge getArticle(Long articleId) {
-        return call("sale", () -> saleClient.getArticle(articleId));
-    }
-
-    public SaleAiClient.NoticeKnowledge getNotice(Long noticeId) {
-        return call("sale", () -> saleClient.getNotice(noticeId));
-    }
-
-    public List<SaleAiClient.SaleSearchHit> searchSale(
-            String keyword,
-            int limit) {
-        return call("sale", () -> saleClient.search(keyword, limit));
-    }
-
     public List<OrderAiClient.OrderSummary> getMyOrders(int limit) {
         Long userId = currentUserId();
         return call("order", () -> orderClient.orders(userId, limit));
@@ -92,23 +62,6 @@ public class AiBusinessGateway {
     public List<OrderAiClient.CartItem> getMyCart() {
         Long userId = currentUserId();
         return call("order", () -> orderClient.cart(userId));
-    }
-
-    public OrderAiClient.CartItem addMyCartItem(Long courseId) {
-        Long userId = currentUserId();
-        return call(
-                "order",
-                () -> orderClient.addCartItem(
-                        userId,
-                        new OrderAiClient.AddCartItemRequest(courseId)));
-    }
-
-    public boolean removeMyCartItem(Long courseId) {
-        Long userId = currentUserId();
-        Boolean removed = call(
-                "order",
-                () -> orderClient.deleteCartItem(userId, courseId));
-        return Boolean.TRUE.equals(removed);
     }
 
     public UserAiClient.UserProfile getMyProfile() {

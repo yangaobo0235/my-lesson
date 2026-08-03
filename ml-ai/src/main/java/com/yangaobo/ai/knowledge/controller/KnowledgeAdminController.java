@@ -1,7 +1,6 @@
 package com.yangaobo.ai.knowledge.controller;
 
 import com.yangaobo.ai.knowledge.model.KnowledgeIndexStatus;
-import com.yangaobo.ai.approval.exception.ApprovalStateException;
 import com.yangaobo.ai.knowledge.model.KnowledgeSourceView;
 import com.yangaobo.ai.knowledge.repository.KnowledgeSourceRepository;
 import com.yangaobo.ai.knowledge.service.KnowledgeAdminGuard;
@@ -40,9 +39,8 @@ public class KnowledgeAdminController {
     @PostMapping("/rebuild")
     public ResponseEntity<KnowledgeIndexStatus> rebuild() {
         adminGuard.requireAdmin();
-        throw new ApprovalStateException(
-                "APPROVAL_REQUIRED",
-                "知识索引重建必须通过 AI 对话发起，并在审批列表中确认");
+        knowledgeIndexService.startRebuild();
+        return ResponseEntity.accepted().body(knowledgeIndexService.status());
     }
 
     @GetMapping("/status")

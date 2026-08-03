@@ -5,6 +5,7 @@ import com.yangaobo.ai.client.UserAiClient;
 import com.yangaobo.ai.agent.config.AgentProperties;
 import com.yangaobo.ai.conversation.model.ConversationEventType;
 import com.yangaobo.ai.exception.BusinessOperationException;
+import com.yangaobo.ai.security.AuthenticatedUser;
 import com.yangaobo.ai.security.UserContext;
 import com.yangaobo.ai.service.AiBusinessGateway;
 import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
@@ -37,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,6 +46,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class LearningPlanWorkflowService {
@@ -77,9 +81,13 @@ public class LearningPlanWorkflowService {
     private static final String VERSION = "version";
     private static final String PREVIOUS_DRAFT_ID = "previousDraftId";
     private static final String ADJUSTMENT_REQUEST = "adjustmentRequest";
-    private static final String STATE = "state";
     private static final String RECORD = "record";
     private static final String RUN_CONTEXT = "toolRunContext";
+    private static final String AUTHENTICATED_USER = "authenticatedUser";
+    private static final Pattern REQUESTED_DAYS = Pattern.compile(
+            "(\\d{1,2})\\s*(?:天|日)");
+    private static final Pattern REQUESTED_WEEKS = Pattern.compile(
+            "(\\d{1,2})\\s*(?:周|个?星期)");
 
     private final AiBusinessGateway businessGateway;
     private final PlanDesignerAgent designerAgent;
@@ -166,7 +174,7 @@ public class LearningPlanWorkflowService {
                 .orElseThrow(() -> new BusinessOperationException(
                         "LEARNING_PLAN_DRAFT_NOT_FOUND",
                         "学习计划草案不存在"));
-        if (!List.of("WAITING_APPROVAL", "WAITING_ADJUSTMENT",
+        if (!List.of("WAITING_CONFIRMATION", "WAITING_ADJUSTMENT",
                         "INSUFFICIENT_DATA")
                 .contains(previous.state().status())) {
             throw new BusinessOperationException(
@@ -190,6 +198,20 @@ public class LearningPlanWorkflowService {
                 previousDraftId,
                 previous.state().version() + 1,
                 request.adjustment());
+        if (!draftRepository.updateStatus(
+                previousDraftId,
+                userId,
+                previous.state().status(),
+                "SUPERSEDED")) {
+            draftRepository.updateStatus(
+                    adjusted.id(),
+                    userId,
+                    adjusted.state().status(),
+                    "CANCELLED");
+            throw new BusinessOperationException(
+                    "LEARNING_PLAN_DRAFT_CHANGED",
+                    "学习计划草案状态已变化");
+        }
         draftRepository.completeAdjustmentRun(runId, adjusted.state());
         return adjusted;
     }
@@ -209,13 +231,18 @@ public class LearningPlanWorkflowService {
             int version,
             String adjustment) {
         try {
+            AuthenticatedUser authenticatedUser = runContext == null
+                    ? UserContext.requireUser()
+                    : runContext.user();
             RunnableConfig.Builder configBuilder = RunnableConfig.builder()
-                    .threadId(runId.toString());
+                    .threadId(runId.toString())
+                    .addMetadata(AUTHENTICATED_USER, authenticatedUser);
             if (runContext != null) {
                 configBuilder.addMetadata(RUN_CONTEXT, runContext);
             }
             Map<String, Object> input = new LinkedHashMap<>();
             input.put(RUN_ID, runId);
+            input.put(USER_ID, authenticatedUser.id());
             input.put(REQUEST, request);
             input.put(VERSION, version);
             if (previousDraftId != null) {
@@ -229,8 +256,7 @@ public class LearningPlanWorkflowService {
                             configBuilder.build())
                     .orElseThrow(() -> new IllegalStateException(
                             "Learning plan graph returned no state"));
-            LearningPlanDraftRecord record = state.value(
-                            RECORD, LearningPlanDraftRecord.class)
+            LearningPlanDraftRecord record = draftRepository.findByRun(runId)
                     .orElseThrow(() -> new IllegalStateException(
                             "Learning plan graph returned no draft"));
             return normalizeRecord(record);
@@ -329,11 +355,11 @@ public class LearningPlanWorkflowService {
                                 "保存版本化草案",
                                 this::persistDraft))
                 .addNode(
-                        "request_user_approval",
+                        "request_user_confirmation",
                         node(
-                                "request_user_approval",
+                                "request_user_confirmation",
                                 "进入用户确认",
-                                this::requestApproval))
+                                this::requestConfirmation))
                 .addEdge(StateGraph.START, "normalize_goal")
                 .addEdge("normalize_goal", "load_user_profile")
                 .addEdge("load_user_profile", "search_candidate_courses")
@@ -364,8 +390,8 @@ public class LearningPlanWorkflowService {
                                 "repair", "repair_draft",
                                 "fallback", "deterministic_fallback"))
                 .addEdge("deterministic_fallback", "persist_versioned_draft")
-                .addEdge("persist_versioned_draft", "request_user_approval")
-                .addEdge("request_user_approval", StateGraph.END);
+                .addEdge("persist_versioned_draft", "request_user_confirmation")
+                .addEdge("request_user_confirmation", StateGraph.END);
         SaverConfig saverConfig = SaverConfig.builder()
                 .register(checkpointSaver)
                 .build();
@@ -380,6 +406,8 @@ public class LearningPlanWorkflowService {
             NodeAction action) {
         return AsyncNodeActionWithConfig.node_async((state, config) -> {
             ToolRunContext runContext = runContext(config);
+            AuthenticatedUser previousUser = UserContext.get();
+            UserContext.set(authenticatedUser(config));
             Instant startedAt = Instant.now();
             publishNodeStarted(runContext, nodeName, displayName);
             try {
@@ -392,8 +420,8 @@ public class LearningPlanWorkflowService {
                         startedAt,
                         nodeMetadata(update),
                         "");
-                if ("request_user_approval".equals(nodeName)) {
-                    publishWaitingApproval(runContext, update);
+                if ("request_user_confirmation".equals(nodeName)) {
+                    publishWaitingConfirmation(runContext, update);
                 }
                 return update;
             } catch (Exception exception) {
@@ -406,6 +434,12 @@ public class LearningPlanWorkflowService {
                         Map.of(),
                         publicMessage(exception));
                 throw exception;
+            } finally {
+                if (previousUser == null) {
+                    UserContext.clear();
+                } else {
+                    UserContext.set(previousUser);
+                }
             }
         });
     }
@@ -417,10 +451,18 @@ public class LearningPlanWorkflowService {
                 .orElse(null);
     }
 
+    private AuthenticatedUser authenticatedUser(RunnableConfig config) {
+        return config.metadata(AUTHENTICATED_USER)
+                .filter(AuthenticatedUser.class::isInstance)
+                .map(AuthenticatedUser.class::cast)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Learning plan graph missing authenticated user"));
+    }
+
     private Map<String, Object> normalizeGoal(OverAllState state) {
         CreateLearningPlanRequest request =
                 required(state, REQUEST, CreateLearningPlanRequest.class);
-        Long userId = UserContext.requireUser().id();
+        Long userId = required(state, USER_ID, Long.class);
         String goal = request.goal().trim();
         int minutes = request.availableMinutesPerDay() == null
                 ? DEFAULT_MINUTES_PER_DAY
@@ -510,13 +552,16 @@ public class LearningPlanWorkflowService {
                 required(state, PROFILE, UserAiClient.UserProfile.class);
         List<CourseAiClient.CourseSummary> candidates =
                 courseSummaries(state, VERIFIED_CANDIDATES);
-        return Map.of(
-                DRAFT,
-                designerAgent.design(
+        LearningPlanDraft draft = enforceRequestedPlanDays(
+                goal,
+                normalizeDraft(designerAgent.design(
                         goal,
                         minutes,
                         profile,
-                        candidates),
+                        candidates)));
+        return Map.of(
+                DRAFT,
+                draftState(draft),
                 MODEL_CALL_COUNT,
                 integer(state, MODEL_CALL_COUNT, 0) + 1);
     }
@@ -530,7 +575,9 @@ public class LearningPlanWorkflowService {
                 minutes,
                 candidates,
                 draft);
-        return Map.of(VALIDATION_ERRORS, errors);
+        return Map.of(
+                DRAFT, draftState(draft),
+                VALIDATION_ERRORS, errors);
     }
 
     private String hardRuleRoute(OverAllState state) {
@@ -547,16 +594,18 @@ public class LearningPlanWorkflowService {
     }
 
     private Map<String, Object> reviewDraft(OverAllState state) {
-        LearningPlanReview review = reviewService == null
+        LearningPlanDraft draft = learningPlanDraft(state);
+        LearningPlanReview review = normalizeReview(reviewService == null
                 ? new LearningPlanReview(true, List.of(), "")
                 : reviewService.review(
                         designGoal(state),
                         required(state, MINUTES_PER_DAY, Integer.class),
                         courseSummaries(state, VERIFIED_CANDIDATES),
-                        learningPlanDraft(state),
-                        validationErrors(state));
+                        draft,
+                        validationErrors(state)));
         return Map.of(
-                REVIEW_RESULT, review,
+                DRAFT, draftState(draft),
+                REVIEW_RESULT, reviewState(review),
                 REVIEW_ATTEMPTS,
                 integer(state, REVIEW_ATTEMPTS, 0) + 1,
                 MODEL_CALL_COUNT,
@@ -564,8 +613,7 @@ public class LearningPlanWorkflowService {
     }
 
     private String reviewRoute(OverAllState state) {
-        LearningPlanReview review = state.value(
-                        REVIEW_RESULT, LearningPlanReview.class)
+        LearningPlanReview review = learningPlanReview(state)
                 .orElse(new LearningPlanReview(false, List.of(), ""));
         if (review.accepted()) {
             return "persist";
@@ -578,19 +626,20 @@ public class LearningPlanWorkflowService {
     }
 
     private Map<String, Object> repairDraft(OverAllState state) {
-        LearningPlanReview review = state.value(
-                        REVIEW_RESULT, LearningPlanReview.class)
-                .orElse(null);
-        LearningPlanDraft repaired = repairService.repair(
-                designGoal(state),
+        LearningPlanReview review = learningPlanReview(state).orElse(null);
+        String goal = designGoal(state);
+        LearningPlanDraft repaired = enforceRequestedPlanDays(
+                goal,
+                normalizeDraft(repairService.repair(
+                goal,
                 required(state, MINUTES_PER_DAY, Integer.class),
                 required(state, PROFILE, UserAiClient.UserProfile.class),
                 courseSummaries(state, VERIFIED_CANDIDATES),
                 learningPlanDraft(state),
                 validationErrors(state),
-                review);
+                review)));
         return Map.of(
-                DRAFT, repaired,
+                DRAFT, draftState(repaired),
                 REPAIR_ATTEMPTS,
                 integer(state, REPAIR_ATTEMPTS, 0) + 1,
                 MODEL_CALL_COUNT,
@@ -602,8 +651,10 @@ public class LearningPlanWorkflowService {
         int minutes = required(state, MINUTES_PER_DAY, Integer.class);
         List<CourseAiClient.CourseSummary> candidates =
                 courseSummaries(state, VERIFIED_CANDIDATES);
-        LearningPlanDraft fallback = designerAgent.deterministicFallback(
-                goal, minutes, candidates);
+        LearningPlanDraft fallback = enforceRequestedPlanDays(
+                goal,
+                normalizeDraft(designerAgent.deterministicFallback(
+                        goal, minutes, candidates)));
         List<String> errors = candidates.isEmpty()
                 ? List.of("没有找到可验证且有权限访问的候选课程")
                 : validator.validate(minutes, candidates, fallback);
@@ -613,7 +664,7 @@ public class LearningPlanWorkflowService {
                         ? "DETERMINISTIC_FALLBACK"
                         : "REPAIR_LIMIT_REACHED";
         return Map.of(
-                DRAFT, fallback,
+                DRAFT, draftState(fallback),
                 VALIDATION_ERRORS, errors,
                 TERMINATION_REASON, reason);
     }
@@ -625,20 +676,21 @@ public class LearningPlanWorkflowService {
                         TERMINATION_REASON, String.class)
                 .orElse("");
         String status = errors.isEmpty()
-                ? "WAITING_APPROVAL"
+                ? "WAITING_CONFIRMATION"
                 : "INSUFFICIENT_DATA".equals(terminationReason)
                         ? "INSUFFICIENT_DATA"
                         : "WAITING_ADJUSTMENT";
+        LearningPlanDraft draft = learningPlanDraft(state);
+        LearningPlanReview review = learningPlanReview(state).orElse(null);
         LearningPlanState learningPlanState =
                 new LearningPlanState(
                         required(state, USER_ID, Long.class),
                         required(state, GOAL, String.class),
                         required(state, MINUTES_PER_DAY, Integer.class),
                         courseSummaries(state, VERIFIED_CANDIDATES),
-                        learningPlanDraft(state),
+                        draft,
                         errors,
-                        state.value(REVIEW_RESULT, LearningPlanReview.class)
-                                .orElse(null),
+                        review,
                         integer(state, VERSION, 1),
                         state.value(PREVIOUS_DRAFT_ID, UUID.class)
                                 .orElse(null),
@@ -653,22 +705,30 @@ public class LearningPlanWorkflowService {
         LearningPlanDraftRecord record =
                 draftRepository.save(runId, learningPlanState);
         return Map.of(
-                STATE, learningPlanState,
-                RECORD, record);
+                DRAFT, draftState(draft),
+                "draftId", record.id().toString());
     }
 
-    private Map<String, Object> requestApproval(OverAllState state) {
-        LearningPlanDraftRecord record =
-                required(state, RECORD, LearningPlanDraftRecord.class);
-        return Map.of(
-                "approvalReady",
-                "WAITING_APPROVAL".equals(record.state().status()),
-                "draftId", record.id().toString(),
-                "goal", record.state().goal(),
-                "minutesPerDay", record.state().minutesPerDay(),
-                "planDays", record.state().draft().planDays(),
-                "status", record.state().status(),
-                "terminationReason", record.state().terminationReason());
+    private Map<String, Object> requestConfirmation(OverAllState state) {
+        UUID runId = required(state, RUN_ID, UUID.class);
+        LearningPlanDraftRecord record = draftRepository.findByRun(runId)
+                .map(this::normalizeRecord)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Learning plan graph persisted no draft"));
+        Map<String, Object> update = new LinkedHashMap<>();
+        update.put(DRAFT, draftState(record.state().draft()));
+        update.put(
+                "confirmationReady",
+                "WAITING_CONFIRMATION".equals(record.state().status()));
+        update.put("draftId", record.id().toString());
+        update.put("goal", record.state().goal());
+        update.put("minutesPerDay", record.state().minutesPerDay());
+        update.put("planDays", record.state().draft().planDays());
+        update.put("status", record.state().status());
+        update.put(
+                "terminationReason",
+                record.state().terminationReason());
+        return update;
     }
 
     private <T> T required(
@@ -680,15 +740,33 @@ public class LearningPlanWorkflowService {
                         "Learning plan graph state missing " + key));
     }
 
-    @SuppressWarnings("unchecked")
     private List<CourseAiClient.CourseSummary> courseSummaries(
             OverAllState state,
             String key) {
-        Object value = state.data().get(key);
-        if (value instanceof List<?> list) {
-            return (List<CourseAiClient.CourseSummary>) list;
+        return normalizeCourseSummaries(state.data().get(key));
+    }
+
+    private List<CourseAiClient.CourseSummary> normalizeCourseSummaries(
+            Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
         }
-        return List.of();
+        List<CourseAiClient.CourseSummary> courses = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof CourseAiClient.CourseSummary course) {
+                courses.add(course);
+            } else if (item instanceof Map<?, ?> map) {
+                courses.add(new CourseAiClient.CourseSummary(
+                        number(map.get("id")).longValue(),
+                        text(map.get("title")),
+                        text(map.get("author")),
+                        text(map.get("category")),
+                        decimal(map.get("price")),
+                        text(map.get("cover")),
+                        dateTime(map.get("updated"))));
+            }
+        }
+        return courses;
     }
 
     @SuppressWarnings("unchecked")
@@ -708,8 +786,74 @@ public class LearningPlanWorkflowService {
     }
 
     private LearningPlanDraft learningPlanDraft(OverAllState state) {
-        return normalizeDraft(required(
-                state, DRAFT, LearningPlanDraft.class));
+        Object value = state.data().get(DRAFT);
+        if (value instanceof LearningPlanDraft draft) {
+            return normalizeDraft(draft);
+        }
+        if (value instanceof Map<?, ?> map) {
+            return new LearningPlanDraft(
+                    number(map.get("planDays")).intValue(),
+                    draftCourses(map.get("courses")),
+                    draftRoutines(map.get("dailyRoutine")),
+                    text(map.get("summary")));
+        }
+        throw new IllegalStateException(
+                "Learning plan graph state missing " + DRAFT);
+    }
+
+    private Map<String, Object> draftState(LearningPlanDraft draft) {
+        List<Map<String, Object>> courses = draft.courses().stream()
+                .map(course -> Map.<String, Object>of(
+                        "order", course.order(),
+                        "courseId", course.courseId(),
+                        "objective", text(course.objective())))
+                .toList();
+        List<Map<String, Object>> routines = draft.dailyRoutine().stream()
+                .map(routine -> Map.<String, Object>of(
+                        "activity", text(routine.activity()),
+                        "minutes", routine.minutes()))
+                .toList();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("planDays", draft.planDays());
+        result.put("courses", courses);
+        result.put("dailyRoutine", routines);
+        result.put("summary", text(draft.summary()));
+        return result;
+    }
+
+    private List<LearningPlanDraft.DraftCourse> draftCourses(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        List<LearningPlanDraft.DraftCourse> courses = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof LearningPlanDraft.DraftCourse course) {
+                courses.add(course);
+            } else if (item instanceof Map<?, ?> map) {
+                courses.add(new LearningPlanDraft.DraftCourse(
+                        number(map.get("order")).intValue(),
+                        number(map.get("courseId")).longValue(),
+                        text(map.get("objective"))));
+            }
+        }
+        return courses;
+    }
+
+    private List<LearningPlanDraft.DraftRoutine> draftRoutines(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        List<LearningPlanDraft.DraftRoutine> routines = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof LearningPlanDraft.DraftRoutine routine) {
+                routines.add(routine);
+            } else if (item instanceof Map<?, ?> map) {
+                routines.add(new LearningPlanDraft.DraftRoutine(
+                        text(map.get("activity")),
+                        number(map.get("minutes")).intValue()));
+            }
+        }
+        return routines;
     }
 
     private LearningPlanDraft normalizeDraft(LearningPlanDraft raw) {
@@ -738,6 +882,117 @@ public class LearningPlanWorkflowService {
                 raw.planDays(), courses, routines, raw.summary());
     }
 
+    private LearningPlanDraft enforceRequestedPlanDays(
+            String goal,
+            LearningPlanDraft draft) {
+        int requestedDays = requestedPlanDays(goal)
+                .orElse(draft.planDays());
+        if (requestedDays == draft.planDays()) {
+            return draft;
+        }
+        return new LearningPlanDraft(
+                requestedDays,
+                draft.courses(),
+                draft.dailyRoutine(),
+                draft.summary());
+    }
+
+    private Optional<Integer> requestedPlanDays(String goal) {
+        String text = goal == null ? "" : goal;
+        Matcher days = REQUESTED_DAYS.matcher(text);
+        if (days.find()) {
+            return boundedDays(Integer.parseInt(days.group(1)));
+        }
+        Matcher weeks = REQUESTED_WEEKS.matcher(text);
+        if (weeks.find()) {
+            return boundedDays(Integer.parseInt(weeks.group(1)) * 7);
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Integer> boundedDays(int days) {
+        return days >= 1 && days <= 90
+                ? Optional.of(days)
+                : Optional.empty();
+    }
+
+    private LearningPlanReview normalizeReview(LearningPlanReview raw) {
+        List<LearningPlanReview.Issue> issues = new ArrayList<>();
+        for (Object item : (List<?>) raw.issues()) {
+            if (item instanceof LearningPlanReview.Issue issue) {
+                issues.add(issue);
+            } else if (item instanceof Map<?, ?> map) {
+                issues.add(new LearningPlanReview.Issue(
+                        text(map.get("code")),
+                        text(map.get("message")),
+                        longList(map.get("courseIds")),
+                        integerList(map.get("evidenceRefs"))));
+            }
+        }
+        return new LearningPlanReview(
+                raw.accepted(), issues, raw.suggestedFocus());
+    }
+
+    private Optional<LearningPlanReview> learningPlanReview(
+            OverAllState state) {
+        Object value = state.data().get(REVIEW_RESULT);
+        if (value instanceof LearningPlanReview review) {
+            return Optional.of(normalizeReview(review));
+        }
+        if (!(value instanceof Map<?, ?> map)) {
+            return Optional.empty();
+        }
+        List<LearningPlanReview.Issue> issues = new ArrayList<>();
+        Object rawIssues = map.get("issues");
+        if (rawIssues instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> issue) {
+                    issues.add(new LearningPlanReview.Issue(
+                            text(issue.get("code")),
+                            text(issue.get("message")),
+                            longList(issue.get("courseIds")),
+                            integerList(issue.get("evidenceRefs"))));
+                }
+            }
+        }
+        return Optional.of(new LearningPlanReview(
+                Boolean.TRUE.equals(map.get("accepted")),
+                issues,
+                text(map.get("suggestedFocus"))));
+    }
+
+    private Map<String, Object> reviewState(LearningPlanReview review) {
+        List<Map<String, Object>> issues = review.issues().stream()
+                .map(issue -> Map.<String, Object>of(
+                        "code", text(issue.code()),
+                        "message", text(issue.message()),
+                        "courseIds", issue.courseIds(),
+                        "evidenceRefs", issue.evidenceRefs()))
+                .toList();
+        return Map.of(
+                "accepted", review.accepted(),
+                "issues", issues,
+                "suggestedFocus", text(review.suggestedFocus()));
+    }
+
+    private List<Long> longList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream().map(this::number)
+                .map(Number::longValue)
+                .toList();
+    }
+
+    private List<Integer> integerList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream().map(this::number)
+                .map(Number::intValue)
+                .toList();
+    }
+
     private LearningPlanDraftRecord normalizeRecord(
             LearningPlanDraftRecord record) {
         LearningPlanState state = record.state();
@@ -745,10 +1000,12 @@ public class LearningPlanWorkflowService {
                 state.userId(),
                 state.goal(),
                 state.minutesPerDay(),
-                state.candidates(),
+                normalizeCourseSummaries(state.candidates()),
                 normalizeDraft(state.draft()),
                 state.validationErrors(),
-                state.reviewResult(),
+                state.reviewResult() == null
+                        ? null
+                        : normalizeReview(state.reviewResult()),
                 state.version(),
                 state.previousDraftId(),
                 state.searchAttempts(),
@@ -768,6 +1025,24 @@ public class LearningPlanWorkflowService {
             return number;
         }
         return Long.parseLong(String.valueOf(value));
+    }
+
+    private Double decimal(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return value instanceof Number number
+                ? number.doubleValue()
+                : Double.valueOf(String.valueOf(value));
+    }
+
+    private LocalDateTime dateTime(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        return value instanceof LocalDateTime localDateTime
+                ? localDateTime
+                : LocalDateTime.parse(String.valueOf(value));
     }
 
     private String text(Object value) {
@@ -797,11 +1072,19 @@ public class LearningPlanWorkflowService {
                     listSize(update.get(VALIDATION_ERRORS)));
         }
         if (update.containsKey(REVIEW_RESULT)) {
-            LearningPlanReview review =
-                    (LearningPlanReview) update.get(REVIEW_RESULT);
+            Object value = update.get(REVIEW_RESULT);
+            boolean accepted = value instanceof LearningPlanReview review
+                    ? review.accepted()
+                    : value instanceof Map<?, ?> map
+                            && Boolean.TRUE.equals(map.get("accepted"));
+            int issueCount = value instanceof LearningPlanReview review
+                    ? review.issues().size()
+                    : value instanceof Map<?, ?> map
+                            ? listSize(map.get("issues"))
+                            : 0;
             return Map.of(
-                    "accepted", review.accepted(),
-                    "issueCount", review.issues().size());
+                    "accepted", accepted,
+                    "issueCount", issueCount);
         }
         if (update.containsKey(RECORD)) {
             LearningPlanDraftRecord record =
@@ -864,17 +1147,17 @@ public class LearningPlanWorkflowService {
                 data);
     }
 
-    private void publishWaitingApproval(
+    private void publishWaitingConfirmation(
             ToolRunContext context,
             Map<String, Object> update) {
         if (context == null) {
             return;
         }
         context.publish(
-                ConversationEventType.WORKFLOW_WAITING_APPROVAL,
+                ConversationEventType.WORKFLOW_WAITING_CONFIRMATION,
                 Map.of(
                         "workflowName", WORKFLOW_NAME,
-                        "nodeName", "request_user_approval",
+                        "nodeName", "request_user_confirmation",
                         "displayName", "等待用户确认",
                         "draftId", update.get("draftId"),
                         "goal", update.get("goal"),
@@ -882,7 +1165,7 @@ public class LearningPlanWorkflowService {
                         "planDays", update.get("planDays"),
                         "status", update.get("status"),
                         "terminationReason", update.get("terminationReason"),
-                        "approvalReady", update.get("approvalReady")));
+                        "confirmationReady", update.get("confirmationReady")));
     }
 
     private String publicMessage(Exception exception) {
@@ -895,7 +1178,7 @@ public class LearningPlanWorkflowService {
     }
 
     @Transactional
-    public LearningPlan approve(UUID draftId) {
+    public LearningPlan confirm(UUID draftId) {
         Long userId = UserContext.requireUser().id();
         LearningPlanDraftRecord record = draftRepository
                 .findOwned(draftId, userId)
@@ -903,8 +1186,7 @@ public class LearningPlanWorkflowService {
                         "LEARNING_PLAN_DRAFT_NOT_FOUND",
                         "学习计划草案不存在"));
         String pendingStatus = record.state().status();
-        if (!"WAITING_APPROVAL".equals(pendingStatus)
-                && !"PENDING_CONFIRMATION".equals(pendingStatus)) {
+        if (!"WAITING_CONFIRMATION".equals(pendingStatus)) {
             throw new BusinessOperationException(
                     "LEARNING_PLAN_DRAFT_NOT_PENDING",
                     "学习计划草案当前不可确认");
@@ -925,7 +1207,7 @@ public class LearningPlanWorkflowService {
                 draftId,
                 userId,
                 pendingStatus,
-                "APPROVING")) {
+                "CONFIRMING")) {
             throw new BusinessOperationException(
                     "LEARNING_PLAN_DRAFT_CHANGED",
                     "学习计划草案状态已变化");
@@ -936,8 +1218,8 @@ public class LearningPlanWorkflowService {
         if (!draftRepository.updateStatus(
                 draftId,
                 userId,
-                "APPROVING",
-                "APPROVED")) {
+                "CONFIRMING",
+                "CONFIRMED")) {
             throw new BusinessOperationException(
                     "LEARNING_PLAN_DRAFT_CHANGED",
                     "学习计划草案状态已变化");
@@ -950,12 +1232,7 @@ public class LearningPlanWorkflowService {
         draftRepository.updateStatus(
                 draftId,
                 userId,
-                "WAITING_APPROVAL",
-                "CANCELLED");
-        draftRepository.updateStatus(
-                draftId,
-                userId,
-                "PENDING_CONFIRMATION",
+                "WAITING_CONFIRMATION",
                 "CANCELLED");
     }
 

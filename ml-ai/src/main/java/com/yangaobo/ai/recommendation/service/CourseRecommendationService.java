@@ -2,7 +2,6 @@ package com.yangaobo.ai.recommendation.service;
 
 import com.yangaobo.ai.client.CourseAiClient;
 import com.yangaobo.ai.client.OrderAiClient;
-import com.yangaobo.ai.client.SaleAiClient;
 import com.yangaobo.ai.client.UserAiClient;
 import com.yangaobo.ai.recommendation.model.CourseRecommendationRequest;
 import com.yangaobo.ai.recommendation.model.CourseRecommendationResponse;
@@ -41,7 +40,6 @@ public class CourseRecommendationService {
         Set<Long> owned = ownedCourseIds();
         Set<Long> cart = cartCourseIds();
         UserAiClient.UserProfile profile = profile();
-        List<SaleAiClient.SaleSearchHit> materials = saleMaterials(goal);
 
         List<RecommendedCourse> courses = new ArrayList<>();
         int priority = 1;
@@ -52,7 +50,6 @@ public class CourseRecommendationService {
                     goal,
                     candidate,
                     knowledge,
-                    materials,
                     profile,
                     priority++,
                     owned.contains(candidate.id()),
@@ -65,7 +62,7 @@ public class CourseRecommendationService {
                 goal,
                 summary(goal, courses),
                 List.copyOf(courses),
-                "ASK_USER_CONFIRMATION");
+                "REVIEW_RECOMMENDATIONS");
     }
 
     private List<CourseAiClient.CourseSummary> search(String goal, int limit) {
@@ -132,13 +129,12 @@ public class CourseRecommendationService {
             String goal,
             CourseAiClient.CourseSummary course,
             CourseAiClient.CourseKnowledge knowledge,
-            List<SaleAiClient.SaleSearchHit> materials,
             UserAiClient.UserProfile profile,
             int priority,
             boolean owned,
             boolean inCart) {
         List<RecommendationCitation> citations =
-                citations(course, knowledge, materials);
+                citations(course, knowledge);
         return new RecommendedCourse(
                 course.id(),
                 course.title(),
@@ -180,9 +176,9 @@ public class CourseRecommendationService {
         if (owned) {
             reason.append("；你已购买，可优先复习或继续学习");
         } else if (inCart) {
-            reason.append("；当前已在购物车，确认后可继续结算");
+            reason.append("；当前已在购物车");
         } else {
-            reason.append("；如认可推荐，可发起加入购物车确认");
+            reason.append("；建议先查看课程详情再决定是否学习");
         }
         return reason.toString();
     }
@@ -205,32 +201,12 @@ public class CourseRecommendationService {
 
     private List<RecommendationCitation> citations(
             CourseAiClient.CourseSummary course,
-            CourseAiClient.CourseKnowledge knowledge,
-            List<SaleAiClient.SaleSearchHit> materials) {
-        List<RecommendationCitation> citations = new ArrayList<>();
-        citations.add(new RecommendationCitation(
+            CourseAiClient.CourseKnowledge knowledge) {
+        return List.of(new RecommendationCitation(
                 "COURSE",
                 String.valueOf(course.id()),
                 course.title(),
                 courseSnippet(course, knowledge)));
-        for (SaleAiClient.SaleSearchHit material : materials) {
-            if (material == null || !hasText(material.sourceType())
-                    || material.id() == null) {
-                continue;
-            }
-            citations.add(new RecommendationCitation(
-                    material.sourceType(),
-                    String.valueOf(material.id()),
-                    hasText(material.title()) ? material.title()
-                            : material.sourceType() + "-" + material.id(),
-                    hasText(material.snippet())
-                            ? material.snippet()
-                            : "与学习目标相关的站内资料"));
-            if (citations.size() >= 3) {
-                break;
-            }
-        }
-        return List.copyOf(citations);
     }
 
     private String courseSnippet(
@@ -317,16 +293,6 @@ public class CourseRecommendationService {
             return businessGateway.getCourse(courseId);
         } catch (RuntimeException exception) {
             return null;
-        }
-    }
-
-    private List<SaleAiClient.SaleSearchHit> saleMaterials(String goal) {
-        try {
-            List<SaleAiClient.SaleSearchHit> hits =
-                    businessGateway.searchSale(goal, 3);
-            return hits == null ? List.of() : hits;
-        } catch (RuntimeException exception) {
-            return List.of();
         }
     }
 

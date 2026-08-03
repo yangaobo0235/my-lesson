@@ -1,9 +1,6 @@
 package com.yangaobo.ai.tool.service;
 
-import com.yangaobo.ai.knowledge.service.KnowledgeAdminGuard;
-import com.yangaobo.ai.mcp.tool.McpToolRegistry;
 import com.yangaobo.ai.tool.dto.CourseIdRequest;
-import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
 import com.yangaobo.ai.tool.dto.LimitRequest;
 import com.yangaobo.ai.tool.dto.NoArgsRequest;
 import com.yangaobo.ai.tool.dto.SearchCoursesRequest;
@@ -23,14 +20,7 @@ import java.util.function.BiFunction;
 @Component
 public class BusinessToolRegistry {
 
-    private static final Set<String> WRITE_TOOL_NAMES = Set.of(
-            "add_course_to_my_cart",
-            "remove_course_from_my_cart",
-            "create_learning_plan",
-            "rebuild_knowledge_index");
-
     private final BusinessToolExecutor executor;
-    private final McpToolRegistry mcpToolRegistry;
     private final List<ToolCallback> callbacks;
     private final Map<String, ToolCallback> callbacksByName;
 
@@ -39,12 +29,8 @@ public class BusinessToolRegistry {
             CourseTools courseTools,
             OrderTools orderTools,
             UserTools userTools,
-            LearningPlanTools learningPlanTools,
-            KnowledgeTools knowledgeTools,
-            KnowledgeAdminGuard knowledgeAdminGuard,
-            McpToolRegistry mcpToolRegistry) {
+            LearningPlanTools learningPlanTools) {
         this.executor = executor;
-        this.mcpToolRegistry = mcpToolRegistry;
         List<ToolCallback> registered = List.of(
                 callback(new BusinessToolSpec<>(
                         "search_courses",
@@ -77,22 +63,6 @@ public class BusinessToolRegistry {
                         Set.of(),
                         orderTools::getMyCart)),
                 callback(new BusinessToolSpec<>(
-                        "add_course_to_my_cart",
-                        "将指定 courseId 的课程加入当前登录用户购物车。"
-                                + " 只有用户明确要求加入时才能调用；调用后创建审批任务，不会立即写入。",
-                        CourseIdRequest.class,
-                        true,
-                        Set.of(),
-                        orderTools::addCourseToMyCart)),
-                callback(new BusinessToolSpec<>(
-                        "remove_course_from_my_cart",
-                        "从当前登录用户购物车移除指定 courseId 的课程。"
-                                + " 只有用户明确要求移除时才能调用；调用后创建审批任务，不会立即写入。",
-                        CourseIdRequest.class,
-                        true,
-                        Set.of(),
-                        orderTools::removeCourseFromMyCart)),
-                callback(new BusinessToolSpec<>(
                         "get_my_profile",
                         "查询当前登录用户的脱敏个人资料。用户身份由系统注入，参数必须为空对象。",
                         NoArgsRequest.class,
@@ -100,29 +70,12 @@ public class BusinessToolRegistry {
                         Set.of(),
                         userTools::getMyProfile)),
                 callback(new BusinessToolSpec<>(
-                        "create_learning_plan",
-                        "根据当前登录用户明确提供的学习目标创建并保存学习计划。"
-                                + " goal 必填，availableMinutesPerDay 可选，范围 10 到 480。"
-                                + " 先生成并校验草案，再创建审批任务；批准前不会保存正式计划。",
-                        CreateLearningPlanRequest.class,
-                        true,
-                        Set.of(),
-                        learningPlanTools::createLearningPlan)),
-                callback(new BusinessToolSpec<>(
                         "get_learning_plan",
                         "查询当前登录用户最近创建且仍有效的学习计划，参数必须为空对象。",
                         NoArgsRequest.class,
                         false,
                         Set.of(),
-                        learningPlanTools::getLearningPlan)),
-                callback(new BusinessToolSpec<>(
-                        "rebuild_knowledge_index",
-                        "启动全量知识索引重建并返回当前状态。"
-                                + " 仅管理员可用，调用后创建审批任务，批准后才启动重建。",
-                        NoArgsRequest.class,
-                        true,
-                        knowledgeAdminGuard.allowedRoles(),
-                        knowledgeTools::rebuildKnowledgeIndex)));
+                        learningPlanTools::getLearningPlan)));
         this.callbacks = List.copyOf(registered);
         Map<String, ToolCallback> indexed = new LinkedHashMap<>();
         registered.forEach(callback -> indexed.put(
@@ -132,35 +85,18 @@ public class BusinessToolRegistry {
     }
 
     public List<ToolCallback> callbacks() {
-        List<ToolCallback> mcpCallbacks = mcpToolRegistry.callbacks();
-        if (mcpCallbacks.isEmpty()) {
-            return callbacks;
-        }
-        java.util.ArrayList<ToolCallback> result =
-                new java.util.ArrayList<>(callbacks);
-        result.addAll(mcpCallbacks);
-        return List.copyOf(result);
+        return callbacks;
     }
 
-    public List<ToolCallback> callbacks(
-            Set<String> names,
-            boolean allowWrites) {
-        java.util.ArrayList<ToolCallback> result = callbacks.stream()
+    public List<ToolCallback> callbacks(Set<String> names) {
+        return callbacks.stream()
                 .filter(callback -> names.contains(
                         callback.getToolDefinition().name()))
-                .filter(callback -> allowWrites
-                        || !WRITE_TOOL_NAMES.contains(
-                                callback.getToolDefinition().name()))
-                .collect(java.util.stream.Collectors.toCollection(
-                        java.util.ArrayList::new));
-        if (!names.isEmpty()) {
-            result.addAll(mcpToolRegistry.callbacks(names));
-        }
-        return List.copyOf(result);
+                .toList();
     }
 
     public boolean isWriteTool(String name) {
-        return WRITE_TOOL_NAMES.contains(name);
+        return false;
     }
 
     public boolean contains(String name) {

@@ -33,7 +33,7 @@ public class KnowledgeSourceIndexer {
             DeterministicKnowledgeChunker chunker,
             @Value("${spring.ai.dashscope.embedding.options.model:text-embedding-v4}")
             String embeddingModel,
-            @Value("${mylesson.ai.knowledge.embedding-version:v1}")
+            @Value("${ai.knowledge.embedding-version:v1}")
             String embeddingVersion) {
         this.vectorStore = vectorStore;
         this.sourceRepository = sourceRepository;

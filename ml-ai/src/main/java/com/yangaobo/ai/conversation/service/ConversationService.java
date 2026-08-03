@@ -23,6 +23,8 @@ import com.yangaobo.ai.observability.AiMetrics;
 import com.yangaobo.ai.security.AuthenticatedUser;
 import com.yangaobo.ai.security.UserContext;
 import com.yangaobo.ai.tool.model.ToolRunContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -39,6 +41,9 @@ import java.util.UUID;
 
 @Service
 public class ConversationService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(ConversationService.class);
 
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
@@ -275,6 +280,10 @@ public class ConversationService {
             long latencyMillis = Duration
                     .between(startedAt, Instant.now())
                     .toMillis();
+            log.error(
+                    "Conversation run {} failed",
+                    run.id(),
+                    exception);
             runRepository.markFailed(
                     run.id(),
                     exception.getClass().getSimpleName(),

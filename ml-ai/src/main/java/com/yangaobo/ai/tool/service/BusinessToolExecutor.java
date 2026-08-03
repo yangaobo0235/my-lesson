@@ -3,8 +3,6 @@ package com.yangaobo.ai.tool.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yangaobo.ai.approval.model.ApprovalRequestResult;
-import com.yangaobo.ai.approval.service.ApprovalService;
 import com.yangaobo.ai.conversation.model.ConversationEventType;
 import com.yangaobo.ai.exception.BusinessOperationException;
 import com.yangaobo.ai.exception.DownstreamServiceException;
@@ -52,7 +50,6 @@ public class BusinessToolExecutor {
     private final Validator validator;
     private final BusinessToolProperties properties;
     private final AsyncTaskExecutor taskExecutor;
-    private final ApprovalService approvalService;
     private final AiMetrics aiMetrics;
 
     public BusinessToolExecutor(
@@ -63,7 +60,6 @@ public class BusinessToolExecutor {
             BusinessToolProperties properties,
             @Qualifier("businessToolTaskExecutor")
             AsyncTaskExecutor taskExecutor,
-            ApprovalService approvalService,
             AiMetrics aiMetrics) {
         this.toolCallRepository = toolCallRepository;
         this.sanitizer = sanitizer;
@@ -71,7 +67,6 @@ public class BusinessToolExecutor {
         this.validator = validator;
         this.properties = properties;
         this.taskExecutor = taskExecutor;
-        this.approvalService = approvalService;
         this.aiMetrics = aiMetrics;
     }
 
@@ -86,12 +81,6 @@ public class BusinessToolExecutor {
                     "TOOL_CALL_LIMIT_REACHED",
                     "已达到本轮最多工具调用次数，请缩小问题范围后重试");
         }
-        if (runContext.hasApprovalPending()) {
-            return ToolResult.failure(
-                    "APPROVAL_PENDING",
-                    "本轮已有待确认操作，请先完成或拒绝审批");
-        }
-
         String requestJson = writeJson(sanitizer.sanitize(request));
         UUID auditId;
         if (spec.writeOperation()) {
@@ -179,22 +168,6 @@ public class BusinessToolExecutor {
                         result,
                         latencyMillis,
                         false);
-                if (data instanceof ApprovalRequestResult approval) {
-                    runContext.approvalRequested();
-                    runContext.publish(
-                            ConversationEventType.APPROVAL_REQUIRED,
-                            Map.of(
-                                    "approvalId",
-                                    approval.approvalId(),
-                                    "actionType",
-                                    approval.actionType(),
-                                    "status",
-                                    approval.status(),
-                                    "reason",
-                                    approval.reason(),
-                                    "expiresAt",
-                                    approval.expiresAt()));
-                }
                 return result;
             } catch (TimeoutException exception) {
                 future.cancel(true);
@@ -278,12 +251,6 @@ public class BusinessToolExecutor {
         AiLogContext.open(runContext.user().id(), runContext.run());
         AiLogContext.tool(spec.name());
         try {
-            if (spec.writeOperation()) {
-                return (O) approvalService.request(
-                        runContext,
-                        spec.name(),
-                        request);
-            }
             return spec.action().apply(request);
         } finally {
             UserContext.clear();

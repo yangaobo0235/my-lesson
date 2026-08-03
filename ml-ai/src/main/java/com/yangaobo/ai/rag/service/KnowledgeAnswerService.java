@@ -7,32 +7,22 @@ import com.yangaobo.ai.agent.model.IntentDecision;
 import com.yangaobo.ai.agent.model.UserIntent;
 import com.yangaobo.ai.agent.service.AgentOrchestrator;
 import com.yangaobo.ai.agent.service.MyLessonReactAgentService;
-import com.yangaobo.ai.approval.model.ApprovalRequestResult;
-import com.yangaobo.ai.approval.service.ApprovalService;
-import com.yangaobo.ai.client.CourseAiClient;
 import com.yangaobo.ai.conversation.model.ConversationEventType;
 import com.yangaobo.ai.rag.config.RagProperties;
 import com.yangaobo.ai.rag.model.AiAnswer;
 import com.yangaobo.ai.rag.model.Citation;
 import com.yangaobo.ai.rag.model.HybridSearchResult;
 import com.yangaobo.ai.rag.model.SearchHit;
-import com.yangaobo.ai.service.AiBusinessGateway;
 import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
-import com.yangaobo.ai.tool.dto.NoArgsRequest;
-import com.yangaobo.ai.tool.model.BusinessToolSpec;
 import com.yangaobo.ai.tool.model.ToolRunContext;
-import com.yangaobo.ai.tool.model.ToolResult;
-import com.yangaobo.ai.tool.service.BusinessToolExecutor;
+import com.yangaobo.ai.workflow.model.LearningPlanDraftRecord;
+import com.yangaobo.ai.workflow.service.LearningPlanWorkflowService;
 import org.slf4j.MDC;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -47,12 +37,10 @@ public class KnowledgeAnswerService {
     private static final String CAPABILITY_ANSWER = """
             你好，我是 MyLesson AI 学习助手，可以帮你完成这些事情：
 
-            1. 课程问答：基于平台课程、文章和公告回答问题，并尽量给出引用依据。
+            1. 课程问答：基于平台课程内容回答问题，并给出引用依据；证据不足时拒答。
             2. 课程推荐：根据你的目标、时间和偏好推荐合适课程。
-            3. 学习计划：为你生成阶段学习计划，并支持查看和更新进度。
+            3. 学习计划：生成并复核版本化草案，支持调整后确认正式计划。
             4. 个人查询：查询你的资料、购物车、订单和已有学习计划。
-            5. 待确认操作：加入或移除购物车这类写操作会先进入确认流程。
-            6. 知识库与评测：管理员可以查看知识来源、向量索引、工具审计和评测结果。
 
             你可以直接告诉我学习目标，例如“每天 30 分钟提升表达能力”，也可以问“睡眠不好想低强度运动，有哪些课程适合我？”。
             """;
@@ -61,7 +49,7 @@ public class KnowledgeAnswerService {
             你是 MyLesson 的知识库问答助手。
             只能依据用户消息中提供的“知识资料”回答，不得使用外部知识补充。
             每个事实性结论后必须使用 [1]、[2] 形式标注支持该结论的资料编号。
-            不得引用不存在的编号，不得编造课程、文章、公告或链接。
+            不得引用不存在的编号，不得编造课程或链接。
             如果资料不足以回答，只能回复：
             当前知识库中没有足够信息回答这个问题。你可以换一种描述，或查看相关课程列表。
             """;
@@ -73,8 +61,7 @@ public class KnowledgeAnswerService {
     private final ChatClient chatClient;
     private final AgentOrchestrator agentOrchestrator;
     private final MyLessonReactAgentService reactAgentService;
-    private final AiBusinessGateway businessGateway;
-    private final BusinessToolExecutor toolExecutor;
+    private final LearningPlanWorkflowService learningPlanWorkflow;
 
     public KnowledgeAnswerService(
             HybridKnowledgeSearchService searchService,
@@ -84,8 +71,7 @@ public class KnowledgeAnswerService {
             ChatClient.Builder chatClientBuilder,
             AgentOrchestrator agentOrchestrator,
             MyLessonReactAgentService reactAgentService,
-            AiBusinessGateway businessGateway,
-            BusinessToolExecutor toolExecutor) {
+            LearningPlanWorkflowService learningPlanWorkflow) {
         this.searchService = searchService;
         this.relevanceEvaluator = relevanceEvaluator;
         this.citationService = citationService;
@@ -93,8 +79,7 @@ public class KnowledgeAnswerService {
         this.chatClient = chatClientBuilder.build();
         this.agentOrchestrator = agentOrchestrator;
         this.reactAgentService = reactAgentService;
-        this.businessGateway = businessGateway;
-        this.toolExecutor = toolExecutor;
+        this.learningPlanWorkflow = learningPlanWorkflow;
     }
 
     public AiAnswer answer(String question) {
@@ -159,39 +144,18 @@ public class KnowledgeAnswerService {
         publishAgentStarted(toolRunContext, selection);
         boolean agentCompleted = false;
         try {
-        AiAnswer courseRecommendation =
-                deterministicCourseRecommendation(question, intentDecision, traceId);
-        if (courseRecommendation != null) {
-            retrievalObserver.accept(
-                    new HybridSearchResult(List.of(), 0.0, false));
-            publishAgentCompleted(toolRunContext, selection, true);
-            agentCompleted = true;
-            return courseRecommendation;
-        }
-        AiAnswer learningPlanApproval =
-                deterministicLearningPlanApproval(
+        AiAnswer learningPlanDraft =
+                generateLearningPlanDraft(
                         question,
                         toolRunContext,
                         intentDecision,
                         traceId);
-        if (learningPlanApproval != null) {
+        if (learningPlanDraft != null) {
             retrievalObserver.accept(
                     new HybridSearchResult(List.of(), 0.0, false));
             publishAgentCompleted(toolRunContext, selection, true);
             agentCompleted = true;
-            return learningPlanApproval;
-        }
-        AiAnswer knowledgeRebuildApproval =
-                deterministicKnowledgeRebuildApproval(
-                        toolRunContext,
-                        intentDecision,
-                        traceId);
-        if (knowledgeRebuildApproval != null) {
-            retrievalObserver.accept(
-                    new HybridSearchResult(List.of(), 0.0, false));
-            publishAgentCompleted(toolRunContext, selection, true);
-            agentCompleted = true;
-            return knowledgeRebuildApproval;
+            return learningPlanDraft;
         }
         if (route != null
                 && !route.conservative()
@@ -406,81 +370,7 @@ public class KnowledgeAnswerService {
                 || normalized.matches(".*你好[，,。!！]*$");
     }
 
-    private AiAnswer deterministicCourseRecommendation(
-            String question,
-            IntentDecision intentDecision,
-            String traceId) {
-        if (intentDecision == null
-                || intentDecision.intent() != UserIntent.COURSE_SEARCH) {
-            return null;
-        }
-        Set<Long> courseIds = recommendedCourseIds(question);
-        if (courseIds.isEmpty()) {
-            return null;
-        }
-
-        List<CourseAiClient.CourseKnowledge> courses = new ArrayList<>();
-        for (Long courseId : courseIds) {
-            try {
-                courses.add(businessGateway.getCourse(courseId));
-            } catch (RuntimeException ignored) {
-                // Keep the deterministic path best-effort and fall back to RAG.
-            }
-        }
-        if (courses.isEmpty()) {
-            return null;
-        }
-
-        List<Citation> citations = new ArrayList<>();
-        StringBuilder answer = new StringBuilder()
-                .append("可以。基于平台已有课程，我建议你优先考虑：\n\n");
-        int index = 1;
-        for (CourseAiClient.CourseKnowledge course : courses) {
-            Citation citation = new Citation(
-                    index,
-                    "COURSE",
-                    course.id().toString(),
-                    course.title(),
-                    "/course-server/api/v1/course/select/" + course.id(),
-                    excerpt(course));
-            citations.add(citation);
-            answer.append(index)
-                    .append(". 《")
-                    .append(course.title())
-                    .append("》：")
-                    .append(recommendationReason(course))
-                    .append(" [")
-                    .append(index)
-                    .append("]\n");
-            index++;
-        }
-        answer.append("\n建议顺序：先用睡眠和放松类课程稳定状态，")
-                .append("再加入低强度运动，最后补充临场稳定或表达训练。");
-        return new AiAnswer(answer.toString(), List.copyOf(citations), traceId);
-    }
-
-    private Set<Long> recommendedCourseIds(String question) {
-        String text = question == null ? "" : question;
-        Set<Long> result = new LinkedHashSet<>();
-        if (containsAny(text, "睡眠", "睡觉", "失眠", "冥想", "睡前")) {
-            result.add(11L);
-        }
-        if (containsAny(text, "运动", "低强度", "跑步", "慢跑", "拉伸", "启动")) {
-            result.add(10L);
-        }
-        if (containsAny(text, "呼吸", "放松", "紧张", "临场", "稳定", "自信")) {
-            result.add(9L);
-        }
-        if (containsAny(text, "表达", "沟通", "公开分享", "汇报")) {
-            result.add(7L);
-        }
-        if (containsAny(text, "学习", "效率", "时间", "计划")) {
-            result.add(8L);
-        }
-        return result;
-    }
-
-    private AiAnswer deterministicLearningPlanApproval(
+    private AiAnswer generateLearningPlanDraft(
             String question,
             ToolRunContext toolRunContext,
             IntentDecision intentDecision,
@@ -496,79 +386,25 @@ public class KnowledgeAnswerService {
                 new CreateLearningPlanRequest(
                         cleanGoal(question),
                         minutesPerDay);
-        String toolName = ApprovalService.CREATE_PLAN;
-        ToolResult<ApprovalRequestResult> result = toolExecutor.execute(
-                new BusinessToolSpec<>(
-                        toolName,
-                        "根据当前登录用户明确提供的学习目标创建学习计划草案，并创建审批任务。",
-                        CreateLearningPlanRequest.class,
-                        true,
-                        Set.of(),
-                        ignored -> null),
+        LearningPlanDraftRecord draft = learningPlanWorkflow.prepare(
+                toolRunContext.run().id(),
                 request,
-                new ToolContext(Map.of(
-                        ToolRunContext.CONTEXT_KEY,
-                        toolRunContext)));
-        if (!result.success()) {
+                toolRunContext);
+        if (!"WAITING_CONFIRMATION".equals(draft.state().status())) {
+            String reason = draft.state().validationErrors().isEmpty()
+                    ? "课程证据不足，请补充或调整学习目标。"
+                    : String.join("；", draft.state().validationErrors());
             return new AiAnswer(
-                    result.message() == null || result.message().isBlank()
-                            ? "学习计划草案生成失败，请稍后重试。"
-                            : result.message(),
-                    List.of(),
-                    traceId);
-        }
-        ApprovalRequestResult approval = result.data();
-        if (approval != null) {
-            return new AiAnswer(
-                    "已为你生成学习计划草案："
-                            + approval.reason()
-                            + "。请在当前对话的确认提示，或“待确认操作”页面点击确认；确认后可到“学习计划”页面查看课程顺序、每日安排和进度。",
+                    "学习计划草案暂不能确认：" + reason,
                     List.of(),
                     traceId);
         }
         return new AiAnswer(
-                "学习计划草案已提交确认，请到“待确认操作”页面处理。",
-                List.of(),
-                traceId);
-    }
-
-    private AiAnswer deterministicKnowledgeRebuildApproval(
-            ToolRunContext toolRunContext,
-            IntentDecision intentDecision,
-            String traceId) {
-        if (toolRunContext == null
-                || intentDecision == null
-                || intentDecision.intent() != UserIntent.ADMIN_OPERATION) {
-            return null;
-        }
-        String toolName = ApprovalService.REBUILD_INDEX;
-        ToolResult<ApprovalRequestResult> result = toolExecutor.execute(
-                new BusinessToolSpec<>(
-                        toolName,
-                        "为管理员创建知识索引重建审批任务。",
-                        NoArgsRequest.class,
-                        true,
-                        Set.of("ADMIN"),
-                        ignored -> null),
-                new NoArgsRequest(),
-                new ToolContext(Map.of(
-                        ToolRunContext.CONTEXT_KEY,
-                        toolRunContext)));
-        if (!result.success()) {
-            return new AiAnswer(
-                    result.message() == null || result.message().isBlank()
-                            ? "知识索引重建审批创建失败，请稍后重试。"
-                            : result.message(),
-                    List.of(),
-                    traceId);
-        }
-        ApprovalRequestResult approval = result.data();
-        return new AiAnswer(
-                approval == null
-                        ? "知识索引重建已提交审批，请到“待确认操作”页面处理。"
-                        : "已创建知识索引重建审批："
-                                + approval.reason()
-                                + "。确认后系统将异步重建索引。",
+                "学习计划草案已生成，版本 V"
+                        + draft.state().version()
+                        + "，草案 ID 为 "
+                        + draft.id()
+                        + "。你可以先调整草案，确认后系统才会创建正式计划。",
                 List.of(),
                 traceId);
     }
@@ -623,37 +459,4 @@ public class KnowledgeAnswerService {
         return false;
     }
 
-    private String recommendationReason(CourseAiClient.CourseKnowledge course) {
-        if (course.id() == 11L) {
-            return "适合先处理睡前节律、放松和作息调整";
-        }
-        if (course.id() == 10L) {
-            return "适合从低门槛运动开始建立身体节奏";
-        }
-        if (course.id() == 9L) {
-            return "适合练习呼吸、放松和临场稳定";
-        }
-        if (course.id() == 7L) {
-            return "适合提升表达结构和公开分享信心";
-        }
-        if (course.id() == 8L) {
-            return "适合把每天的学习时间安排得更轻盈";
-        }
-        return "与当前学习目标匹配";
-    }
-
-    private String excerpt(CourseAiClient.CourseKnowledge course) {
-        if (course.description() != null && !course.description().isBlank()) {
-            return course.description();
-        }
-        if (course.detail() != null && !course.detail().isBlank()) {
-            return course.detail();
-        }
-        if (course.episodeTitles() != null && !course.episodeTitles().isEmpty()) {
-            return "包含章节：" + String.join(
-                    "、",
-                    course.episodeTitles().stream().limit(3).toList());
-        }
-        return course.title();
-    }
 }

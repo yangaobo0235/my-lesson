@@ -45,13 +45,13 @@ async function saveProgress(plan) {
   }
 }
 
-async function approveDraft(draft) {
+async function confirmDraft(draft) {
   await ElMessageBox.confirm(`确认采用 V${draft.state.version} 草案？`, '确认学习计划', {
     type: 'warning', confirmButtonText: '确认', cancelButtonText: '返回'
   });
   savingId.value = draft.id;
   try {
-    await aiApi.approveLearningPlanDraft(draft.id);
+    await aiApi.confirmLearningPlanDraft(draft.id);
     ElMessage.success('学习计划已创建');
     await loadPlans();
   } finally {
@@ -105,14 +105,14 @@ function progressStatus(value) {
 }
 
 function statusType(status) {
-  if (['WAITING_APPROVAL', 'APPROVED', 'ACTIVE'].includes(status)) return 'success';
+  if (['WAITING_CONFIRMATION', 'CONFIRMED', 'ACTIVE'].includes(status)) return 'success';
   if (['WAITING_ADJUSTMENT', 'INSUFFICIENT_DATA'].includes(status)) return 'warning';
-  if (status === 'CANCELLED') return 'info';
+  if (['CANCELLED', 'SUPERSEDED'].includes(status)) return 'info';
   return '';
 }
 
 function isAdjustable(status) {
-  return ['WAITING_APPROVAL', 'WAITING_ADJUSTMENT', 'INSUFFICIENT_DATA'].includes(status);
+  return ['WAITING_CONFIRMATION', 'WAITING_ADJUSTMENT', 'INSUFFICIENT_DATA'].includes(status);
 }
 
 function terminationText(reason) {
@@ -191,9 +191,9 @@ onMounted(loadPlans);
                     placeholder="调整目标、课程顺序或每日节奏"/>
           <el-button v-if="isAdjustable(draft.state.status)"
                      :loading="savingId === draft.id" @click="adjustDraft(draft)">调整</el-button>
-          <el-button v-if="draft.state.status === 'WAITING_APPROVAL'" type="success"
-                     :loading="savingId === draft.id" @click="approveDraft(draft)">确认</el-button>
-          <el-button v-if="draft.state.status === 'WAITING_APPROVAL'" type="danger" plain
+          <el-button v-if="draft.state.status === 'WAITING_CONFIRMATION'" type="success"
+                     :loading="savingId === draft.id" @click="confirmDraft(draft)">确认</el-button>
+          <el-button v-if="draft.state.status === 'WAITING_CONFIRMATION'" type="danger" plain
                      :loading="savingId === draft.id" @click="cancelDraft(draft)">取消</el-button>
           <el-button link type="primary" @click="toggleVersions(draft)">版本记录</el-button>
         </div>

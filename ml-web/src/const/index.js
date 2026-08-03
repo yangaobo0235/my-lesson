@@ -74,7 +74,6 @@ export const PROJECT_SKILLS = [
     {label: '对象存储', value: 'MinIO', version: 'S3 API'},
     {label: '接口调用', value: 'OpenFeign', version: 'Spring Cloud'},
     {label: '工作流状态', value: 'Redis Checkpoint', version: 'Graph Saver'},
-    {label: '工具协议', value: 'MCP Client', version: 'Spring AI 1.1.2'},
     {label: '测试', value: 'JUnit Jupiter + Mockito', version: 'Spring Boot Test'},
     {label: '前端框架', value: 'Vue', version: '3.5'},
     {label: '前端构建', value: 'Vite', version: '6.4'},

@@ -1,7 +1,6 @@
 package com.yangaobo.ai.knowledge.service;
 
 import com.yangaobo.ai.client.CourseAiClient;
-import com.yangaobo.ai.client.SaleAiClient;
 import com.yangaobo.ai.knowledge.model.KnowledgeDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -18,8 +17,6 @@ public class KnowledgeDocumentFactory {
 
     public static final String COURSE = "COURSE";
     public static final String COURSE_EPISODES = "COURSE_EPISODES";
-    public static final String ARTICLE = "ARTICLE";
-    public static final String NOTICE = "NOTICE";
 
     private final KnowledgeContentHasher hasher;
     private final String sourceBaseUrl;
@@ -76,28 +73,6 @@ public class KnowledgeDocumentFactory {
                     episodeMetadata));
         }
         return result;
-    }
-
-    public KnowledgeDocument fromArticle(SaleAiClient.ArticleKnowledge article) {
-        return create(
-                ARTICLE,
-                article.id().toString(),
-                article.title(),
-                article.content(),
-                sourceBaseUrl + "/sale-server/api/v1/article/select/" + article.id(),
-                version(article.updated()),
-                Map.of());
-    }
-
-    public KnowledgeDocument fromNotice(SaleAiClient.NoticeKnowledge notice) {
-        return create(
-                NOTICE,
-                notice.id().toString(),
-                "公告 " + notice.id(),
-                notice.content(),
-                sourceBaseUrl + "/sale-server/api/v1/notice/select/" + notice.id(),
-                version(notice.updated()),
-                Map.of());
     }
 
     private KnowledgeDocument create(

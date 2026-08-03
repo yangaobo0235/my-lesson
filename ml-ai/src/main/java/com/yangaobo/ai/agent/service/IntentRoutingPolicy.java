@@ -12,8 +12,6 @@ import java.util.Set;
 @Component
 public class IntentRoutingPolicy {
 
-    private static final String MCP_READ_TOOLS = "mcp:*";
-
     private static final Set<String> READ_ONLY_TOOLS = Set.of(
             "search_courses",
             "get_course_detail",
@@ -27,35 +25,24 @@ public class IntentRoutingPolicy {
                     UserIntent.KNOWLEDGE_QA,
                     Set.of(
                             "search_courses",
-                            "get_course_detail",
-                            MCP_READ_TOOLS),
+                            "get_course_detail"),
                     UserIntent.COURSE_SEARCH,
                     Set.of(
                             "search_courses",
                             "get_course_detail",
-                            MCP_READ_TOOLS),
+                            "get_my_profile"),
                     UserIntent.PERSONAL_QUERY,
                     Set.of(
                             "get_my_recent_orders",
                             "get_my_cart",
                             "get_my_profile",
                             "get_learning_plan"),
-                    UserIntent.CART_ACTION,
-                    Set.of(
-                            "search_courses",
-                            "get_course_detail",
-                            "get_my_cart",
-                            "add_course_to_my_cart",
-                            "remove_course_from_my_cart"),
                     UserIntent.LEARNING_PLAN,
                     Set.of(
                             "search_courses",
                             "get_course_detail",
-                            "get_learning_plan",
-                            "create_learning_plan",
-                            MCP_READ_TOOLS),
-                    UserIntent.ADMIN_OPERATION,
-                    Set.of("rebuild_knowledge_index"),
+                            "get_my_profile",
+                            "get_learning_plan"),
                     UserIntent.OUT_OF_SCOPE,
                     Set.of());
 
@@ -74,8 +61,7 @@ public class IntentRoutingPolicy {
         UserIntent intent = normalized.intent();
         boolean retrievalEnabled = switch (intent) {
             case KNOWLEDGE_QA, COURSE_SEARCH, LEARNING_PLAN -> true;
-            case PERSONAL_QUERY, CART_ACTION, ADMIN_OPERATION,
-                    OUT_OF_SCOPE -> false;
+            case PERSONAL_QUERY, OUT_OF_SCOPE -> false;
         };
         return new AgentRoute(
                 retrievalEnabled,

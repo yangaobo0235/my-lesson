@@ -1,6 +1,5 @@
 package com.yangaobo.ai.tool.service;
 
-import com.yangaobo.ai.tool.dto.CreateLearningPlanRequest;
 import com.yangaobo.ai.tool.dto.NoArgsRequest;
 import com.yangaobo.ai.tool.model.LearningPlan;
 import org.springframework.stereotype.Component;
@@ -12,11 +11,6 @@ public class LearningPlanTools {
 
     public LearningPlanTools(LearningPlanService learningPlanService) {
         this.learningPlanService = learningPlanService;
-    }
-
-    public LearningPlan createLearningPlan(
-            CreateLearningPlanRequest request) {
-        return learningPlanService.create(request);
     }
 
     public LearningPlan getLearningPlan(NoArgsRequest request) {
