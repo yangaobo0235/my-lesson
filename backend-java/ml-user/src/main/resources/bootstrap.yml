@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: ml-user # 服务名
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml # NacosConfig配置文件后缀
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        group: ml-group # NacosConfig配置文件分组
+        shared-configs:
+          - group: ml-group # NacosConfig配置文件分组
+            data-id: common-config.yaml # 配置文件名
+            refresh: true # 是否动态刷新，默认为false
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev} # 环境由部署参数选择，开发环境为默认值

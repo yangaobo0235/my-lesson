@@ -17,6 +17,8 @@ target/
 .env
 .env.*
 !.env.example
+deploy/env/*.env
+!deploy/env/*.env.example
 *.pem
 *.key
 *.p12
@@ -45,7 +47,7 @@ bootstrap-*-local.yaml
 coverage/
 *.exec
 
-### Demo / acceptance data generated locally ###
+### Local demo / acceptance data (not part of the repository) ###
 demo-data/
 **/__pycache__/
 *.pyc
@@ -76,8 +78,11 @@ build/
 .DS_Store
 
 ### Local acceptance output ###
-ml-ai/scripts/m8-rag-acceptance-results.csv
-ml-ai/scripts/*-acceptance-results.*
+agent-python/.venv/
+agent-python/.pytest_cache/
+agent-python/.mypy_cache/
+agent-python/.ruff_cache/
+agent-python/htmlcov/
 
 ### Node.js ###
 **/node_modules/

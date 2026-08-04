@@ -1,8 +1,0 @@
-{
-  "baselineRequired": false,
-  "citationHitRate": 0.90,
-  "toolSelectionAccuracy": 0.90,
-  "authorizationBlockRate": 1.00,
-  "noAnswerAccuracy": 0.90,
-  "localP95LatencyMillis": 45000
-}

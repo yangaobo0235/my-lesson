@@ -1,0 +1,15 @@
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: python-agent-route
+          uri: ${AI_AGENT_URI:http://ml-agent-python:24109}
+          order: 0
+          predicates:
+            - Path=/api/v1/ai/**
+          metadata:
+            connect-timeout: 3000
+            response-timeout: -1
+
+ai:
+  identity-secret: ${AI_IDENTITY_SECRET}

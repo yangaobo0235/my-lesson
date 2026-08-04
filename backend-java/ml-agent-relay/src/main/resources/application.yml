@@ -1,0 +1,23 @@
+server:
+  port: ${AGENT_RELAY_PORT:24110}
+
+spring:
+  application:
+    name: ml-agent-relay
+
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:127.0.0.1:9876}
+
+ai:
+  internal-token: ${AI_INTERNAL_TOKEN:}
+  agent:
+    base-url: ${AI_AGENT_BASE_URL:http://127.0.0.1:24109}
+  knowledge-sync:
+    topic: ${AI_KNOWLEDGE_TOPIC:ml-ai-knowledge-events}
+    consumer-group: ${AI_KNOWLEDGE_CONSUMER_GROUP:ml-agent-python-relay}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

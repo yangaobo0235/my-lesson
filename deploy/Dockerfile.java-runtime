@@ -1,0 +1,19 @@
+ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:17-jre-jammy
+FROM ${JAVA_RUNTIME_IMAGE}
+
+ARG MAIN_CLASS
+
+RUN if command -v addgroup >/dev/null 2>&1; then \
+        addgroup -S mylesson && adduser -S -G mylesson -h /home/mylesson mylesson; \
+    else \
+        groupadd --system mylesson && useradd --system --gid mylesson --create-home mylesson; \
+    fi
+
+WORKDIR /app
+COPY app.jar /app/app.jar
+COPY lib /app/lib
+
+ENV MAIN_CLASS=${MAIN_CLASS}
+USER mylesson
+
+ENTRYPOINT ["sh", "-c", "exec java ${JAVA_OPTS:--Xms64m -Xmx256m} -cp '/app/app.jar:/app/lib/*' \"$MAIN_CLASS\""]

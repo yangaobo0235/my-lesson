@@ -1,317 +1,291 @@
 # MyLesson
 
-MyLesson 是一个前后端分离的在线学习平台。后端采用 Spring Cloud Alibaba 微服务架构，前端基于 Vue 3 和 Element Plus，平台包含课程学习、内容管理、营销交易、订单支付、实时弹幕和智能学习服务。
+[![CI](https://github.com/yangaobo0235/my-lesson/actions/workflows/ci.yml/badge.svg)](https://github.com/yangaobo0235/my-lesson/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## 功能
+面向在线学习场景的 Java + Python 双语言 Agent 平台，覆盖课程、营销、订单、学习、智能问答、知识检索和学习计划生成，并通过明确的服务边界保证业务写入可控、可审计、可恢复。
 
-### 学习平台
+## 核心能力
 
-- 用户注册、登录、角色权限和个人资料管理
-- 课程分类、课程分集、学习记录、评论和收藏
-- 公告、文章、Banner、优惠券和秒杀活动
-- 购物车、订单、支付宝沙箱支付和支付回调
-- WebSocket 弹幕、MinIO 媒体存储和 Elasticsearch 检索
+- 提供用户、角色、课程、营销、订单、购物车、学习和弹幕等完整业务能力。
+- 使用 FastAPI 与 LangGraph 编排意图识别、知识检索、工具调用和流式回答。
+- 使用 PostgreSQL 与 pgvector 保存对话运行态、知识索引、引用和评测记录。
+- 使用 Java 受控工具执行查询与业务写入，Python 不直接修改业务数据库。
+- 通过草案确认机制生成学习计划，用户确认后才由 Java 事务创建正式计划。
+- 使用 Transactional Outbox、RocketMQ 和 Inbox 实现可靠、幂等的知识同步。
+- 通过持久化 SSE、`Last-Event-ID`、任务租约、心跳和超时恢复增强 Agent 运行可靠性。
+- 集成 Prometheus、OpenTelemetry 与 Langfuse，记录指标、链路和模型调用。
 
-### 智能学习服务
-
-- 知识问答：检索课程及分集内容，回答中携带来源引用，证据不足时返回拒答结果
-- 课程推荐：根据学习目标检索和排序课程，并结合当前用户的学习数据生成建议
-- 个人查询：查询当前登录用户的资料、订单、购物车和学习计划
-- 学习计划：生成可调整的版本化草案，用户确认后创建正式计划
+模型输出只用于建议、检索和候选结果。身份权限、业务规则、正式数据和事务一致性始终由 Java 服务控制。
 
 ## 系统架构
 
 ```mermaid
-flowchart TB
-    Browser["浏览器"] --> Web["ml-web<br/>Vue 3"]
-    Web --> Gateway["ml-gateway<br/>API 网关与鉴权"]
+flowchart LR
+    User["学习者 / 管理员"] --> Web["Vue 3 前端<br/>:24108"]
+    Web --> Gateway["Java Gateway<br/>:24101"]
+    Gateway --> Java["Java 业务服务<br/>用户 / 课程 / 营销 / 订单"]
+    Gateway --> Agent["Python Agent API<br/>FastAPI + LangGraph<br/>:24109"]
 
-    subgraph Services["业务服务"]
-        User["ml-user<br/>用户与权限"]
-        Course["ml-course<br/>课程与学习"]
-        Sale["ml-sale<br/>营销与秒杀"]
-        Order["ml-order<br/>订单与支付"]
-        Barrage["ml-barrage<br/>实时弹幕"]
-        AI["ml-ai<br/>智能学习服务"]
-    end
+    Java --> MySQL[("MySQL<br/>业务事实")]
+    Agent --> Vector[("PostgreSQL + pgvector<br/>Agent 运行态与知识索引")]
+    Agent --> Redis[("Redis<br/>会话锁与事件通知")]
+    Agent --> Model["DashScope<br/>Chat / Embedding / Rerank"]
 
-    Gateway --> User
-    Gateway --> Course
-    Gateway --> Sale
-    Gateway --> Order
-    Gateway --> Barrage
-    Gateway --> AI
-
-    AI -. 只读业务查询 .-> User
-    AI -. 只读业务查询 .-> Course
-    AI -. 只读业务查询 .-> Order
-
-    subgraph Middleware["基础设施"]
-        Nacos["Nacos<br/>配置与服务发现"]
-        Redis["Redis / Redisson"]
-        MQ["RocketMQ"]
-        ES["Elasticsearch"]
-        MinIO["MinIO"]
-    end
-
-    subgraph Storage["数据存储"]
-        MySQL["MySQL<br/>业务数据"]
-        PostgreSQL["PostgreSQL + pgvector<br/>AI 数据与向量"]
-    end
-
-    User --> MySQL
-    Course --> MySQL
-    Sale --> MySQL
-    Order --> MySQL
-    Barrage --> MySQL
-    AI --> PostgreSQL
-
-    User --> Redis
-    Sale --> Redis
-    Order --> Redis
-    AI --> Redis
-    Course --> ES
-    AI --> ES
-    Course --> MinIO
-
-    Course -->|知识变更事件| MQ
-    MQ --> AI
-    Sale -->|秒杀订单消息| MQ
-    MQ --> Order
-
-    Nacos -. 配置与服务发现 .-> Gateway
-    Nacos -. 配置与服务发现 .-> Services
-    AI --> DashScope["DashScope 模型服务"]
+    Agent -->|"受控工具 + 委托身份"| Java
+    Java -->|"Transactional Outbox"| MQ["RocketMQ"]
+    MQ --> Relay["Java Agent Relay<br/>:24110"]
+    Relay --> Agent
 ```
 
-所有后端服务注册到 Nacos，客户端请求统一通过 Gateway 进入。业务服务使用 MySQL，智能学习服务使用 PostgreSQL 和 pgvector；服务间事件通过 RocketMQ 传递。
+## Java 与 Python 职责
 
-## 模块
+| 能力 | 所有者 | 说明 |
+| --- | --- | --- |
+| 登录、角色、权限、Gateway | Java | 统一身份入口和业务权限 |
+| 用户、课程、营销、订单、学习计划 | Java | 业务事实、规则和 MySQL 事务 |
+| Agent 受控工具 | Java | 校验委托身份后执行查询或写入 |
+| 模型、Prompt、LangGraph 工作流 | Python | 唯一 AI/Agent 运行时 |
+| RAG、Embedding、Rerank、评测 | Python | 与模型运行时保持内聚 |
+| 对话、Run、SSE、知识索引 | Python/PostgreSQL | Agent 运行数据，不作为业务事实 |
+| RocketMQ 到 Python 的事件适配 | Java Relay | 只负责可靠运输，不编排 Agent |
 
-| 模块 | 端口 | 说明 |
+Java 不调用模型、不保存 Prompt、不编排 Agent。Python 不直接修改 MySQL，所有正式业务写入均通过 Java 规则和事务完成。
+
+## Agent 请求流程
+
+```text
+用户登录
+  -> Gateway 校验登录态并签发短期委托 JWT
+  -> Python Agent 分类意图并检索知识
+  -> Python 按允许列表选择 Java 工具
+  -> Java 同时校验内部令牌和委托身份
+  -> Java 执行业务规则或事务
+  -> Python 保存回答、引用和事件
+  -> 前端通过 SSE 接收结果，断线后可继续回放
+```
+
+学习计划不会由 Agent 直接写入正式数据：
+
+```text
+Agent 生成候选
+  -> Java 创建 WAITING_CONFIRMATION 草案
+  -> 用户调整或确认
+  -> Java 在 MySQL 事务中创建正式计划
+```
+
+## 模块与端口
+
+| 模块 | 端口 | 职责 |
 | --- | ---: | --- |
-| `ml-gateway` | 24101 | API 网关、鉴权和用户身份透传 |
-| `ml-user` | 24102 | 用户、角色和权限管理 |
-| `ml-course` | 24103 | 课程、分集和学习内容 |
-| `ml-sale` | 24104 | 营销、优惠券和秒杀 |
-| `ml-order` | 24105 | 购物车、订单和支付 |
-| `ml-barrage` | 24106 | 实时弹幕服务 |
-| `ml-ai` | 24107 | 智能问答、课程推荐和学习计划 |
-| `ml-web` | 24108 | Vue 3 Web 应用 |
+| `ml-gateway` | 24101 | 对外入口、登录态、路由和委托 JWT |
+| `ml-user` | 24102 | 用户、角色和权限 |
+| `ml-course` | 24103 | 课程、学习计划和 Agent 工具 |
+| `ml-sale` | 24104 | 营销内容和秒杀 |
+| `ml-order` | 24105 | 订单和购物车 |
+| `ml-barrage` | 24106 | 实时弹幕 |
+| `ml-web` | 24108 | 学生端、管理端和 AI 助手 |
+| `ml-agent-python` | 24109 | FastAPI、LangGraph、RAG、对话和评测 |
+| `ml-agent-relay` | 24110 | RocketMQ 到 Python 的知识事件适配 |
 
 ## 技术栈
 
-### 后端
+| 分类 | 技术 |
+| --- | --- |
+| Java 后端 | Java 17、Spring Boot 3.2、Spring Cloud、Spring Cloud Alibaba、MyBatis-Flex |
+| Python Agent | Python 3.12、FastAPI、LangGraph、SQLAlchemy、Pydantic |
+| 模型与检索 | DashScope、OpenAI Compatible API、pgvector |
+| 数据与消息 | MySQL、PostgreSQL、Redis、RocketMQ、Elasticsearch、MinIO |
+| 前端 | Vue 3、Vite、Element Plus、ECharts、Vuex |
+| 数据库迁移 | Flyway、Alembic |
+| 可观测性 | Prometheus、OpenTelemetry、Langfuse |
+| 测试与质量 | JUnit、Pytest、Ruff、Mypy、Vitest、GitHub Actions |
 
-- Java 17、Spring Boot、Spring Cloud、Spring Cloud Alibaba
-- Nacos、OpenFeign、Sentinel
-- MyBatis-Flex、MySQL、PostgreSQL、pgvector
-- Redis、Redisson、RocketMQ、Elasticsearch
-- MinIO、WebSocket、XXL-JOB
-- Spring AI Alibaba、DashScope、Spring AI Alibaba Graph
-
-### 前端
-
-- Vue 3、Vue Router、Vuex
-- Vite、Element Plus
-- Axios、ECharts、xgplayer
-
-## 目录结构
+## 项目结构
 
 ```text
 my-lesson/
-|-- ml-common/       公共模型、工具和安全上下文
-|-- ml-generator/    代码生成模块
-|-- ml-gateway/      API 网关
-|-- ml-user/         用户与权限服务
-|-- ml-course/       课程与学习服务
-|-- ml-sale/         营销与秒杀服务
-|-- ml-order/        订单与支付服务
-|-- ml-barrage/      弹幕服务
-|-- ml-ai/           智能学习服务
-|-- ml-web/          Vue 3 前端
-|-- demo-data/       本地演示数据和资源
-|-- .github/         GitHub Actions 工作流
-|-- NACOS_CONFIG.md  Nacos 配置说明
-`-- pom.xml          Maven 聚合配置
+|-- .github/workflows/       # 持续集成
+|-- backend-java/            # Maven 父子工程和 Java 服务
+|   |-- ml-common/           # 公共模型、安全和 Outbox
+|   |-- ml-gateway/          # API Gateway
+|   |-- ml-user/             # 用户和权限
+|   |-- ml-course/           # 课程与学习计划
+|   |-- ml-sale/             # 营销与秒杀
+|   |-- ml-order/            # 订单与购物车
+|   |-- ml-barrage/          # 弹幕
+|   |-- ml-agent-relay/      # 知识事件 Relay
+|   `-- tools/ml-generator/  # 代码生成器
+|-- agent-python/            # Python Agent API、Worker 和迁移
+|-- frontend/ml-web/         # Vue 3 前端
+|-- contracts/               # OpenAPI 与 JSON Schema
+|-- deploy/                  # Compose 和环境变量模板
+|-- docs/                    # 架构与部署文档
+|-- scripts/                 # 契约生成等辅助脚本
+|-- pom.xml                  # 工作区 Maven 聚合入口
+`-- README.md
 ```
+
+`demo-data/`、测试报告和验收输出属于本地数据，不进入 Git 仓库。
 
 ## 环境要求
 
 - JDK 17
 - Maven 3.9+
-- Node.js 20+
-- Nacos
+- Python 3.12
+- Node.js 20+ 与 npm
+- Docker Compose，可选，用于本地构建应用容器
 - MySQL 8
 - PostgreSQL 15+ 与 pgvector
-- Redis
-- Elasticsearch
-- RocketMQ
-- MinIO
-- DashScope API Key
+- Redis、RocketMQ、Nacos
+- 可选：MinIO、Elasticsearch、OpenTelemetry Collector、Langfuse
+
+基础设施可以运行在独立的 Docker 主机上，MyLesson 应用服务可以全部在开发机本地运行。
 
 ## 快速开始
 
-### 1. 准备配置
-
-以 `.env.example` 为环境变量清单，通过本地环境、IDE 启动配置或容器编排注入实际值。不要向 Git 提交密码、令牌、API Key 或私钥。
-
-常用变量：
-
-```dotenv
-NACOS_SERVER_ADDR=127.0.0.1:8848
-MYSQL_USERNAME=root
-MYSQL_PASSWORD=change-me
-AI_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/mylesson_ai
-AI_DATASOURCE_USERNAME=postgres
-AI_DATASOURCE_PASSWORD=change-me
-REDIS_HOST=127.0.0.1
-ROCKETMQ_NAME_SERVER=127.0.0.1:9876
-ELASTICSEARCH_URIS=http://127.0.0.1:9200
-DASHSCOPE_API_KEY=change-me
-AI_CHAT_MODEL=qwen3-max
-AI_ROUTER_MODEL=qwen-flash
-AI_IDENTITY_SECRET=generate-at-least-32-random-bytes
-AI_INTERNAL_TOKEN=generate-at-least-32-random-bytes
-```
-
-在 Nacos 中创建 `ml-group` 分组并导入各服务配置。Data ID、配置模板和敏感信息注入方式见 [NACOS_CONFIG.md](NACOS_CONFIG.md)。
-
-### 2. 准备数据库
-
-业务服务使用以下 MySQL Schema：
-
-```text
-ml_ums  用户
-ml_cms  课程
-ml_sms  营销
-ml_oms  订单
-ml_bms  弹幕
-```
-
-智能学习服务使用 PostgreSQL 数据库 `mylesson_ai`。`ml-ai` 启动时会通过 Flyway 自动执行 `ml-ai/src/main/resources/db/migration` 下的迁移。
-
-### 3. 构建后端
-
-在项目根目录执行：
+### 1. 获取代码
 
 ```powershell
-mvn clean install -DskipTests
+git clone https://github.com/yangaobo0235/my-lesson.git
+Set-Location my-lesson
 ```
 
-### 4. 启动后端
-
-基础设施和 Nacos 配置准备完成后，在独立终端中依次启动业务服务、Gateway 和 AI 服务：
+### 2. 创建本地配置
 
 ```powershell
-mvn -pl ml-user spring-boot:run
-mvn -pl ml-course spring-boot:run
-mvn -pl ml-sale spring-boot:run
-mvn -pl ml-order spring-boot:run
-mvn -pl ml-barrage spring-boot:run
-mvn -pl ml-gateway spring-boot:run
-mvn -pl ml-ai spring-boot:run
+Copy-Item .env.example .env
 ```
 
-### 5. 启动前端
+编辑 `.env`，填写本地或独立基础设施地址、数据库账号、模型 API Key 和随机安全令牌。`.env` 已被 Git 忽略，不要提交真实凭据。
+
+Python 从 `agent-python/` 启动时会自动读取仓库根目录 `.env`。Java/Spring 不读取 dotenv 文件；在同一个 PowerShell 终端中载入配置后再启动 Java 服务：
 
 ```powershell
-Set-Location ml-web
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+        Set-Item -Path "Env:$($matches[1].Trim())" -Value $matches[2]
+    }
+}
+```
+
+### 3. 执行数据库迁移
+
+Java 服务启动时由 Flyway 管理各业务库迁移。Python Agent 使用 Alembic：
+
+```powershell
+Set-Location agent-python
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev]"
+.\.venv\Scripts\python -m alembic upgrade head
+Set-Location ..
+```
+
+### 4. 构建 Java 服务
+
+```powershell
+java -version
+mvn clean package
+```
+
+IntelliJ IDEA 应导入仓库根目录的 `pom.xml`。Windows 本地运行建议设置 `JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8`。
+
+### 5. 启动应用
+
+根据需要启动 Java Gateway、业务服务和 Relay。Python Agent API 与 Worker 分别运行：
+
+```powershell
+Set-Location agent-python
+.\.venv\Scripts\python -m uvicorn mylesson_agent.main:app --reload --port 24109
+```
+
+在另一个终端运行：
+
+```powershell
+Set-Location agent-python
+.\.venv\Scripts\python -m mylesson_agent.worker
+```
+
+启动前端：
+
+```powershell
+Set-Location frontend/ml-web
 npm ci
 npm run dev
 ```
 
-### 6. 访问服务
+应用容器编排见 `deploy/docker-compose.apps.yml`。它只启动应用服务，并连接已经准备好的基础设施：
 
-| 地址 | 用途 |
+```powershell
+Copy-Item deploy/env/agent.env.example deploy/env/agent.env
+Copy-Item deploy/env/java.env.example deploy/env/java.env
+docker compose -f deploy/docker-compose.apps.yml up -d --build
+```
+
+模板中的 `infra.example.com` 是占位地址，启动前必须替换为实际基础设施主机名或 IP。
+
+## 访问入口
+
+| 入口 | 地址 |
 | --- | --- |
-| `http://localhost:24108` | Web 应用 |
-| `http://localhost:24101` | Gateway API |
-| `http://localhost:24107/swagger-ui.html` | AI Swagger UI |
-| `http://localhost:24107/v3/api-docs` | AI OpenAPI JSON |
-| `http://localhost:24107/actuator/health` | AI 健康检查 |
-
-## AI 服务设计
-
-### Agent 路由
-
-AI 服务先识别请求场景，再为 Agent 装配对应的只读工具。工具调用中的用户身份由服务端上下文注入，不接收客户端传入的 `userId`。模型调用和工具调用均设置超时、重试和次数上限。
-
-### 混合检索
-
-```text
-查询改写
- -> PostgreSQL/pgvector 向量召回
- -> Elasticsearch 关键词召回
- -> RRF 融合
- -> Rerank
- -> 相关性校验
- -> 引用映射或拒答
-```
-
-向量检索和关键词检索可独立降级。检索过程记录查询改写、候选数量、重排状态、最终命中和分阶段耗时。
-
-### 学习计划
-
-```text
-目标标准化 -> 用户资料 -> 课程检索 -> 课程核验 -> 候选质量检查
- -> Designer 生成草案 -> Java 规则校验 -> Reviewer 审查
- -> 草案修正 -> 保存版本 -> 等待用户确认 -> 创建正式计划
-```
-
-用户调整会生成新版本。确认操作采用条件更新，防止同一草案被重复确认。
-
-### 知识同步
-
-课程服务通过 Outbox 记录知识变更事件，Relay 将事件投递到 RocketMQ。AI 消费端使用 Inbox 对 `eventId` 去重，并根据 `version` 忽略乱序旧事件。
+| Web 前端 | `http://localhost:24108` |
+| Gateway | `http://localhost:24101` |
+| Agent Swagger UI | `http://localhost:24109/docs` |
+| Agent OpenAPI | `http://localhost:24109/openapi.json` |
+| Agent 就绪检查 | `http://localhost:24109/health/ready` |
 
 ## 测试
 
-运行全部后端测试：
+Java：
 
 ```powershell
-mvn test
+mvn clean verify
 ```
 
-运行 AI 模块测试：
+Python：
 
 ```powershell
-mvn -pl ml-ai test
+Set-Location agent-python
+.\.venv\Scripts\python -m ruff check .
+.\.venv\Scripts\python -m mypy src
+.\.venv\Scripts\python -m pytest
 ```
 
-构建前端：
+前端：
 
 ```powershell
-Set-Location ml-web
+Set-Location frontend/ml-web
 npm ci
+npm test
 npm run build
 ```
 
-AI 评测支持 `deterministic` 和 `external` 两种模式。`external` 模式会连接真实模型、检索存储和业务服务，适合在依赖完整的测试环境中执行。
-
-GitHub Actions 会在 push 和 pull request 时执行后端打包、前端依赖审计和前端构建。
-
-## 主要 AI API
-
-```text
-POST /api/v1/ai/conversations/{id}/messages
-GET  /api/v1/ai/conversations/{id}/stream
-POST /api/v1/ai/course-recommendations
-GET  /api/v1/ai/learning-plan-drafts
-POST /api/v1/ai/learning-plan-drafts/{id}/adjustments
-POST /api/v1/ai/learning-plan-drafts/{id}/confirm
-POST /api/v1/ai/learning-plan-drafts/{id}/cancel
-GET  /api/v1/ai/plans
-PATCH /api/v1/ai/plans/{id}/progress
-POST /api/v1/ai/admin/evaluations/run
-GET  /api/v1/ai/admin/evaluations/{id}
-```
+CI 会执行 Java 构建与测试、Python lint/typecheck/test、前端依赖审计与构建、OpenAPI 契约漂移检查、Docker 镜像构建和 Compose 配置校验。
 
 ## 安全说明
 
-- 不要提交 `.env`、密码、访问令牌、API Key 或支付私钥
-- 生产环境必须替换示例密钥，并限制 Nacos、数据库和中间件的公网访问
-- AI 用户身份由 Gateway 签名透传，业务工具不接受客户端指定其他用户身份
+- Gateway 签发短期委托 JWT；Python 公共 API 不信任客户端直接提供的用户身份。
+- Java Agent 工具同时校验内部服务令牌和委托身份。
+- 工具参数不接受 `userId`，用户 ID 只来自校验后的安全上下文。
+- 密码、API Key、支付私钥和令牌只放在本地配置或密钥系统中。
+- `.env`、`deploy/env/*.env`、日志、构建产物和本地验收数据不得提交到 Git。
+- 生产环境应使用最小权限数据库账号和平台密钥管理能力。
+- 安全问题请按照 [SECURITY.md](SECURITY.md) 私下报告。
+
+## 更多文档
+
+- [架构设计](docs/ARCHITECTURE.md)
+- [部署说明](docs/DEPLOYMENT.md)
+- [Nacos 配置](NACOS_CONFIG.md)
+- [Python Agent](agent-python/README.md)
+- [Web 前端](frontend/ml-web/README.md)
+- [贡献指南](CONTRIBUTING.md)
+
+接口与事件契约位于 `contracts/`：
+
+- `public-agent.openapi.yaml`：前端/Gateway 到 Python Agent
+- `internal-tools.openapi.yaml`：Python 到 Java 受控工具
+- `knowledge-event.schema.json`：Java Outbox 知识事件
 
 ## License
 

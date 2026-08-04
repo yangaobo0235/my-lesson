@@ -1,0 +1,70 @@
+openapi: 3.1.0
+info:
+  title: MyLesson Java Agent Tool API
+  version: 1.0.0
+security:
+  - serviceToken: []
+    delegation: []
+paths:
+  /internal/v1/agent/me/profile:
+    get:
+      operationId: getMyProfile
+      responses:
+        "200": {description: Delegated user profile}
+  /internal/v1/agent/me/orders:
+    get:
+      operationId: getMyOrders
+      responses:
+        "200": {description: Delegated user orders}
+  /internal/v1/agent/me/cart:
+    get:
+      operationId: getMyCart
+      responses:
+        "200": {description: Delegated user cart}
+  /internal/v1/agent/courses/search:
+    get:
+      operationId: searchCourses
+      parameters:
+        - {name: keyword, in: query, schema: {type: string, maxLength: 200}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50}}
+      responses:
+        "200": {description: Verified courses}
+  /internal/v1/agent/courses/{courseId}:
+    get:
+      operationId: getCourse
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        "200": {description: Verified course detail}
+  /internal/v1/agent/me/learning-plan-drafts:
+    post:
+      operationId: createMyLearningPlanDraft
+      description: Creates only a WAITING_CONFIRMATION draft; never a formal plan.
+      responses:
+        "200": {description: Draft}
+  /internal/v1/agent/me/learning-plan-drafts/{draftId}/confirm:
+    post:
+      operationId: confirmMyLearningPlanDraft
+      parameters:
+        - $ref: "#/components/parameters/DraftId"
+      responses:
+        "200": {description: Formal plan created transactionally}
+components:
+  securitySchemes:
+    serviceToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+    delegation:
+      type: apiKey
+      in: header
+      name: X-ML-Delegation
+  parameters:
+    DraftId:
+      name: draftId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}

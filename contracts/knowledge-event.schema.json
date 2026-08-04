@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mylesson.local/contracts/knowledge-event.schema.json",
+  "title": "KnowledgeChangeEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "eventType", "aggregateId", "version", "occurredAt"],
+  "properties": {
+    "eventId": {"type": "string", "format": "uuid"},
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "COURSE_CREATED",
+        "COURSE_UPDATED",
+        "COURSE_DELETED",
+        "ARTICLE_UPDATED",
+        "ARTICLE_DELETED",
+        "NOTICE_UPDATED",
+        "NOTICE_DELETED"
+      ]
+    },
+    "aggregateId": {"type": "string", "minLength": 1, "maxLength": 100},
+    "version": {"type": "integer", "minimum": 1},
+    "occurredAt": {"type": "string", "format": "date-time"}
+  }
+}

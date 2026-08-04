@@ -1,0 +1,128 @@
+name: mylesson-apps
+
+x-java-common: &java-common
+  build:
+    context: ../backend-java
+    args:
+      MAVEN_IMAGE: ${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}
+      JAVA_IMAGE: ${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
+  restart: unless-stopped
+  env_file:
+    - path: ${MYLESSON_JAVA_ENV_FILE:-env/java.env}
+      required: false
+  networks: [mylesson]
+
+services:
+  ml-user:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-user, MAIN_CLASS: com.yangaobo.UserApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    ports: ["24102:24102"]
+
+  ml-course:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-course, MAIN_CLASS: com.yangaobo.CourseApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    ports: ["24103:24103"]
+
+  ml-sale:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-sale, MAIN_CLASS: com.yangaobo.SaleApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    ports: ["24104:24104"]
+
+  ml-order:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-order, MAIN_CLASS: com.yangaobo.OrderApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    ports: ["24105:24105"]
+
+  ml-barrage:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-barrage, MAIN_CLASS: com.yangaobo.BarrageApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    ports: ["24106:24106"]
+
+  ml-agent-python:
+    image: mylesson/ml-agent-python:1.0
+    build:
+      context: ../agent-python
+      args:
+        PYTHON_IMAGE: ${MYLESSON_PYTHON_IMAGE:-python:3.12-slim-bookworm}
+        PIP_INDEX_URL: ${MYLESSON_PIP_INDEX_URL:-https://pypi.org/simple}
+    restart: unless-stopped
+    env_file:
+      - path: ${MYLESSON_AGENT_ENV_FILE:-env/agent.env}
+        required: false
+    ports: ["24109:24109"]
+    networks: [mylesson]
+    depends_on:
+      ml-agent-migrate:
+        condition: service_completed_successfully
+
+  ml-agent-migrate:
+    image: mylesson/ml-agent-python:1.0
+    build:
+      context: ../agent-python
+      args:
+        PYTHON_IMAGE: ${MYLESSON_PYTHON_IMAGE:-python:3.12-slim-bookworm}
+        PIP_INDEX_URL: ${MYLESSON_PIP_INDEX_URL:-https://pypi.org/simple}
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    restart: "no"
+    env_file:
+      - path: ${MYLESSON_AGENT_ENV_FILE:-env/agent.env}
+        required: false
+    networks: [mylesson]
+
+  ml-agent-worker:
+    image: mylesson/ml-agent-python:1.0
+    build:
+      context: ../agent-python
+      args:
+        PYTHON_IMAGE: ${MYLESSON_PYTHON_IMAGE:-python:3.12-slim-bookworm}
+        PIP_INDEX_URL: ${MYLESSON_PIP_INDEX_URL:-https://pypi.org/simple}
+    command: ["python", "-m", "mylesson_agent.worker"]
+    restart: unless-stopped
+    env_file:
+      - path: ${MYLESSON_AGENT_ENV_FILE:-env/agent.env}
+        required: false
+    depends_on:
+      ml-agent-migrate:
+        condition: service_completed_successfully
+    networks: [mylesson]
+
+  ml-agent-relay:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-agent-relay, MAIN_CLASS: com.yangaobo.AgentRelayApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    depends_on: [ml-agent-python]
+    ports: ["24110:24110"]
+
+  ml-gateway:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-gateway, MAIN_CLASS: com.yangaobo.GatewayApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    depends_on: [ml-agent-python]
+    ports: ["24101:24101"]
+
+  ml-web:
+    build:
+      context: ../frontend/ml-web
+      args:
+        NODE_IMAGE: ${MYLESSON_NODE_IMAGE:-node:22.12-bookworm-slim}
+        NGINX_IMAGE: ${MYLESSON_NGINX_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    depends_on: [ml-gateway]
+    ports: ["24108:80"]
+    networks: [mylesson]
+
+networks:
+  mylesson:
+    driver: bridge
