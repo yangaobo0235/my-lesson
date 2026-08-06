@@ -18,6 +18,7 @@
         <module>ml-order</module>
         <module>ml-barrage</module>
         <module>ml-agent-relay</module>
+        <module>ml-ai-search</module>
     </modules>
 
     <properties>

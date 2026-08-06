@@ -12,10 +12,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from uuid import UUID
 
 import httpx
 from openai import AsyncOpenAI
-from sqlalchemy import text
+from sqlalchemy import select
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -25,7 +26,12 @@ from mylesson_agent.agents.runtime import BASE_PROMPT, AgentRuntime, AgentState 
 from mylesson_agent.config import Settings  # noqa: E402
 from mylesson_agent.domain.api_models import UserIntent  # noqa: E402
 from mylesson_agent.infrastructure.database import Database  # noqa: E402
+from mylesson_agent.infrastructure.orm import (  # noqa: E402
+    KnowledgeChunkRow,
+    KnowledgeSourceRow,
+)
 from mylesson_agent.llm.client import IntentResult, ModelClient  # noqa: E402
+from mylesson_agent.rag.search_client import JavaKnowledgeSearchClient  # noqa: E402
 from mylesson_agent.rag.service import (  # noqa: E402
     HybridRetriever,
     RetrievalHit,
@@ -154,41 +160,76 @@ intent只能是KNOWLEDGE_QA、COURSE_SEARCH、PERSONAL_QUERY、LEARNING_PLAN、O
         await self._client.aclose()
 
 
-class KeywordOnlyRetriever:
-    def __init__(self, settings: Settings) -> None:
+class ElasticsearchKeywordRetriever:
+    def __init__(
+        self,
+        settings: Settings,
+        keyword_search: JavaKnowledgeSearchClient,
+    ) -> None:
         self._settings = settings
+        self._keyword_search = keyword_search
 
     async def search(self, session: Any, query: str) -> RetrievalResult:
-        rows = (
-            await session.execute(
-                text(
-                    """
-                    SELECT kc.id::text AS chunk_id, kc.title, kc.content,
-                           ks.source_url, ks.source_type, ks.source_id,
-                           similarity(kc.content, :query) AS score
-                    FROM knowledge_chunk kc
-                    JOIN knowledge_source ks ON ks.id = kc.source_id
-                    WHERE ks.status = 'ACTIVE' AND similarity(kc.content, :query) > 0
-                    ORDER BY score DESC
-                    LIMIT :limit
-                    """
-                ),
-                {"query": query, "limit": self._settings.answer_top_n},
+        candidates = await self._keyword_search.search(query, self._settings.keyword_top_k)
+        candidate_ids: list[UUID] = []
+        for candidate in candidates:
+            try:
+                candidate_ids.append(UUID(candidate.chunk_id))
+            except ValueError:
+                continue
+        if not candidate_ids:
+            return RetrievalResult(
+                [],
+                False,
+                rewritten_query=query.strip(),
+                backend_stats={"keywordCandidates": len(candidates), "hydratedCandidates": 0},
+                decision="REFUSED",
             )
-        ).mappings().all()
-        hits = [
-            RetrievalHit(
-                chunk_id=str(row["chunk_id"]),
-                title=str(row["title"]),
-                content=str(row["content"]),
-                source_url=str(row["source_url"]),
-                source_type=str(row["source_type"]),
-                source_id=str(row["source_id"]),
-                score=float(row["score"] or 0.0),
+        rows = await session.execute(
+            select(KnowledgeChunkRow, KnowledgeSourceRow)
+            .join(KnowledgeSourceRow, KnowledgeSourceRow.id == KnowledgeChunkRow.source_id)
+            .where(
+                KnowledgeChunkRow.id.in_(candidate_ids),
+                KnowledgeSourceRow.status == "ACTIVE",
             )
-            for row in rows
-        ]
-        return RetrievalResult(hits, False)
+        )
+        sources = {str(chunk.id): (chunk, source) for chunk, source in rows.tuples()}
+        hits: list[RetrievalHit] = []
+        for candidate in candidates:
+            row = sources.get(candidate.chunk_id)
+            if row is None:
+                continue
+            chunk, source = row
+            if (source.source_type, source.source_id) != (
+                candidate.source_type,
+                candidate.source_id,
+            ) or source.content_version < candidate.content_version:
+                continue
+            hits.append(
+                RetrievalHit(
+                    chunk_id=str(chunk.id),
+                    title=chunk.title,
+                    content=chunk.content,
+                    source_url=source.source_url,
+                    source_type=source.source_type,
+                    source_id=source.source_id,
+                    score=candidate.score,
+                    content_version=source.content_version,
+                    keyword_score=candidate.score,
+                    backends=("keyword",),
+                )
+            )
+        final_hits = hits[: self._settings.answer_top_n]
+        return RetrievalResult(
+            final_hits,
+            False,
+            rewritten_query=query.strip(),
+            backend_stats={
+                "keywordCandidates": len(candidates),
+                "hydratedCandidates": len(hits),
+            },
+            decision="ANSWERED" if final_hits else "REFUSED",
+        )
 
 
 class QualityJudge:
@@ -592,12 +633,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
     settings = Settings()
     database = Database(settings)
+    keyword_search = JavaKnowledgeSearchClient(settings)
+    model_info: dict[str, Any]
     if args.provider == "dashscope":
         if not settings.model_configured:
             raise RuntimeError("DashScope is not configured")
         model: Any = ModelClient(settings)
         judge: Any = DashScopeQualityJudge(settings)
-        retriever: Any = HybridRetriever(settings, model)
+        retriever: Any = HybridRetriever(settings, model, keyword_search)
         rag_method = (
             "Full answer generation plus qwen-flash strict Judge; "
             "text-embedding-v4, keyword retrieval, RRF and qwen3-rerank."
@@ -612,10 +655,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     else:
         model = LocalModelClient(args.model_base_url, args.answer_model)
         judge = QualityJudge(args.model_base_url, args.judge_model)
-        retriever = KeywordOnlyRetriever(settings)
+        retriever = ElasticsearchKeywordRetriever(settings, keyword_search)
         rag_method = (
             "Full answer generation plus a separate local Judge model; "
-            "keyword-only retrieval because DashScope was unavailable."
+            "Elasticsearch BM25 retrieval with PostgreSQL source validation."
         )
         model_info = {
             "provider": "local-ollama",
@@ -639,6 +682,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             for item in cases
         ]
     finally:
+        await keyword_search.close()
         await judge.close()
         await model.close()
         await database.close()

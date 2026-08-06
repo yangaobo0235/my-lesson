@@ -64,6 +64,8 @@ services:
     depends_on:
       ml-agent-migrate:
         condition: service_completed_successfully
+      ml-ai-search:
+        condition: service_started
 
   ml-agent-migrate:
     image: mylesson/ml-agent-python:1.0
@@ -94,7 +96,16 @@ services:
     depends_on:
       ml-agent-migrate:
         condition: service_completed_successfully
+      ml-ai-search:
+        condition: service_started
     networks: [mylesson]
+
+  ml-ai-search:
+    <<: *java-common
+    build:
+      context: ../backend-java
+      args: {MODULE: ml-ai-search, MAIN_CLASS: com.yangaobo.AiSearchApplication, MAVEN_IMAGE: "${MYLESSON_MAVEN_IMAGE:-maven:3.9.11-eclipse-temurin-17}", JAVA_IMAGE: "${MYLESSON_JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}"}
+    ports: ["24111:24111"]
 
   ml-agent-relay:
     <<: *java-common

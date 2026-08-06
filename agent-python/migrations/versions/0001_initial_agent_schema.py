@@ -17,7 +17,6 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
     op.execute(
         """
@@ -123,8 +122,6 @@ def upgrade() -> None:
         );
         CREATE INDEX ix_knowledge_chunk_embedding_hnsw
             ON knowledge_chunk USING hnsw (embedding vector_cosine_ops);
-        CREATE INDEX ix_knowledge_chunk_content_trgm
-            ON knowledge_chunk USING gin (content gin_trgm_ops);
 
         CREATE TABLE agent_retrieval_trace (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

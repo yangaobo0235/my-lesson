@@ -29,6 +29,7 @@ from mylesson_agent.infrastructure.orm import (  # noqa: E402
     KnowledgeSourceRow,
 )
 from mylesson_agent.llm.client import ModelClient  # noqa: E402
+from mylesson_agent.rag.search_client import JavaKnowledgeSearchClient  # noqa: E402
 from mylesson_agent.rag.service import HybridRetriever  # noqa: E402
 
 CASE_TYPES = ("RAG", "TOOL", "SECURITY", "NO_ANSWER")
@@ -290,8 +291,9 @@ async def run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     settings = Settings()
     database = Database(settings)
     model = ModelClient(settings)
+    keyword_search = JavaKnowledgeSearchClient(settings)
     router = IntentRouter(model, settings.intent_confidence_threshold)
-    retriever = HybridRetriever(settings, model)
+    retriever = HybridRetriever(settings, model, keyword_search)
     try:
         async with database.sessions() as session:
             source_count = int(
@@ -310,6 +312,7 @@ async def run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             for item in cases
         ]
     finally:
+        await keyword_search.close()
         await model.close()
         await database.close()
 
@@ -332,7 +335,7 @@ async def run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             "routerModel": settings.router_model,
             "embeddingModel": settings.embedding_model,
             "rerankModel": settings.rerank_model,
-            "minimumRelevantScore": settings.minimum_relevant_score,
+            "vectorMinimumScore": settings.vector_minimum_score,
             "rerankMinimumScore": settings.rerank_minimum_score,
         },
         "summary": summary,

@@ -34,12 +34,32 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn mylesson_agent.main:app --reload --port 24109
 ```
 
+从旧检索版本升级到 `0005` 时，如果 `pg_trgm` 由容器内的 `postgres` 管理员创建，先在
+虚拟机执行管理员清理，再运行 Alembic：
+
+```bash
+docker exec pgvector psql -U postgres -d mylesson_agent -v ON_ERROR_STOP=1 \
+  -c 'DROP INDEX IF EXISTS ix_knowledge_chunk_content_trgm; DROP EXTENSION IF EXISTS pg_trgm;'
+```
+
+`0005` 会再次执行幂等删除并形成升级门禁。新建数据库不会创建这些对象。
+
 在另一个终端启动 Worker：
 
 ```powershell
 Set-Location agent-python
 .\.venv\Scripts\python -m mylesson_agent.worker
 ```
+
+首次启用 Elasticsearch 或重建索引后，先预览并回填已有知识 chunk：
+
+```powershell
+.\.venv\Scripts\python scripts\backfill_elasticsearch.py --dry-run
+.\.venv\Scripts\python scripts\backfill_elasticsearch.py --batch-size 100
+```
+
+脚本只处理 `ACTIVE` 且 ES 索引版本落后的来源；可用 `--source-type COURSE`、
+`--limit 1000` 缩小范围，或用 `--force` 重建全部活动来源。
 
 配置通过环境变量注入。完整模板见 `../deploy/env/agent.env.example`，本地源码运行也可以使用仓库根目录 `.env.example`。
 

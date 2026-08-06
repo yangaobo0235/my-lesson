@@ -9,7 +9,6 @@ from mylesson_agent.api.dependencies import container, database_session
 from mylesson_agent.container import Container
 from mylesson_agent.domain.api_models import ApiModel
 from mylesson_agent.knowledge.events import KnowledgeEvent, KnowledgeEventConsumer
-from mylesson_agent.knowledge.service import KnowledgeIndexer
 from mylesson_agent.security.delegation import require_service
 
 router = APIRouter(prefix="/internal/v1/knowledge")
@@ -39,7 +38,7 @@ async def consume_knowledge_event(
     session: Annotated[AsyncSession, Depends(database_session)],
     app: Annotated[Container, Depends(container)],
 ) -> dict[str, Any]:
-    consumer = KnowledgeEventConsumer(app.settings, KnowledgeIndexer(app.model))
+    consumer = KnowledgeEventConsumer(app.settings, app.knowledge_indexer)
     return await consumer.consume(
         session,
         KnowledgeEvent(
@@ -58,5 +57,7 @@ async def upsert_knowledge(
     session: Annotated[AsyncSession, Depends(database_session)],
     app: Annotated[Container, Depends(container)],
 ) -> dict[str, Any]:
-    row = await KnowledgeIndexer(app.model).upsert(session, **request.model_dump())
+    row = await app.knowledge_indexer.upsert(session, **request.model_dump())
+    await session.commit()
+    await session.refresh(row)
     return {"sourceType": row.source_type, "sourceId": row.source_id, "status": row.status}

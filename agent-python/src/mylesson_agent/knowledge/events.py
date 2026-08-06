@@ -4,12 +4,11 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mylesson_agent.config import Settings
 from mylesson_agent.infrastructure.orm import (
-    KnowledgeChunkRow,
     KnowledgeEventRow,
     KnowledgeSourceRow,
 )
@@ -60,28 +59,42 @@ class KnowledgeEventConsumer:
                 KnowledgeEventRow.status.in_(["PROCESSED", "SKIPPED"]),
             )
         )
-        known_version = max(
-            latest.content_version if latest else 0,
-            int(latest_event_version or 0),
+        if latest is not None and latest.content_version > event.version:
+            row.status = "SKIPPED"
+            row.processed_at = datetime.now(UTC)
+            await session.commit()
+            return self._result(row)
+
+        latest_ready = bool(
+            latest
+            and latest.content_version >= event.version
+            and latest.status in {"ACTIVE", "DELETED"}
+            and (
+                not self._settings.keyword_backend_enabled
+                or latest.es_indexed_version >= event.version
+            )
         )
-        if known_version >= event.version:
+        if latest_ready or int(latest_event_version or 0) >= event.version:
             row.status = "SKIPPED"
             row.processed_at = datetime.now(UTC)
             await session.commit()
             return self._result(row)
 
         if event.event_type.upper().endswith("_DELETED"):
-            if latest is not None:
-                await session.execute(
-                    delete(KnowledgeChunkRow).where(KnowledgeChunkRow.source_id == latest.id)
-                )
-                latest.status = "DELETED"
-                latest.content_version = event.version
-                latest.indexed_at = datetime.now(UTC)
-            row.status = "PROCESSED"
-            row.processed_at = datetime.now(UTC)
-            await session.commit()
-            return self._result(row)
+            try:
+                if latest is not None:
+                    await self._indexer.delete(
+                        session,
+                        latest,
+                        content_version=event.version,
+                    )
+                row.status = "PROCESSED"
+                row.processed_at = datetime.now(UTC)
+                await session.commit()
+                return self._result(row)
+            except Exception as exception:
+                await self._mark_failed(session, event.event_id, exception)
+                raise
 
         try:
             payload = await self._fetch(source_type, event.aggregate_id)
@@ -95,6 +108,7 @@ class KnowledgeEventConsumer:
                 content=document["content"],
                 content_version=event.version,
                 metadata={"eventId": str(event.event_id), "eventType": event.event_type},
+                event_id=event.event_id,
             )
             row.status = "PROCESSED"
             row.last_error = None
@@ -102,13 +116,21 @@ class KnowledgeEventConsumer:
             await session.commit()
             return self._result(row)
         except Exception as exception:
-            await session.rollback()
-            failed = await session.get(KnowledgeEventRow, event.event_id)
-            if failed is not None:
-                failed.status = "FAILED"
-                failed.last_error = f"{exception.__class__.__name__}: {exception}"[:1000]
-                await session.commit()
+            await self._mark_failed(session, event.event_id, exception)
             raise
+
+    @staticmethod
+    async def _mark_failed(
+        session: AsyncSession,
+        event_id: UUID,
+        exception: Exception,
+    ) -> None:
+        await session.rollback()
+        failed = await session.get(KnowledgeEventRow, event_id)
+        if failed is not None:
+            failed.status = "FAILED"
+            failed.last_error = f"{exception.__class__.__name__}: {exception}"[:1000]
+            await session.commit()
 
     async def _fetch(self, source_type: str, source_id: str) -> dict[str, Any]:
         routes = {

@@ -86,12 +86,27 @@ class Settings(BaseSettings):
     order_service_url: str = "http://127.0.0.1:24105"
     tool_timeout_seconds: float = 12.0
 
+    search_service_url: str = Field(
+        default="http://127.0.0.1:24111",
+        validation_alias="AI_SEARCH_SERVICE_URL",
+    )
+    search_timeout_seconds: float = 8.0
+    keyword_backend_enabled: bool = Field(
+        default=True,
+        validation_alias="AI_KEYWORD_BACKEND_ENABLED",
+    )
+
     vector_dimensions: int = 1024
-    vector_top_k: int = 12
-    keyword_top_k: int = 12
+    vector_top_k: int = 20
+    keyword_top_k: int = 20
+    rrf_top_k: int = 20
+    rrf_k: int = 60
+    rrf_vector_weight: float = 1.0
+    rrf_keyword_weight: float = 1.0
     answer_top_n: int = 6
-    minimum_relevant_score: float = 0.45
+    vector_minimum_score: float = 0.45
     rerank_minimum_score: float = 0.45
+    query_rewrite_enabled: bool = True
 
     otel_exporter_otlp_endpoint: str | None = None
     langfuse_host: str | None = None

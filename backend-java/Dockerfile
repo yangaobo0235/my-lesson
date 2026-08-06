@@ -15,6 +15,7 @@ COPY ml-sale ./ml-sale
 COPY ml-order ./ml-order
 COPY ml-barrage ./ml-barrage
 COPY ml-agent-relay ./ml-agent-relay
+COPY ml-ai-search ./ml-ai-search
 COPY tools ./tools
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -pl "${MODULE}" -am -DskipTests install \

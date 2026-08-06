@@ -72,6 +72,19 @@ class ModelClient:
             json_mode=False,
         )
 
+    async def rewrite_query(self, question: str) -> str:
+        payload = await self._chat(
+            model=self._settings.router_model,
+            system=(
+                "你是知识库检索查询改写器。只返回JSON，字段为query。"
+                "保留用户问题中的实体、限定条件和关键词，不回答问题，不添加未知事实。"
+            ),
+            prompt=f"用户问题：\n{question}",
+            json_mode=True,
+        )
+        query = str(json.loads(payload).get("query") or "").strip()
+        return query[:500] or question.strip()
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if self._client is None:
             raise ModelUnavailableError("Embedding model is not configured")

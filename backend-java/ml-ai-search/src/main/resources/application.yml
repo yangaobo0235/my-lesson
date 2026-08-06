@@ -1,0 +1,25 @@
+server:
+  port: ${AI_SEARCH_PORT:24111}
+
+spring:
+  application:
+    name: ml-ai-search
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://192.168.23.66:9200}
+    username: ${ELASTICSEARCH_USERNAME:}
+    password: ${ELASTICSEARCH_PASSWORD:}
+    connection-timeout: ${ELASTICSEARCH_CONNECTION_TIMEOUT:3s}
+    socket-timeout: ${ELASTICSEARCH_SOCKET_TIMEOUT:10s}
+
+ai:
+  internal-token: ${AI_INTERNAL_TOKEN:}
+  search:
+    index-name: ${AI_SEARCH_INDEX_NAME:mylesson-knowledge-chunk-v1}
+    index-alias: ${AI_SEARCH_INDEX_ALIAS:mylesson-knowledge-chunk}
+    auto-create-index: ${AI_SEARCH_AUTO_CREATE_INDEX:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

@@ -100,7 +100,10 @@ class AgentRuntime:
             successful_tools = any(result.success for result in state.get("tool_results", []))
             if (
                 selection.route.retrieval_enabled
-                and not state.get("citations")
+                and (
+                    not state.get("citations")
+                    or state.get("retrieval", RetrievalResult([], False)).decision == "REFUSED"
+                )
                 and not successful_tools
             ):
                 return {"answer": "当前知识库中没有足够信息回答这个问题。"}

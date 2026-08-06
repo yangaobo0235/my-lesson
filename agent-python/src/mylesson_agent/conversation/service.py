@@ -116,6 +116,12 @@ class ConversationService:
                         "title": hit.title,
                         "sourceUrl": hit.source_url,
                         "score": hit.score,
+                        "contentVersion": hit.content_version,
+                        "rrfScore": hit.rrf_score,
+                        "vectorScore": hit.vector_score,
+                        "keywordScore": hit.keyword_score,
+                        "rerankScore": hit.rerank_score,
+                        "backends": list(hit.backends),
                     }
                     for hit in retrieval.hits
                 ]
@@ -130,7 +136,13 @@ class ConversationService:
                     session,
                     run,
                     "retrieval_completed",
-                    {"hitCount": len(retrieval.hits), "reranked": retrieval.reranked},
+                    {
+                        "hitCount": len(retrieval.hits),
+                        "reranked": retrieval.reranked,
+                        "rewrittenQuery": retrieval.rewritten_query,
+                        "backendStats": retrieval.backend_stats,
+                        "decision": retrieval.decision,
+                    },
                 )
                 tool_results = state.get("tool_results", [])
                 for tool_result in tool_results:

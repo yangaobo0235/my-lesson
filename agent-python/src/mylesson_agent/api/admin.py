@@ -11,7 +11,6 @@ from mylesson_agent.domain.api_models import AuthenticatedUser
 from mylesson_agent.evaluation.service import EvaluationService
 from mylesson_agent.infrastructure.orm import KnowledgeEventRow, KnowledgeSourceRow
 from mylesson_agent.knowledge.events import KnowledgeEvent, KnowledgeEventConsumer
-from mylesson_agent.knowledge.service import KnowledgeIndexer
 from mylesson_agent.security.delegation import ensure_admin, require_user
 
 router = APIRouter(prefix="/api/v1/ai")
@@ -67,6 +66,9 @@ async def knowledge_sources(
             "sourceUrl": row.source_url,
             "status": row.status,
             "contentVersion": row.content_version,
+            "esIndexedVersion": row.es_indexed_version,
+            "esIndexedAt": row.es_indexed_at,
+            "esIndexError": row.es_index_error,
             "indexedAt": row.indexed_at,
             "updatedAt": row.updated_at,
             "errorMessage": row.error_message,
@@ -104,7 +106,7 @@ async def retry_source(
     )
     if event is None:
         raise HTTPException(status_code=409, detail="No failed knowledge event to retry")
-    consumer = KnowledgeEventConsumer(app.settings, KnowledgeIndexer(app.model))
+    consumer = KnowledgeEventConsumer(app.settings, app.knowledge_indexer)
     return await consumer.consume(
         session,
         KnowledgeEvent(
