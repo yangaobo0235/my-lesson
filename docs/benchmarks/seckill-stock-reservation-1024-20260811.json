@@ -1,0 +1,62 @@
+{
+  "runDate": "2026-08-11",
+  "scope": "Redis Lua stock reservation core; excludes HTTP, Redisson lock, RocketMQ and order DB.",
+  "environment": {
+    "os": "Windows 11 10.0",
+    "java": "17.0.9",
+    "logicalProcessors": 32,
+    "redis": "5.0.14.1",
+    "client": "Java 17 + Spring Data Redis/Lettuce"
+  },
+  "configuration": {
+    "clientThreads": 1024,
+    "measuredRuns": 3,
+    "warmupRequestsPerRun": 2000,
+    "measuredRequestsPerRun": 50000,
+    "stockPerRun": 10000
+  },
+  "summary": {
+    "measuredRequests": 150000,
+    "reserved": 30000,
+    "outOfStock": 120000,
+    "errors": 0,
+    "oversell": 0,
+    "medianRequestsPerSecond": 37332
+  },
+  "runs": [
+    {
+      "requestsPerSecond": 34615,
+      "durationMs": 1444,
+      "reserved": 10000,
+      "outOfStock": 40000,
+      "errors": 0,
+      "finalStock": 0,
+      "oversell": 0
+    },
+    {
+      "requestsPerSecond": 37332,
+      "durationMs": 1339,
+      "reserved": 10000,
+      "outOfStock": 40000,
+      "errors": 0,
+      "finalStock": 0,
+      "oversell": 0
+    },
+    {
+      "requestsPerSecond": 38090,
+      "durationMs": 1313,
+      "reserved": 10000,
+      "outOfStock": 40000,
+      "errors": 0,
+      "finalStock": 0,
+      "oversell": 0
+    }
+  ],
+  "contentionChecks": {
+    "sameRequestReplayRequests": 15000,
+    "sameRequestSuccessfulReservations": 3,
+    "sameUserDifferentRequestIds": 15000,
+    "sameUserSuccessfulReservations": 3,
+    "unexpectedResults": 0
+  }
+}

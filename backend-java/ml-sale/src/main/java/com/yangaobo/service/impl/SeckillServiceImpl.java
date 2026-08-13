@@ -53,6 +53,10 @@ import static com.yangaobo.entity.table.SeckillTableDef.SECKILL;
 @Service
 @Slf4j
 public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> implements SeckillService {
+    private static final String ORDER_DESTINATION = "ml-topic:ml-tag";
+    private static final long LOCK_WAIT_SECONDS = 1L;
+    private static final long LOCK_LEASE_SECONDS = 5L;
+
     @Resource
     private SeckillDetailMapper seckillDetailMapper;
     @Resource
@@ -255,7 +259,10 @@ public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> impl
             RLock lock = redissonClient.getLock("skLock:" + fkSeckillId + ":" + fkCourseId);
             boolean locked;
             try {
-                locked = lock.tryLock(1, 5, TimeUnit.SECONDS);
+                locked = lock.tryLock(
+                        LOCK_WAIT_SECONDS,
+                        LOCK_LEASE_SECONDS,
+                        TimeUnit.SECONDS);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw new ServiceException(ResultCode.SERVER_ERROR, "请求被中断，请重试");
@@ -272,7 +279,9 @@ public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> impl
                         dto.getFkUserId(),
                         dto.getRequestId());
             } finally {
-                lock.unlock();
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
             }
             if (reservation == ReservationResult.IDEMPOTENT_REPLAY) {
                 return true;
@@ -296,8 +305,11 @@ public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> impl
             orderMessage.setPrice(dto.getPrice());
             orderMessage.setSkPrice(dto.getSkPrice());
             try {
+                // 这里只确认消息已进入 Broker；订单落库由消费者异步完成，
+                // 以消息队列承接秒杀峰值，避免请求线程执行数据库写入。
                 SendResult sendResult = rocketmqTemplate.syncSend(
-                        "ml-topic:ml-tag", orderMessage);
+                        ORDER_DESTINATION,
+                        orderMessage);
                 if (sendResult == null
                         || sendResult.getSendStatus() != SendStatus.SEND_OK) {
                     throw new IllegalStateException("RocketMQ send was not acknowledged");

@@ -1,0 +1,20 @@
+{"id":"none-challenge-001","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"《把日常拍成电影》明确要求使用多少帧率和什么分辨率拍摄？请只按课程资料回答。","expectedNoAnswer":true}
+{"id":"none-challenge-002","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"“用光线表达情绪”一节规定的黄金时段具体是几点到几点？","expectedNoAnswer":true}
+{"id":"none-challenge-003","type":"NO_ANSWER","dimension":"missing_requirement","difficulty":"hard","question":"《镜头里的青春纪念册》最终作业必须提交多少张照片？","expectedNoAnswer":true}
+{"id":"none-challenge-004","type":"NO_ANSWER","dimension":"missing_equipment","difficulty":"hard","question":"《画出自己的小世界》指定购买哪个品牌、几号尺寸的画笔？","expectedNoAnswer":true}
+{"id":"none-challenge-005","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"《把灵感写成故事》第一版故事要求控制在多少字以内？","expectedNoAnswer":true}
+{"id":"none-challenge-006","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"《找到属于你的色彩》给出的主色 RGB 数值是什么？","expectedNoAnswer":true}
+{"id":"none-challenge-007","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"三分钟公开分享要求每分钟保持多少字的语速？","expectedNoAnswer":true}
+{"id":"none-challenge-008","type":"NO_ANSWER","dimension":"plausible_inference","difficulty":"hard","question":"《高效学习的轻盈方法》明确规定一个专注学习段必须是 25 分钟还是 50 分钟？","expectedNoAnswer":true}
+{"id":"none-challenge-009","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"《从容面对重要时刻》的呼吸练习要求吸气和呼气各持续几秒？","expectedNoAnswer":true}
+{"id":"none-challenge-010","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"《跑向清晨五公里》建议初学者把每公里配速控制在多少分钟？","expectedNoAnswer":true}
+{"id":"none-challenge-011","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"七天睡眠练习要求睡前提前多少分钟关闭手机？","expectedNoAnswer":true}
+{"id":"none-challenge-012","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"一周便当计划规定每餐摄入多少克蛋白质？","expectedNoAnswer":true}
+{"id":"none-challenge-013","type":"NO_ANSWER","dimension":"missing_budget","difficulty":"hard","question":"《周末城市漫游计划》给出的半日路线预算上限是多少元？","expectedNoAnswer":true}
+{"id":"none-challenge-014","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"第一次独自旅行的轻便行李被限定在多少公斤以内？","expectedNoAnswer":true}
+{"id":"none-challenge-015","type":"NO_ANSWER","dimension":"missing_numeric_detail","difficulty":"hard","question":"阳台种植课程要求每盆植物每次浇多少毫升水？","expectedNoAnswer":true}
+{"id":"none-challenge-016","type":"NO_ANSWER","dimension":"missing_content","difficulty":"hard","question":"吉他课程明确列出的常用和弦名称有哪些？请完整列出。","expectedNoAnswer":true}
+{"id":"none-challenge-017","type":"NO_ANSWER","dimension":"missing_equipment","difficulty":"hard","question":"声音日记课程指定录音文件采用 44.1kHz 还是 48kHz？","expectedNoAnswer":true}
+{"id":"none-challenge-018","type":"NO_ANSWER","dimension":"missing_requirement","difficulty":"hard","question":"最终歌单必须包含多少首歌才算完成？","expectedNoAnswer":true}
+{"id":"none-challenge-019","type":"NO_ANSWER","dimension":"missing_business_fact","difficulty":"hard","question":"完成《好好睡觉的七天练习》后会获得什么名称的证书？","expectedNoAnswer":true}
+{"id":"none-challenge-020","type":"NO_ANSWER","dimension":"missing_business_fact","difficulty":"hard","question":"平台规定课程结业考核达到多少分才能通过？","expectedNoAnswer":true}

@@ -22,8 +22,9 @@ import lombok.extern.slf4j.Slf4j;
 //import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static com.yangaobo.entity.table.SeckillTableDef.SECKILL;
@@ -36,6 +37,10 @@ import static com.mybatisflex.core.query.QueryMethods.date;
 @Slf4j
 @Component
 public class InitSeckillJob {
+
+    private static final int STOCK_CACHE_TTL_HOURS = 12;
+    private static final String COURSE_CACHE_PREFIX =
+            ML.Redis.SECKILL_COURSE_INFO_PREFIX;
 
     @Resource
     private MyRedis myRedis;
@@ -67,20 +72,33 @@ public class InitSeckillJob {
         }
 
         // 查询秒杀商品ID列表（便于后续批量查询）
-        List<Long> courseIds = new ArrayList<>();
+        Set<Long> courseIds = new LinkedHashSet<>();
         todaySeckills.forEach(seckill -> {
             List<SeckillDetail> seckillDetails = seckill.getSeckillDetails();
             if (ObjectUtil.isNotEmpty(seckillDetails)) {
                 seckillDetails.forEach(seckillDetail -> {
                     Long fkCourseId = seckillDetail.getFkCourseId();
                     Integer skCount = seckillDetail.getSkCount();
-                    // 缓存每个商品的库存（12小时过期，07点开始缓存，18点活动结束）
-                    myRedis.setEx(ML.Redis.SECKILL_COURSE_COUNT_PREFIX + fkCourseId, skCount.toString(), 12, TimeUnit.HOURS);
+                    if (fkCourseId == null || skCount == null || skCount <= 0) {
+                        throw new ServiceException(
+                                ResultCode.ILLEGAL_PARAM,
+                                "秒杀课程库存配置无效");
+                    }
+                    // 预热库存，秒杀入口只访问 Redis，不在高峰期回源数据库。
+                    myRedis.setEx(
+                            ML.Redis.SECKILL_COURSE_COUNT_PREFIX + fkCourseId,
+                            skCount.toString(),
+                            STOCK_CACHE_TTL_HOURS,
+                            TimeUnit.HOURS);
                     // 将商品信息加入List中
                     courseIds.add(fkCourseId);
                 });
             }
-            XxlJobHelper.log("秒杀活动 {} 查询到商品 {} 个", seckill.getId(), seckillDetails.size());
+            int detailCount = seckillDetails == null ? 0 : seckillDetails.size();
+            XxlJobHelper.log(
+                    "秒杀活动 {} 查询到商品 {} 个",
+                    seckill.getId(),
+                    detailCount);
         });
 
         // 预热秒杀商品信息
@@ -94,8 +112,12 @@ public class InitSeckillJob {
             if (ObjectUtil.isNull(course)) {
                 throw new ServiceException(ResultCode.COURSE_NOT_FOUND, courseId + "号课程数据不存在");
             }
-            // 预热商品信息（12小时过期，07点开始缓存，18点活动结束）
-            myRedis.setEx(ML.Redis.SECKILL_COURSE_INFO_PREFIX + courseId, JSON.toJSONString(course), 12, TimeUnit.HOURS);
+            // 预热商品信息，与库存使用相同的活动窗口。
+            myRedis.setEx(
+                    COURSE_CACHE_PREFIX + courseId,
+                    JSON.toJSONString(course),
+                    STOCK_CACHE_TTL_HOURS,
+                    TimeUnit.HOURS);
             XxlJobHelper.log("秒杀活动商品 {} 预热完成", courseId);
         });
 

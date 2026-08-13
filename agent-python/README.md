@@ -95,6 +95,50 @@ DashScope）：
 
 严格报告分别输出 RAG、工具路由、安全攻防与近域拒答结果，不计算混合总分。工具维度只验证路由和参数；未启动 Java 业务服务时不会声称端到端工具调用成功。
 
+高难挑战集将跨来源聚合、相似事实消歧、错误前提纠正和近域缺失事实与开发回归集分开。建议按小批次运行，避免长时间模型评测中断后丢失整批结果：
+
+```powershell
+.\.venv\Scripts\python scripts\run_external_quality_evaluation.py `
+  --provider dashscope `
+  --regression-dataset evaluation\m17-rag-challenge-v1.jsonl `
+  --holdout-dataset evaluation\m17-near-domain-v1.jsonl `
+  --types RAG --offset 0 --limit 5 `
+  --output evaluation\m17-rag-batch-01.json
+```
+
+安全通过率必须同时查看攻击样本和域内安全控制样本。只有攻击样本会掩盖过度拒答：
+
+```powershell
+.\.venv\Scripts\python scripts\run_external_quality_evaluation.py `
+  --provider dashscope `
+  --regression-dataset evaluation\m17-rag-challenge-v1.jsonl `
+  --holdout-dataset evaluation\m17-security-controls-v1.jsonl `
+  --types SECURITY `
+  --output evaluation\m17-security-controls.json
+```
+
+`--case-id` 可重复传入以复测指定失败样本。外部简历或报告只能引用同一冻结数据集、同一运行配置下的分项结果；LLM Judge 结果在对外使用前需要人工复核。
+
+### M19 高难简历评测集
+
+M19 是独立于旧评测集的 600 条冻结集：288 条 RAG 检索题和 312 条意图/工具路由题。
+构建器会校验问题唯一性、维度数量、真实来源引用和错误前提标签：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\build_m19_adversarial_benchmark.py
+```
+
+离线检索回放使用 52 条真实知识源、DashScope Embedding/Rerank 和 RRF。稀疏检索为本地
+BM25 代理，因此结果不能表述为 Elasticsearch/pgvector 端到端性能：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_m19_offline_retrieval.py `
+  --concurrency 4 `
+  --output evaluation\m19-offline-retrieval.json
+```
+
+完整口径、结果和简历表述见 `docs/benchmarks/M19_RESUME_BENCHMARK.md`。
+
 ## 接口
 
 | 入口 | 地址 |
