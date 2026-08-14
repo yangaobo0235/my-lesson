@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid5
@@ -9,6 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mylesson_agent.infrastructure.orm import KnowledgeChunkRow, KnowledgeSourceRow
 from mylesson_agent.llm.client import ModelClient
 from mylesson_agent.rag.search_client import JavaKnowledgeSearchClient
+
+
+@dataclass(frozen=True)
+class StructuredChunk:
+    content: str
+    parent_content: str
+    section_path: str
 
 
 class KnowledgeIndexer:
@@ -82,7 +90,7 @@ class KnowledgeIndexer:
                 delete(KnowledgeChunkRow).where(KnowledgeChunkRow.source_id == source.id)
             )
             chunks = self._chunks(content)
-            embeddings = await self._model.embed(chunks)
+            embeddings = await self._model.embed([chunk.content for chunk in chunks])
             for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
                 session.add(
                     KnowledgeChunkRow(
@@ -90,7 +98,9 @@ class KnowledgeIndexer:
                         source_id=source.id,
                         chunk_index=index,
                         title=title,
-                        content=chunk,
+                        content=chunk.content,
+                        parent_content=chunk.parent_content,
+                        section_path=chunk.section_path,
                         metadata_json=metadata,
                         embedding=embedding,
                     )
@@ -172,16 +182,53 @@ class KnowledgeIndexer:
         source.indexed_at = now
         await session.flush()
 
-    def _chunks(self, content: str) -> list[str]:
+    def _chunks(self, content: str) -> list[StructuredChunk]:
+        sections = self._sections(content)
+        chunks: list[StructuredChunk] = []
+        for path, parent in sections:
+            offset = 0
+            while offset < len(parent):
+                end = min(len(parent), offset + self._chunk_size)
+                chunks.append(
+                    StructuredChunk(
+                        content=parent[offset:end],
+                        parent_content=parent,
+                        section_path=" > ".join(path),
+                    )
+                )
+                if end == len(parent):
+                    break
+                offset = max(offset + 1, end - self._overlap)
+        return chunks or [StructuredChunk("空内容", "空内容", "")]
+
+    @staticmethod
+    def _sections(content: str) -> list[tuple[list[str], str]]:
+        paths: list[str] = []
+        current_path: list[str] = []
+        body: list[str] = []
+        sections: list[tuple[list[str], str]] = []
+
+        def flush() -> None:
+            normalized = "\n".join(line for line in body if line).strip()
+            if normalized:
+                heading = " / ".join(current_path)
+                parent = f"{heading}\n{normalized}" if heading else normalized
+                sections.append((list(current_path), parent))
+
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if line.startswith("#") and line.lstrip("#").startswith(" "):
+                flush()
+                body = []
+                level = len(line) - len(line.lstrip("#"))
+                heading = line[level:].strip()
+                paths = paths[: level - 1]
+                paths.append(heading)
+                current_path = list(paths)
+            elif line:
+                body.append(line)
+        flush()
+        if sections:
+            return sections
         normalized = "\n".join(line.strip() for line in content.splitlines() if line.strip())
-        if not normalized:
-            return ["空内容"]
-        chunks: list[str] = []
-        offset = 0
-        while offset < len(normalized):
-            end = min(len(normalized), offset + self._chunk_size)
-            chunks.append(normalized[offset:end])
-            if end == len(normalized):
-                break
-            offset = max(offset + 1, end - self._overlap)
-        return chunks
+        return [([], normalized)] if normalized else []

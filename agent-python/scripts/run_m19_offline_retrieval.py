@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import re
@@ -41,6 +42,10 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [
         json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def tokenize(text: str) -> list[str]:
@@ -212,6 +217,59 @@ def summarize(results: list[dict[str, Any]], stage: str) -> dict[str, Any]:
     }
 
 
+def retrieval_failure_samples(
+    results: list[dict[str, Any]], *, limit: int = 20
+) -> list[dict[str, Any]]:
+    samples: list[dict[str, Any]] = []
+    for item in results:
+        rerank = item["stages"]["rerank"]
+        if rerank["allExpectedAt6"] is True and "rerankFallback" not in item:
+            continue
+        sample = {
+            "caseId": item["caseId"],
+            "dimension": item["dimension"],
+            "question": item["question"],
+            "expectedSourceRefs": item["expectedSourceRefs"],
+            "actualTop6": rerank["top6"],
+            "recallAt6": rerank["recallAt6"],
+        }
+        if "rerankFallback" in item:
+            sample["rerankFallback"] = item["rerankFallback"]
+        samples.append(sample)
+        if len(samples) == limit:
+            break
+    return samples
+
+
+def retrieval_quality_gate(summary: dict[str, Any]) -> dict[str, Any]:
+    rerank = summary["stages"]["rerank"]
+    thresholds = {
+        "recallAt6": 0.93,
+        "allExpectedAt6Rate": 0.92,
+        "mrrAt6": 0.89,
+        "ndcgAt6": 0.89,
+        "p95RerankLatencyMs": 20_000,
+        "rerankFallbacks": 0,
+    }
+    checks = {
+        "recallAt6": rerank["recallAt6"] >= thresholds["recallAt6"],
+        "allExpectedAt6Rate": (
+            rerank["allExpectedAt6Rate"] >= thresholds["allExpectedAt6Rate"]
+        ),
+        "mrrAt6": rerank["mrrAt6"] >= thresholds["mrrAt6"],
+        "ndcgAt6": rerank["ndcgAt6"] >= thresholds["ndcgAt6"],
+        "p95RerankLatencyMs": (
+            summary["p95RerankLatencyMs"] <= thresholds["p95RerankLatencyMs"]
+        ),
+        "rerankFallbacks": summary["rerankFallbacks"] <= thresholds["rerankFallbacks"],
+    }
+    return {
+        "passed": all(checks.values()),
+        "thresholds": thresholds,
+        "checks": checks,
+    }
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     cases = load_jsonl(args.dataset.resolve())
     if args.limit is not None:
@@ -306,6 +364,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         for dimension in sorted({str(item["dimension"]) for item in results})
     }
+    summary = {
+        "stages": stages,
+        "dimensions": dimensions,
+        "p95RerankLatencyMs": p95([int(item["rerankLatencyMs"]) for item in results]),
+        "rerankFallbacks": sum("rerankFallback" in item for item in results),
+    }
+    summary["failureSamples"] = retrieval_failure_samples(results)
+    summary["qualityGate"] = retrieval_quality_gate(summary)
     return {
         "schemaVersion": 1,
         "generatedAt": datetime.now(UTC).isoformat(),
@@ -323,15 +389,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "datasets": {
             "cases": str(args.dataset.resolve()),
             "corpus": str(args.corpus.resolve()),
+            "casesSha256": file_sha256(args.dataset.resolve()),
+            "corpusSha256": file_sha256(args.corpus.resolve()),
             "caseCount": len(results),
             "corpusCount": len(corpus),
         },
-        "summary": {
-            "stages": stages,
-            "dimensions": dimensions,
-            "p95RerankLatencyMs": p95([int(item["rerankLatencyMs"]) for item in results]),
-            "rerankFallbacks": sum("rerankFallback" in item for item in results),
-        },
+        "summary": summary,
         "results": results,
     }
 

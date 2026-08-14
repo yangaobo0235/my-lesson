@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, TypedDict, cast
 from uuid import UUID
 
@@ -68,7 +69,9 @@ class AgentRuntime:
 
         async def call_tools(state: AgentState) -> dict[str, Any]:
             selection = state["selection"]
-            calls = self._select_tools(selection, state["question"])
+            tool_settings = getattr(self._tools, "settings", None)
+            max_calls = getattr(tool_settings, "max_tool_calls", 8)
+            calls = self._select_tools(selection, state["question"], max_calls)
             results = [
                 await self._tools.execute(name, arguments, user, trace_id)
                 for name, arguments in calls
@@ -115,7 +118,17 @@ class AgentRuntime:
                 )
             except ModelUnavailableError:
                 content = self._fallback_answer(state)
-            return {"answer": self._ensure_citations(content, state.get("citations", []))}
+            citations = state.get("citations", [])
+            checked = self._ensure_citations(content, citations)
+            if checked != content or not citations:
+                return {"answer": checked}
+            try:
+                grounding = await self._model.validate_grounding(checked, citations)
+            except Exception:
+                return {"answer": "当前无法完成引用结论校验，暂不提供可能失真的回答。"}
+            if not grounding.fully_supported:
+                return {"answer": "当前知识库证据不足，无法支持回答中的全部结论。"}
+            return {"answer": checked}
 
         graph = StateGraph(AgentState)
         graph.add_node("classify", classify)
@@ -128,10 +141,13 @@ class AgentRuntime:
         graph.add_edge("tools", "answer")
         graph.add_edge("answer", END)
         compiled = graph.compile()
-        result = cast(
-            AgentState,
-            await compiled.ainvoke(AgentState(question=question, context=context)),
-        )
+        tool_settings = getattr(self._tools, "settings", None)
+        deadline_seconds = getattr(tool_settings, "run_deadline_seconds", 60.0)
+        async with asyncio.timeout(deadline_seconds):
+            result = cast(
+                AgentState,
+                await compiled.ainvoke(AgentState(question=question, context=context)),
+            )
         return result
 
     async def _create_learning_plan_draft(
@@ -189,7 +205,9 @@ class AgentRuntime:
         return min(480, max(10, int(match.group(1)))) if match else 30
 
     @staticmethod
-    def _select_tools(selection: AgentSelection, question: str) -> list[tuple[str, dict[str, Any]]]:
+    def _select_tools(
+        selection: AgentSelection, question: str, max_calls: int = 8
+    ) -> list[tuple[str, dict[str, Any]]]:
         allowed = set(selection.route.tool_names)
         calls: list[tuple[str, dict[str, Any]]] = []
         detail_markers = (
@@ -257,7 +275,7 @@ class AgentRuntime:
                 calls.append(("get_my_profile", {}))
             if "search_courses" in allowed:
                 calls.append(("search_courses", {"keyword": question[:200], "limit": 10}))
-        return calls[:8]
+        return calls[: max(0, max_calls)]
 
     @staticmethod
     def _course_id(question: str) -> int | None:
@@ -298,7 +316,12 @@ class AgentRuntime:
 
     @staticmethod
     def _ensure_citations(content: str, citations: list[Citation]) -> str:
-        if not citations or any(f"[{citation.index}]" in content for citation in citations):
+        if not citations:
             return content
-        sources = " ".join(f"[{citation.index}] {citation.title}" for citation in citations)
-        return f"{content.rstrip()}\n\n来源：{sources}"
+        import re
+
+        referenced = {int(value) for value in re.findall(r"\[(\d+)]", content)}
+        allowed = {citation.index for citation in citations if citation.excerpt.strip()}
+        if not referenced or not referenced.issubset(allowed):
+            return "当前知识库证据不足，无法生成带有可验证引用的回答。"
+        return content

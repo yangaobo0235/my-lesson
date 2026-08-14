@@ -3,6 +3,8 @@ package com.yangaobo.service.ai;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.ProgressRequest;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.CreateDraftRequest;
+import com.yangaobo.dto.ai.AgentLearningPlanModels.ConfirmDraftRequest;
+import com.yangaobo.dto.ai.AgentLearningPlanModels.PlanView;
 import com.yangaobo.exception.ServiceException;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -67,5 +69,41 @@ class AgentLearningPlanServiceTest {
 
         org.mockito.Mockito.verify(jdbcTemplate, org.mockito.Mockito.never())
                 .update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void duplicateConfirmationReturnsTheExistingPlanWithoutWritingAgain() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        UUID requestId = UUID.randomUUID();
+        PlanView existing = mock(PlanView.class);
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class),
+                eq(42L), eq(requestId.toString()), eq("hash")))
+                .thenReturn(List.of(existing));
+        AgentLearningPlanService service =
+                new AgentLearningPlanService(jdbcTemplate, new ObjectMapper());
+
+        PlanView result = service.confirm(
+                UUID.randomUUID(),
+                42L,
+                new ConfirmDraftRequest(requestId, 1, "hash"));
+
+        org.junit.jupiter.api.Assertions.assertSame(existing, result);
+        org.mockito.Mockito.verify(jdbcTemplate, org.mockito.Mockito.never())
+                .update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void confirmationRejectsCourseThatWasRemovedAfterDraftCreation() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
+                .thenReturn(1);
+        AgentLearningPlanService service =
+                new AgentLearningPlanService(jdbcTemplate, new ObjectMapper());
+
+        assertThrows(
+                ServiceException.class,
+                () -> service.validateCourseAvailability(List.of(
+                        java.util.Map.of("courseId", 7),
+                        java.util.Map.of("courseId", 8))));
     }
 }

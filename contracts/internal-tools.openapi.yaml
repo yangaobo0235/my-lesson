@@ -1,57 +1,119 @@
 openapi: 3.1.0
 info:
   title: MyLesson Java Agent Tool API
-  version: 1.0.0
+  version: 1.1.0
 security:
   - serviceToken: []
     delegation: []
+x-tool-responses: &toolResponses
+  "200": {description: Verified delegated-user data}
+  "401": {description: Invalid service or delegation credential, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+  "403": {description: Delegated user lacks permission, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+  "404": {description: Resource not found, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+  "422": {description: Invalid request, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+x-write-tool-responses: &writeToolResponses
+  "200": {description: Idempotent write result}
+  "401": {description: Invalid service or delegation credential, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+  "403": {description: Delegated user lacks permission, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+  "409": {description: "requestId, version or payload conflict", content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+  "422": {description: Invalid request, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
 paths:
   /internal/v1/agent/me/profile:
     get:
       operationId: getMyProfile
-      responses:
-        "200": {description: Delegated user profile}
+      responses: *toolResponses
   /internal/v1/agent/me/orders:
     get:
       operationId: getMyOrders
-      responses:
-        "200": {description: Delegated user orders}
+      responses: *toolResponses
   /internal/v1/agent/me/cart:
     get:
       operationId: getMyCart
-      responses:
-        "200": {description: Delegated user cart}
+      responses: *toolResponses
   /internal/v1/agent/courses/search:
     get:
       operationId: searchCourses
       parameters:
-        - {name: keyword, in: query, schema: {type: string, maxLength: 200}}
+        - {name: keyword, in: query, required: true, schema: {type: string, maxLength: 200}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50}}
-      responses:
-        "200": {description: Verified courses}
+      responses: *toolResponses
   /internal/v1/agent/courses/{courseId}:
     get:
       operationId: getCourse
       parameters:
-        - name: courseId
-          in: path
-          required: true
-          schema: {type: integer, format: int64}
-      responses:
-        "200": {description: Verified course detail}
+        - {name: courseId, in: path, required: true, schema: {type: integer, format: int64}}
+      responses: *toolResponses
   /internal/v1/agent/me/learning-plan-drafts:
+    get:
+      operationId: listMyLearningPlanDrafts
+      responses: *toolResponses
     post:
       operationId: createMyLearningPlanDraft
-      description: Creates only a WAITING_CONFIRMATION draft; never a formal plan.
-      responses:
-        "200": {description: Draft}
+      description: Idempotent by requestId and creates only a WAITING_CONFIRMATION draft.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateDraftRequest"}
+      responses: *writeToolResponses
+  /internal/v1/agent/me/learning-plan-drafts/by-request/{requestId}:
+    get:
+      operationId: getMyLearningPlanDraftByRequest
+      description: Reconciles an uncertain create result without repeating the write.
+      parameters:
+        - {$ref: "#/components/parameters/RequestId"}
+      responses: *toolResponses
+  /internal/v1/agent/me/learning-plan-drafts/{draftId}/versions:
+    get:
+      operationId: listMyLearningPlanDraftVersions
+      parameters:
+        - {$ref: "#/components/parameters/DraftId"}
+      responses: *toolResponses
+  /internal/v1/agent/me/learning-plan-drafts/{draftId}/adjustments:
+    post:
+      operationId: adjustMyLearningPlanDraft
+      parameters:
+        - {$ref: "#/components/parameters/DraftId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AdjustmentRequest"}
+      responses: *writeToolResponses
   /internal/v1/agent/me/learning-plan-drafts/{draftId}/confirm:
     post:
       operationId: confirmMyLearningPlanDraft
       parameters:
-        - $ref: "#/components/parameters/DraftId"
-      responses:
-        "200": {description: Formal plan created transactionally}
+        - {$ref: "#/components/parameters/DraftId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ConfirmDraftRequest"}
+      responses: *writeToolResponses
+  /internal/v1/agent/me/learning-plan-drafts/{draftId}/cancel:
+    post:
+      operationId: cancelMyLearningPlanDraft
+      parameters:
+        - {$ref: "#/components/parameters/DraftId"}
+      responses: *writeToolResponses
+  /internal/v1/agent/me/learning-plans:
+    get:
+      operationId: listMyLearningPlans
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses: *toolResponses
+  /internal/v1/agent/me/learning-plans/{planId}/progress:
+    patch:
+      operationId: updateMyLearningPlanProgress
+      parameters:
+        - {name: planId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses: *writeToolResponses
 components:
   securitySchemes:
     serviceToken:
@@ -68,3 +130,43 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    CreateDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, goal, minutesPerDay, courses, dailyRoutine]
+      properties:
+        requestId: {type: string, format: uuid}
+        goal: {type: string, maxLength: 500}
+        minutesPerDay: {type: integer, minimum: 10, maximum: 480}
+        courses: {type: array, minItems: 1, maxItems: 20, items: {type: object}}
+        dailyRoutine: {type: array, minItems: 1, maxItems: 20, items: {type: object}}
+    AdjustmentRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, expectedVersion, adjustment]
+      properties:
+        requestId: {type: string, format: uuid}
+        expectedVersion: {type: integer, minimum: 1}
+        adjustment: {type: string, maxLength: 1000}
+    ConfirmDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, expectedVersion, payloadHash]
+      properties:
+        requestId: {type: string, format: uuid}
+        expectedVersion: {type: integer, minimum: 1}
+        payloadHash: {type: string, pattern: "^[a-f0-9]{64}$"}
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: integer}
+        message: {type: string}
+        retryable: {type: boolean, default: false}
+        traceId: {type: string}

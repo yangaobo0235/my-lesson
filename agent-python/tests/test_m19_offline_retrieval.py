@@ -3,6 +3,8 @@ from scripts.run_m19_offline_retrieval import (
     ndcg_at,
     recall_at,
     reciprocal_rank,
+    retrieval_failure_samples,
+    retrieval_quality_gate,
     rrf_indices,
     tokenize,
 )
@@ -38,3 +40,36 @@ def test_rrf_and_metrics_handle_multiple_expected_sources() -> None:
     assert recall_at(actual, expected, 2) == 1.0
     assert reciprocal_rank(actual, expected, 2) == 1.0
     assert ndcg_at(actual, expected, 2) == 1.0
+
+
+def test_report_gate_and_failure_samples_are_machine_actionable() -> None:
+    summary = {
+        "stages": {
+            "rerank": {
+                "recallAt6": 0.94,
+                "allExpectedAt6Rate": 0.93,
+                "mrrAt6": 0.90,
+                "ndcgAt6": 0.90,
+            }
+        },
+        "p95RerankLatencyMs": 19_000,
+        "rerankFallbacks": 0,
+    }
+    results = [
+        {
+            "caseId": "failed",
+            "dimension": "boundary",
+            "question": "question",
+            "expectedSourceRefs": ["COURSE:1"],
+            "stages": {
+                "rerank": {
+                    "allExpectedAt6": False,
+                    "top6": ["COURSE:2"],
+                    "recallAt6": 0.0,
+                }
+            },
+        }
+    ]
+
+    assert retrieval_quality_gate(summary)["passed"] is True
+    assert retrieval_failure_samples(results)[0]["caseId"] == "failed"

@@ -15,6 +15,7 @@ from mylesson_agent.infrastructure.orm import (
     RunEventRow,
     ToolCallRow,
 )
+from mylesson_agent.security.redaction import sanitize_audit_payload
 
 
 class ConversationRepository:
@@ -409,8 +410,10 @@ class ConversationRepository:
             ToolCallRow(
                 run_id=run_id,
                 tool_name=tool_name,
-                request_json=request_json,
-                response_json=response_json,
+                request_json=sanitize_audit_payload(request_json),
+                response_json=sanitize_audit_payload(response_json),
+                sensitivity_level="INTERNAL",
+                redaction_version="audit-v1",
                 success=success,
                 latency_ms=latency_ms,
             )

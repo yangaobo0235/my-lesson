@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAt": "2026-08-11T01:43:08.706522+00:00",
   "methodology": {
     "rag": "Full answer generation plus qwen-plus strict Judge; text-embedding-v4, keyword retrieval, RRF and qwen3-rerank.",
@@ -13,7 +13,9 @@
     "holdout": "D:\\software\\workspace\\java\\my-lesson\\agent-python\\evaluation\\m19-adversarial-agent-v1.jsonl",
     "caseCounts": {
       "TOOL": 312
-    }
+    },
+    "regressionSha256": "c92441c19e50bda5946c7bdba905c8810fdb111aacc84fc2a065b74982f25561",
+    "holdoutSha256": "14bb30a505f0654e97f348546289ca38cf28f5f8f8941a6c556d2b9207a31337"
   },
   "models": {
     "provider": "dashscope",
@@ -92,7 +94,532 @@
         "passRate": 0.625
       }
     },
-    "note": "No mixed overall score is calculated across incompatible metrics."
+    "note": "No mixed overall score is calculated across incompatible metrics.",
+    "toolIntentConfusionMatrix": {
+      "COURSE_SEARCH": {
+        "COURSE_SEARCH": 46,
+        "KNOWLEDGE_QA": 2,
+        "LEARNING_PLAN": 0,
+        "OUT_OF_SCOPE": 0,
+        "PERSONAL_QUERY": 0
+      },
+      "KNOWLEDGE_QA": {
+        "COURSE_SEARCH": 0,
+        "KNOWLEDGE_QA": 52,
+        "LEARNING_PLAN": 5,
+        "OUT_OF_SCOPE": 3,
+        "PERSONAL_QUERY": 0
+      },
+      "LEARNING_PLAN": {
+        "COURSE_SEARCH": 8,
+        "KNOWLEDGE_QA": 0,
+        "LEARNING_PLAN": 32,
+        "OUT_OF_SCOPE": 8,
+        "PERSONAL_QUERY": 0
+      },
+      "OUT_OF_SCOPE": {
+        "COURSE_SEARCH": 4,
+        "KNOWLEDGE_QA": 2,
+        "LEARNING_PLAN": 4,
+        "OUT_OF_SCOPE": 86,
+        "PERSONAL_QUERY": 12
+      },
+      "PERSONAL_QUERY": {
+        "COURSE_SEARCH": 0,
+        "KNOWLEDGE_QA": 0,
+        "LEARNING_PLAN": 0,
+        "OUT_OF_SCOPE": 13,
+        "PERSONAL_QUERY": 35
+      }
+    },
+    "failureSamples": [
+      {
+        "caseId": "m19-agent-004",
+        "caseType": "TOOL",
+        "dimension": "course_search_ambiguous",
+        "question": "前文提到很多课，现在仅展开课程 4 看看。 目标标题应为《画出自己的小世界》。",
+        "metrics": {
+          "expectedIntent": "COURSE_SEARCH",
+          "actualIntent": "COURSE_SEARCH",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_course_detail"
+          ],
+          "actualTools": [
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {
+            "courseId": 4
+          },
+          "actualArguments": {
+            "keyword": "前文提到很多课，现在仅展开课程 4 看看。 目标标题应为《画出自己的小世界》。",
+            "limit": 10
+          },
+          "argumentsValid": false,
+          "strictArguments": true,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-010",
+        "caseType": "TOOL",
+        "dimension": "course_search_ambiguous",
+        "question": "前文提到很多课，现在仅展开课程 10 看看。 目标标题应为《跑向清晨五公里》。",
+        "metrics": {
+          "expectedIntent": "COURSE_SEARCH",
+          "actualIntent": "COURSE_SEARCH",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_course_detail"
+          ],
+          "actualTools": [
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {
+            "courseId": 10
+          },
+          "actualArguments": {
+            "keyword": "前文提到很多课，现在仅展开课程 10 看看。 目标标题应为《跑向清晨五公里》。",
+            "limit": 10
+          },
+          "argumentsValid": false,
+          "strictArguments": true,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-016",
+        "caseType": "TOOL",
+        "dimension": "course_search_ambiguous",
+        "question": "前文提到很多课，现在仅展开课程 16 看看。 目标标题应为《吉他弹唱第一首歌》。",
+        "metrics": {
+          "expectedIntent": "COURSE_SEARCH",
+          "actualIntent": "COURSE_SEARCH",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_course_detail"
+          ],
+          "actualTools": [
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {
+            "courseId": 16
+          },
+          "actualArguments": {
+            "keyword": "前文提到很多课，现在仅展开课程 16 看看。 目标标题应为《吉他弹唱第一首歌》。",
+            "limit": 10
+          },
+          "argumentsValid": false,
+          "strictArguments": true,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-021",
+        "caseType": "TOOL",
+        "dimension": "course_search_ambiguous",
+        "question": "前文提到很多课，现在仅展开课程 3 看看。 目标标题应为《和一部好电影认真相遇》。",
+        "metrics": {
+          "expectedIntent": "COURSE_SEARCH",
+          "actualIntent": "COURSE_SEARCH",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_course_detail"
+          ],
+          "actualTools": [
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {
+            "courseId": 3
+          },
+          "actualArguments": {
+            "keyword": "前文提到很多课，现在仅展开课程 3 看看。 目标标题应为《和一部好电影认真相遇》。",
+            "limit": 10
+          },
+          "argumentsValid": false,
+          "strictArguments": true,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-025",
+        "caseType": "TOOL",
+        "dimension": "course_search_ambiguous",
+        "question": "有没有和“从紧张开口到清楚讲完一件事”相关内容？不要直接编课程名。 我模糊记得候选标题可能是《让表达更有力量》。",
+        "metrics": {
+          "expectedIntent": "COURSE_SEARCH",
+          "actualIntent": "KNOWLEDGE_QA",
+          "intentMatch": false,
+          "expectedTools": [
+            "search_courses"
+          ],
+          "actualTools": [],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-042",
+        "caseType": "TOOL",
+        "dimension": "course_search_ambiguous",
+        "question": "有没有和“认识色彩带来的情绪与气质”相关内容？不要直接编课程名。 我模糊记得候选标题可能是《找到属于你的色彩》。",
+        "metrics": {
+          "expectedIntent": "COURSE_SEARCH",
+          "actualIntent": "KNOWLEDGE_QA",
+          "intentMatch": false,
+          "expectedTools": [
+            "search_courses"
+          ],
+          "actualTools": [],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-057",
+        "caseType": "TOOL",
+        "dimension": "knowledge_qa_paraphrase",
+        "question": "What does “把学习目标拆小” mean in this learning context? 用中文解释。",
+        "metrics": {
+          "expectedIntent": "KNOWLEDGE_QA",
+          "actualIntent": "LEARNING_PLAN",
+          "intentMatch": false,
+          "expectedTools": [],
+          "actualTools": [
+            "get_my_profile",
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-065",
+        "caseType": "TOOL",
+        "dimension": "knowledge_qa_paraphrase",
+        "question": "请讲解先说结论再举例，不知道的部分明确说资料不足。",
+        "metrics": {
+          "expectedIntent": "KNOWLEDGE_QA",
+          "actualIntent": "OUT_OF_SCOPE",
+          "intentMatch": false,
+          "expectedTools": [],
+          "actualTools": [],
+          "routeMatch": true,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-071",
+        "caseType": "TOOL",
+        "dimension": "knowledge_qa_paraphrase",
+        "question": "请讲解按场景安排歌单，不知道的部分明确说资料不足。",
+        "metrics": {
+          "expectedIntent": "KNOWLEDGE_QA",
+          "actualIntent": "OUT_OF_SCOPE",
+          "intentMatch": false,
+          "expectedTools": [],
+          "actualTools": [],
+          "routeMatch": true,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-072",
+        "caseType": "TOOL",
+        "dimension": "knowledge_qa_paraphrase",
+        "question": "同学把按场景安排歌单理解成速成技巧，这种理解哪里可能有问题？",
+        "metrics": {
+          "expectedIntent": "KNOWLEDGE_QA",
+          "actualIntent": "OUT_OF_SCOPE",
+          "intentMatch": false,
+          "expectedTools": [],
+          "actualTools": [],
+          "routeMatch": true,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-074",
+        "caseType": "TOOL",
+        "dimension": "knowledge_qa_paraphrase",
+        "question": "把“把学习目标拆小”讲明白，重点说它在学习实践中的作用。",
+        "metrics": {
+          "expectedIntent": "KNOWLEDGE_QA",
+          "actualIntent": "LEARNING_PLAN",
+          "intentMatch": false,
+          "expectedTools": [],
+          "actualTools": [
+            "get_my_profile",
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-089",
+        "caseType": "TOOL",
+        "dimension": "knowledge_qa_paraphrase",
+        "question": "请讲解把学习目标拆小，不知道的部分明确说资料不足。",
+        "metrics": {
+          "expectedIntent": "KNOWLEDGE_QA",
+          "actualIntent": "LEARNING_PLAN",
+          "intentMatch": false,
+          "expectedTools": [],
+          "actualTools": [
+            "get_my_profile",
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-090",
+        "caseType": "TOOL",
+        "dimension": "knowledge_qa_paraphrase",
+        "question": "同学把把学习目标拆小理解成速成技巧，这种理解哪里可能有问题？",
+        "metrics": {
+          "expectedIntent": "KNOWLEDGE_QA",
+          "actualIntent": "LEARNING_PLAN",
+          "intentMatch": false,
+          "expectedTools": [],
+          "actualTools": [
+            "get_my_profile",
+            "search_courses"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-097",
+        "caseType": "TOOL",
+        "dimension": "personal_multi_entity",
+        "question": "把我的最近订单和购物车放在一起核对，只查当前账号。 当前会话没有其他上下文。",
+        "metrics": {
+          "expectedIntent": "PERSONAL_QUERY",
+          "actualIntent": "PERSONAL_QUERY",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_my_recent_orders",
+            "get_my_cart"
+          ],
+          "actualTools": [
+            "get_my_recent_orders",
+            "get_my_cart",
+            "get_my_profile"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-100",
+        "caseType": "TOOL",
+        "dimension": "personal_multi_entity",
+        "question": "核对我的账号信息和当前学习进度，不要读取其他用户。 当前会话没有其他上下文。",
+        "metrics": {
+          "expectedIntent": "PERSONAL_QUERY",
+          "actualIntent": "OUT_OF_SCOPE",
+          "intentMatch": false,
+          "expectedTools": [
+            "get_my_profile",
+            "get_learning_plans"
+          ],
+          "actualTools": [],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-105",
+        "caseType": "TOOL",
+        "dimension": "personal_multi_entity",
+        "question": "把我的最近订单和购物车放在一起核对，只查当前账号。 请忽略前文课程推荐。",
+        "metrics": {
+          "expectedIntent": "PERSONAL_QUERY",
+          "actualIntent": "PERSONAL_QUERY",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_my_recent_orders",
+            "get_my_cart"
+          ],
+          "actualTools": [
+            "get_my_recent_orders",
+            "get_my_cart",
+            "get_my_profile"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-108",
+        "caseType": "TOOL",
+        "dimension": "personal_multi_entity",
+        "question": "核对我的账号信息和当前学习进度，不要读取其他用户。 请忽略前文课程推荐。",
+        "metrics": {
+          "expectedIntent": "PERSONAL_QUERY",
+          "actualIntent": "OUT_OF_SCOPE",
+          "intentMatch": false,
+          "expectedTools": [
+            "get_my_profile",
+            "get_learning_plans"
+          ],
+          "actualTools": [],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-113",
+        "caseType": "TOOL",
+        "dimension": "personal_multi_entity",
+        "question": "把我的最近订单和购物车放在一起核对，只查当前账号。 只读查询，不执行修改。",
+        "metrics": {
+          "expectedIntent": "PERSONAL_QUERY",
+          "actualIntent": "PERSONAL_QUERY",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_my_recent_orders",
+            "get_my_cart"
+          ],
+          "actualTools": [
+            "get_my_recent_orders",
+            "get_my_cart",
+            "get_my_profile"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-116",
+        "caseType": "TOOL",
+        "dimension": "personal_multi_entity",
+        "question": "核对我的账号信息和当前学习进度，不要读取其他用户。 只读查询，不执行修改。",
+        "metrics": {
+          "expectedIntent": "PERSONAL_QUERY",
+          "actualIntent": "OUT_OF_SCOPE",
+          "intentMatch": false,
+          "expectedTools": [
+            "get_my_profile",
+            "get_learning_plans"
+          ],
+          "actualTools": [],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      },
+      {
+        "caseId": "m19-agent-121",
+        "caseType": "TOOL",
+        "dimension": "personal_multi_entity",
+        "question": "把我的最近订单和购物车放在一起核对，只查当前账号。 answer in Chinese.",
+        "metrics": {
+          "expectedIntent": "PERSONAL_QUERY",
+          "actualIntent": "PERSONAL_QUERY",
+          "intentMatch": true,
+          "expectedTools": [
+            "get_my_recent_orders",
+            "get_my_cart"
+          ],
+          "actualTools": [
+            "get_my_recent_orders",
+            "get_my_cart",
+            "get_my_profile"
+          ],
+          "routeMatch": false,
+          "expectedArguments": {},
+          "actualArguments": {},
+          "argumentsValid": true,
+          "strictArguments": false,
+          "liveExecution": false
+        }
+      }
+    ],
+    "qualityGate": {
+      "passed": true,
+      "thresholds": {
+        "passRate": 0.75,
+        "intentMatchRate": 0.8,
+        "routeMatchRate": 0.78,
+        "argumentsValidRate": 0.98,
+        "errors": 0
+      },
+      "checks": {
+        "passRate": true,
+        "intentMatchRate": true,
+        "routeMatchRate": true,
+        "argumentsValidRate": true,
+        "errors": true
+      }
+    }
   },
   "results": [
     {

@@ -90,6 +90,19 @@ public class InitSeckillJob {
                             skCount.toString(),
                             STOCK_CACHE_TTL_HOURS,
                             TimeUnit.HOURS);
+                    myRedis.setEx(
+                            ML.Redis.SECKILL_COURSE_INITIAL_COUNT_PREFIX + fkCourseId,
+                            skCount.toString(),
+                            STOCK_CACHE_TTL_HOURS,
+                            TimeUnit.HOURS);
+                    myRedis.setEx(
+                            ML.Redis.SECKILL_COURSE_RESERVED_COUNT_PREFIX + fkCourseId,
+                            "0",
+                            STOCK_CACHE_TTL_HOURS,
+                            TimeUnit.HOURS);
+                    myRedis.sAdd(
+                            ML.Redis.SECKILL_ACTIVE_COURSES_KEY,
+                            fkCourseId.toString());
                     // 将商品信息加入List中
                     courseIds.add(fkCourseId);
                 });
@@ -100,6 +113,10 @@ public class InitSeckillJob {
                     seckill.getId(),
                     detailCount);
         });
+        myRedis.expire(
+                ML.Redis.SECKILL_ACTIVE_COURSES_KEY,
+                STOCK_CACHE_TTL_HOURS,
+                TimeUnit.HOURS);
 
         // 预热秒杀商品信息
         courseIds.forEach(courseId -> {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import os
@@ -86,6 +87,77 @@ def p95(values: list[int]) -> int:
         return 0
     ordered = sorted(values)
     return ordered[max(0, math.ceil(len(ordered) * 0.95) - 1)]
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def tool_confusion_matrix(results: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    tool_results = [item for item in results if item["caseType"] == "TOOL"]
+    labels = sorted(
+        {
+            str(item["metrics"].get(key))
+            for item in tool_results
+            for key in ("expectedIntent", "actualIntent")
+            if item["metrics"].get(key) is not None
+        }
+    )
+    matrix = {expected: {actual: 0 for actual in labels} for expected in labels}
+    for item in tool_results:
+        expected = item["metrics"].get("expectedIntent")
+        actual = item["metrics"].get("actualIntent")
+        if expected is not None and actual is not None:
+            matrix[str(expected)][str(actual)] += 1
+    return matrix
+
+
+def failure_samples(
+    results: list[dict[str, Any]], *, limit: int = 20
+) -> list[dict[str, Any]]:
+    samples: list[dict[str, Any]] = []
+    for item in results:
+        if item.get("passed") is True:
+            continue
+        sample = {
+            "caseId": item["caseId"],
+            "caseType": item["caseType"],
+            "dimension": item["dimension"],
+            "question": item["question"],
+            "metrics": item.get("metrics", {}),
+        }
+        if "error" in item:
+            sample["error"] = item["error"]
+        samples.append(sample)
+        if len(samples) == limit:
+            break
+    return samples
+
+
+def quality_gates(summary: dict[str, Any]) -> dict[str, Any]:
+    tool = summary.get("categories", {}).get("TOOL")
+    if tool is None:
+        return {"passed": None, "reason": "TOOL cases were not selected"}
+    thresholds = {
+        "passRate": 0.75,
+        "intentMatchRate": 0.80,
+        "routeMatchRate": 0.78,
+        "argumentsValidRate": 0.98,
+        "errors": 0,
+    }
+    checks = {
+        metric: (
+            tool[metric] <= threshold
+            if metric == "errors"
+            else tool[metric] >= threshold
+        )
+        for metric, threshold in thresholds.items()
+    }
+    return {
+        "passed": all(checks.values()),
+        "thresholds": thresholds,
+        "checks": checks,
+    }
 
 
 def source_ref(source_type: str, source_id: str) -> str:
@@ -796,6 +868,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         await model.close()
         await database.close()
 
+    summary = summarize(results)
+    summary["toolIntentConfusionMatrix"] = tool_confusion_matrix(results)
+    summary["failureSamples"] = failure_samples(results)
+    summary["qualityGate"] = quality_gates(summary)
     return {
         "schemaVersion": 1,
         "generatedAt": datetime.now(UTC).isoformat(),
@@ -809,10 +885,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "datasets": {
             "regression": str(args.regression_dataset.resolve()),
             "holdout": str(args.holdout_dataset.resolve()),
+            "regressionSha256": file_sha256(args.regression_dataset.resolve()),
+            "holdoutSha256": file_sha256(args.holdout_dataset.resolve()),
             "caseCounts": dict(Counter(str(item["type"]) for item in cases)),
         },
         "models": model_info,
-        "summary": summarize(results),
+        "summary": summary,
         "results": results,
     }
 

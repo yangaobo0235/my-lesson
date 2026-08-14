@@ -168,6 +168,13 @@ class IntentRouter:
             "伪造管理员",
             "假装我拥有后台权限",
             "临时把我当运营人员",
+            "忽略之前",
+            "忽略以上",
+            "无视之前",
+            "system prompt",
+            "developer message",
+            "进入开发者模式",
+            "解除限制",
         )
         sensitive = (
             "用户2",

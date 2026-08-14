@@ -13,3 +13,5 @@ spring:
 
 ai:
   identity-secret: ${AI_IDENTITY_SECRET}
+  delegation-private-key: ${AI_DELEGATION_PRIVATE_KEY}
+  delegation-key-id: ${AI_DELEGATION_KEY_ID:v1}

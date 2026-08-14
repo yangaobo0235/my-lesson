@@ -2,6 +2,7 @@ package com.yangaobo.controller.internal;
 
 import com.yangaobo.dto.ai.AgentLearningPlanModels.AdjustmentRequest;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.CreateDraftRequest;
+import com.yangaobo.dto.ai.AgentLearningPlanModels.ConfirmDraftRequest;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.DraftView;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.PlanView;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.ProgressRequest;
@@ -46,6 +47,11 @@ public class AgentLearningPlanToolController {
         return service.drafts(SecurityContext.requireUserId());
     }
 
+    @GetMapping("/learning-plan-drafts/by-request/{requestId}")
+    public DraftView draftByRequest(@PathVariable UUID requestId) {
+        return service.draftByRequest(requestId, SecurityContext.requireUserId());
+    }
+
     @GetMapping("/learning-plan-drafts/{draftId}/versions")
     public List<DraftView> versions(@PathVariable UUID draftId) {
         return service.versions(draftId, SecurityContext.requireUserId());
@@ -62,8 +68,10 @@ public class AgentLearningPlanToolController {
     }
 
     @PostMapping("/learning-plan-drafts/{draftId}/confirm")
-    public PlanView confirm(@PathVariable UUID draftId) {
-        return service.confirm(draftId, SecurityContext.requireUserId());
+    public PlanView confirm(
+            @PathVariable UUID draftId,
+            @Valid @RequestBody ConfirmDraftRequest request) {
+        return service.confirm(draftId, SecurityContext.requireUserId(), request);
     }
 
     @PostMapping("/learning-plan-drafts/{draftId}/cancel")

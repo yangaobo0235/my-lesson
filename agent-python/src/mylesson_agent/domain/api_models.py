@@ -71,6 +71,8 @@ class StreamEvent(ApiModel):
 
 class Citation(ApiModel):
     index: int
+    chunk_id: str | None = None
+    content_version: int | None = None
     title: str
     excerpt: str
     source_url: str

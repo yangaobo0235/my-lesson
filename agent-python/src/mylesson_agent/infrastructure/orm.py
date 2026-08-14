@@ -115,6 +115,12 @@ class ToolCallRow(Base):
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
     request_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     response_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    sensitivity_level: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="INTERNAL"
+    )
+    redaction_version: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="audit-v1"
+    )
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     latency_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -156,6 +162,8 @@ class KnowledgeChunkRow(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    section_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     embedding: Mapped[list[float]] = mapped_column(Vector(1024), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

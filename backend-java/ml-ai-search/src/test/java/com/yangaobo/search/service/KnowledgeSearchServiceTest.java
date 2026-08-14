@@ -19,6 +19,8 @@ import org.springframework.data.elasticsearch.core.IndexOperations;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.data.elasticsearch.core.query.ByQueryResponse;
 import org.springframework.data.elasticsearch.core.query.Query;
+import org.springframework.data.elasticsearch.core.query.UpdateQuery;
+import org.springframework.data.elasticsearch.core.query.UpdateResponse;
 
 import java.util.List;
 import java.util.UUID;
@@ -70,13 +72,8 @@ class KnowledgeSearchServiceTest {
 
     @Test
     void upsertSkipsAnOlderSourceVersion() {
-        SearchHit<KnowledgeChunkDocument> current = mock(SearchHit.class);
-        when(current.getContent()).thenReturn(document(5));
-        when(operations.searchOne(
-                any(Query.class),
-                eq(KnowledgeChunkDocument.class),
-                any(IndexCoordinates.class)))
-                .thenReturn(current);
+        when(operations.update(any(UpdateQuery.class), any(IndexCoordinates.class)))
+                .thenReturn(UpdateResponse.of(UpdateResponse.Result.NOOP));
 
         KnowledgeIndexResponse response = service.upsert(request(4));
 
@@ -89,11 +86,8 @@ class KnowledgeSearchServiceTest {
 
     @Test
     void upsertReplacesSourceDocumentsAsOneBulk() {
-        when(operations.searchOne(
-                any(Query.class),
-                eq(KnowledgeChunkDocument.class),
-                any(IndexCoordinates.class)))
-                .thenReturn(null);
+        when(operations.update(any(UpdateQuery.class), any(IndexCoordinates.class)))
+                .thenReturn(UpdateResponse.of(UpdateResponse.Result.UPDATED));
         ByQueryResponse deleteResponse = mock(ByQueryResponse.class);
         when(deleteResponse.getDeleted()).thenReturn(2L);
         when(operations.delete(
@@ -109,8 +103,27 @@ class KnowledgeSearchServiceTest {
         assertEquals("INDEXED", response.status());
         assertEquals(1, response.indexedChunks());
         assertEquals(2, response.deletedChunks());
-        verify(operations).save(any(Iterable.class), any(IndexCoordinates.class));
+        verify(operations).bulkIndex(any(List.class), any(IndexCoordinates.class));
         verify(indexOperations).refresh();
+    }
+
+    @Test
+    void upsertUsesAtomicSourceClaimAndExternalDocumentVersion() {
+        when(operations.update(any(UpdateQuery.class), any(IndexCoordinates.class)))
+                .thenReturn(UpdateResponse.of(UpdateResponse.Result.CREATED));
+        ByQueryResponse deleteResponse = mock(ByQueryResponse.class);
+        when(deleteResponse.getDeleted()).thenReturn(0L);
+        when(operations.delete(any(Query.class), eq(KnowledgeChunkDocument.class), any(IndexCoordinates.class)))
+                .thenReturn(deleteResponse);
+        IndexOperations indexOperations = mock(IndexOperations.class);
+        when(operations.indexOps(any(IndexCoordinates.class))).thenReturn(indexOperations);
+
+        service.upsert(request(7));
+
+        org.mockito.ArgumentCaptor<List<org.springframework.data.elasticsearch.core.query.IndexQuery>> captor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(operations).bulkIndex(captor.capture(), any(IndexCoordinates.class));
+        assertEquals(7L, captor.getValue().get(0).getVersion());
     }
 
     private static KnowledgeChunkUpsertRequest request(long version) {

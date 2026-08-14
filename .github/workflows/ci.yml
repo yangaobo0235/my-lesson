@@ -87,6 +87,27 @@ jobs:
         working-directory: .
         run: docker build agent-python
 
+  contract-clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate Java and Python clients from the pinned contract
+        run: mvn -B -f contracts/client-generation-pom.xml generate-sources
+      - name: Compile generated Java client
+        run: mvn -B -f contracts/target/generated/java/pom.xml package -DskipTests
+      - name: Install generated Python client
+        run: python -m pip install contracts/target/generated/python
+      - name: Run serialization, error and authentication contract regression
+        run: python scripts/verify_generated_contracts.py
+
   compose-validation:
     runs-on: ubuntu-latest
     steps:

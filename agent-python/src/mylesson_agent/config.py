@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 
 from pydantic import Field, SecretStr
@@ -16,6 +17,22 @@ def _valid_secret(secret: SecretStr | None, *, minimum_bytes: int = 32) -> bool:
         return False
     value = secret.get_secret_value().strip()
     return value not in PLACEHOLDER_SECRETS and len(value.encode("utf-8")) >= minimum_bytes
+
+
+def _valid_public_keys(value: SecretStr | None) -> bool:
+    if value is None:
+        return False
+    try:
+        keys = json.loads(value.get_secret_value())
+        return isinstance(keys, dict) and bool(keys) and all(
+            isinstance(key_id, str)
+            and bool(key_id.strip())
+            and isinstance(public_key, str)
+            and "BEGIN PUBLIC KEY" in public_key.replace("\\n", "\n")
+            for key_id, public_key in keys.items()
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 class Settings(BaseSettings):
@@ -43,9 +60,9 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://127.0.0.1:6379/1"
 
-    delegation_secret: SecretStr | None = Field(
+    delegation_public_keys: SecretStr | None = Field(
         default=None,
-        validation_alias="AI_DELEGATION_SECRET",
+        validation_alias="AI_DELEGATION_PUBLIC_KEYS",
     )
     service_token: SecretStr | None = Field(
         default=None,
@@ -69,11 +86,13 @@ class Settings(BaseSettings):
     rerank_url: str = (
         "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
     )
+    rerank_timeout_seconds: float = 6.0
     model_timeout_seconds: float = 45.0
     router_timeout_seconds: float = 10.0
     intent_confidence_threshold: float = 0.65
     max_model_calls: int = 6
     max_tool_calls: int = 8
+    run_deadline_seconds: float = 60.0
     answer_delta_size: int = 48
     worker_poll_seconds: float = 0.5
     conversation_lock_ttl_seconds: int = 120
@@ -85,6 +104,8 @@ class Settings(BaseSettings):
     sale_service_url: str = "http://127.0.0.1:24104"
     order_service_url: str = "http://127.0.0.1:24105"
     tool_timeout_seconds: float = 12.0
+    tool_read_max_attempts: int = 3
+    tool_retry_base_seconds: float = 0.1
 
     search_service_url: str = Field(
         default="http://127.0.0.1:24111",
@@ -104,6 +125,7 @@ class Settings(BaseSettings):
     rrf_vector_weight: float = 1.0
     rrf_keyword_weight: float = 1.0
     answer_top_n: int = 6
+    max_hits_per_source: int = 2
     vector_minimum_score: float = 0.45
     rerank_minimum_score: float = 0.45
     query_rewrite_enabled: bool = True
@@ -122,7 +144,7 @@ class Settings(BaseSettings):
 
     @property
     def security_configured(self) -> bool:
-        return _valid_secret(self.delegation_secret) and _valid_secret(self.service_token)
+        return _valid_public_keys(self.delegation_public_keys) and _valid_secret(self.service_token)
 
 
 @lru_cache

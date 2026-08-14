@@ -10,6 +10,7 @@ import org.springframework.data.elasticsearch.annotations.WriteTypeHint;
 @Document(
         indexName = "mylesson-knowledge-chunk-v1",
         createIndex = false,
+        versionType = Document.VersionType.EXTERNAL_GTE,
         writeTypeHint = WriteTypeHint.FALSE)
 @Setting(settingPath = "/elasticsearch/knowledge-settings.json")
 public class KnowledgeChunkDocument {

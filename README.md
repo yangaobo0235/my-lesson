@@ -276,6 +276,8 @@ CI 会执行 Java 构建与测试、Python lint/typecheck/test、前端依赖审
 
 - [架构设计](docs/ARCHITECTURE.md)
 - [部署说明](docs/DEPLOYMENT.md)
+- [运行与回滚](docs/OPERATIONS.md)
+- [改造验收](docs/ACCEPTANCE.md)
 - [Nacos 配置](NACOS_CONFIG.md)
 - [Python Agent](agent-python/README.md)
 - [Web 前端](frontend/ml-web/README.md)

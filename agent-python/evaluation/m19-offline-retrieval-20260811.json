@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAt": "2026-08-11T01:42:01.387579+00:00",
   "methodology": {
     "scope": "Offline quality replay; not an HTTP or production benchmark.",
@@ -14,7 +14,9 @@
     "cases": "D:\\software\\workspace\\java\\my-lesson\\agent-python\\evaluation\\m19-adversarial-rag-v1.jsonl",
     "corpus": "D:\\software\\workspace\\java\\my-lesson\\agent-python\\evaluation\\m19-corpus-v1.jsonl",
     "caseCount": 288,
-    "corpusCount": 52
+    "corpusCount": 52,
+    "casesSha256": "c92441c19e50bda5946c7bdba905c8810fdb111aacc84fc2a065b74982f25561",
+    "corpusSha256": "8d42a02244178027b02d085c5a994466b8acb98364157ca4f2d5b942b5a872d7"
   },
   "summary": {
     "stages": {
@@ -99,7 +101,265 @@
       }
     },
     "p95RerankLatencyMs": 14950,
-    "rerankFallbacks": 0
+    "rerankFallbacks": 0,
+    "failureSamples": [
+      {
+        "caseId": "m19-rag-093",
+        "dimension": "episode_sequence_constraints",
+        "question": "只根据目录回答，《周末城市漫游计划》第 3 项在第 6 项之前分别练什么？",
+        "expectedSourceRefs": [
+          "COURSE_EPISODES:13"
+        ],
+        "actualTop6": [
+          "COURSE:13"
+        ],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-108",
+        "dimension": "episode_sequence_constraints",
+        "question": "只根据目录回答，《找到属于你的歌单》第 3 项在第 6 项之前分别练什么？",
+        "expectedSourceRefs": [
+          "COURSE_EPISODES:18"
+        ],
+        "actualTop6": [
+          "COURSE:18"
+        ],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-145",
+        "dimension": "cross_document_synthesis",
+        "question": "把《周末城市漫游计划》的讲师与第一项练习放在同一句话里，两项都要有资料依据。",
+        "expectedSourceRefs": [
+          "COURSE:13",
+          "COURSE_EPISODES:13"
+        ],
+        "actualTop6": [
+          "COURSE:13",
+          "NOTICE:2",
+          "COURSE:11",
+          "COURSE:7"
+        ],
+        "recallAt6": 0.5
+      },
+      {
+        "caseId": "m19-rag-216",
+        "dimension": "misleading_premise_correction",
+        "question": "我听说《从容面对重要时刻》最后一项是“吉他弹唱第一首歌：完整唱出第一首歌”。请核对并给出真正的最后一项。",
+        "expectedSourceRefs": [
+          "COURSE_EPISODES:9"
+        ],
+        "actualTop6": [
+          "COURSE_EPISODES:16",
+          "COURSE:16",
+          "COURSE:9"
+        ],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-224",
+        "dimension": "misleading_premise_correction",
+        "question": "我听说《周末城市漫游计划》最后一项是“镜头里的青春纪念册：完成青春纪念册”。请核对并给出真正的最后一项。",
+        "expectedSourceRefs": [
+          "COURSE_EPISODES:13"
+        ],
+        "actualTop6": [
+          "COURSE_EPISODES:2",
+          "COURSE:2"
+        ],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-232",
+        "dimension": "misleading_premise_correction",
+        "question": "我听说《用声音记录生活》最后一项是“找到属于你的色彩：制作个人色彩卡”。请核对并给出真正的最后一项。",
+        "expectedSourceRefs": [
+          "COURSE_EPISODES:17"
+        ],
+        "actualTop6": [
+          "COURSE_EPISODES:6",
+          "COURSE:6",
+          "COURSE:17"
+        ],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-234",
+        "dimension": "misleading_premise_correction",
+        "question": "我听说《找到属于你的歌单》最后一项是“让表达更有力量：完成自己的公开表达”。请核对并给出真正的最后一项。",
+        "expectedSourceRefs": [
+          "COURSE_EPISODES:18"
+        ],
+        "actualTop6": [
+          "COURSE_EPISODES:7",
+          "COURSE:7",
+          "COURSE:16",
+          "COURSE:18"
+        ],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-260",
+        "dimension": "long_context_and_code_switch",
+        "question": "emmm 帮我查准点哈，《周末城市漫游计划》的价格 + 第2个练习，别把同类课串进来 thx。",
+        "expectedSourceRefs": [
+          "COURSE:13",
+          "COURSE_EPISODES:13"
+        ],
+        "actualTop6": [
+          "COURSE:13",
+          "COURSE:11",
+          "COURSE:7",
+          "NOTICE:2",
+          "NOTICE:3",
+          "NOTICE:5"
+        ],
+        "recallAt6": 0.5
+      },
+      {
+        "caseId": "m19-rag-270",
+        "dimension": "long_context_and_code_switch",
+        "question": "emmm 帮我查准点哈，《找到属于你的歌单》的价格 + 第2个练习，别把同类课串进来 thx。",
+        "expectedSourceRefs": [
+          "COURSE:18",
+          "COURSE_EPISODES:18"
+        ],
+        "actualTop6": [
+          "COURSE:18",
+          "COURSE:16",
+          "NOTICE:2",
+          "COURSE:11",
+          "COURSE:7",
+          "COURSE:6"
+        ],
+        "recallAt6": 0.5
+      },
+      {
+        "caseId": "m19-rag-278",
+        "dimension": "article_notice_source_boundary",
+        "question": "文章《把成长留在看得见的地方》给出的核心建议是什么？不要引用课程简介来代替文章。",
+        "expectedSourceRefs": [
+          "ARTICLE:8"
+        ],
+        "actualTop6": [
+          "ARTICLE:1"
+        ],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-279",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 1 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:1"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-280",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 2 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:2"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-281",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 3 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:3"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-282",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 4 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:4"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-283",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 5 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:5"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-284",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 6 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:6"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-285",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 7 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:7"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-286",
+        "dimension": "article_notice_source_boundary",
+        "question": "平台通知 8 的原意是什么？请按通知内容回答，不要补充平台没有承诺的事项。",
+        "expectedSourceRefs": [
+          "NOTICE:8"
+        ],
+        "actualTop6": [],
+        "recallAt6": 0.0
+      },
+      {
+        "caseId": "m19-rag-288",
+        "dimension": "article_notice_source_boundary",
+        "question": "文章《一份歌单为什么会像一封信》和通知 6 都提到内容边界，请分别说出原文要点。",
+        "expectedSourceRefs": [
+          "ARTICLE:6",
+          "NOTICE:6"
+        ],
+        "actualTop6": [
+          "ARTICLE:6"
+        ],
+        "recallAt6": 0.5
+      }
+    ],
+    "qualityGate": {
+      "passed": true,
+      "thresholds": {
+        "recallAt6": 0.93,
+        "allExpectedAt6Rate": 0.92,
+        "mrrAt6": 0.89,
+        "ndcgAt6": 0.89,
+        "p95RerankLatencyMs": 20000,
+        "rerankFallbacks": 0
+      },
+      "checks": {
+        "recallAt6": true,
+        "allExpectedAt6Rate": true,
+        "mrrAt6": true,
+        "ndcgAt6": true,
+        "p95RerankLatencyMs": true,
+        "rerankFallbacks": true
+      }
+    }
   },
   "results": [
     {

@@ -52,6 +52,8 @@ class RetrievalResult:
         return [
             Citation(
                 index=index,
+                chunk_id=hit.chunk_id,
+                content_version=hit.content_version,
                 title=hit.title,
                 excerpt=hit.content[:500],
                 source_url=hit.source_url,
@@ -230,8 +232,13 @@ class HybridRetriever:
                     backend_stats=backend_stats,
                     decision="REFUSED",
                 )
+            covered = self._cover_sources(
+                reranked,
+                self._settings.answer_top_n,
+                self._settings.max_hits_per_source,
+            )
             return RetrievalResult(
-                reranked[: self._settings.answer_top_n],
+                covered,
                 True,
                 rewritten_query=rewritten_query,
                 backend_stats=backend_stats,
@@ -285,8 +292,9 @@ class HybridRetriever:
             hydrated_candidate = valid_candidates.get(str(chunk.id))
             if hydrated_candidate is None:
                 continue
-            keyword_version = hydrated_candidate.reported_versions.get("keyword")
-            if keyword_version is not None and source.content_version < keyword_version:
+            if not self._content_version_matches(
+                hydrated_candidate, source.content_version
+            ):
                 continue
             if not self._source_matches(
                 hydrated_candidate,
@@ -297,7 +305,7 @@ class HybridRetriever:
             hydrated[str(chunk.id)] = RetrievalHit(
                 chunk_id=str(chunk.id),
                 title=chunk.title,
-                content=chunk.content,
+                content=chunk.parent_content or chunk.content,
                 source_url=source.source_url,
                 source_type=source.source_type,
                 source_id=source.source_id,
@@ -329,3 +337,28 @@ class HybridRetriever:
     ) -> bool:
         reported = candidate.reported_sources.get("keyword")
         return reported is None or reported == (source_type, source_id)
+
+    @staticmethod
+    def _content_version_matches(
+        candidate: FusedCandidate, content_version: int
+    ) -> bool:
+        keyword_version = candidate.reported_versions.get("keyword")
+        return keyword_version is None or keyword_version == content_version
+
+    @staticmethod
+    def _cover_sources(
+        hits: list[RetrievalHit], limit: int, max_per_source: int
+    ) -> list[RetrievalHit]:
+        if limit < 1 or max_per_source < 1:
+            return []
+        selected: list[RetrievalHit] = []
+        counts: dict[tuple[str, str], int] = {}
+        for hit in hits:
+            source = (hit.source_type, hit.source_id)
+            if counts.get(source, 0) >= max_per_source:
+                continue
+            selected.append(hit)
+            counts[source] = counts.get(source, 0) + 1
+            if len(selected) == limit:
+                break
+        return selected

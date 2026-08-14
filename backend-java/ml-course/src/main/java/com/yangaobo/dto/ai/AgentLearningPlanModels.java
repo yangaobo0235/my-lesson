@@ -35,6 +35,13 @@ public final class AgentLearningPlanModels {
     ) {
     }
 
+    public record ConfirmDraftRequest(
+            @NotNull UUID requestId,
+            @Min(1) int expectedVersion,
+            @NotBlank @Size(max = 64) String payloadHash
+    ) {
+    }
+
     public record ProgressRequest(
             @Min(0) @Max(100) int progressPercent,
             @Size(max = 500) String note
@@ -53,7 +60,8 @@ public final class AgentLearningPlanModels {
             List<Map<String, Object>> adjustments,
             String status,
             LocalDateTime createdAt,
-            LocalDateTime updatedAt
+            LocalDateTime updatedAt,
+            String payloadHash
     ) {
     }
 

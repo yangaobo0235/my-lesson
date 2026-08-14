@@ -23,9 +23,12 @@ import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.stereotype.Component;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author 杨奥博
@@ -57,6 +60,8 @@ public class OrderMessageListener implements RocketMQListener<OrderMessage> {
     private OrderDetailMapper orderDetailMapper;
     @Resource
     private JdbcTemplate jdbcTemplate;
+    @Resource
+    private MyRedis redis;
 
     /**
      * 该方法在Broker投递消息时触发并执行
@@ -73,6 +78,7 @@ public class OrderMessageListener implements RocketMQListener<OrderMessage> {
         if (!reserve(orderMessage)) {
             log.info("重复秒杀订单消息已幂等忽略, requestId={}",
                     orderMessage.getRequestId());
+            acknowledgeAfterCommit(orderMessage);
             return;
         }
 
@@ -139,6 +145,45 @@ public class OrderMessageListener implements RocketMQListener<OrderMessage> {
                 """,
                 orderId,
                 orderMessage.getRequestId().toString());
+        acknowledgeAfterCommit(orderMessage);
+    }
+
+    private void acknowledgeAfterCommit(OrderMessage message) {
+        Runnable acknowledgement = () -> acknowledgeReservation(message);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            acknowledgement.run();
+                        }
+                    });
+            return;
+        }
+        acknowledgement.run();
+    }
+
+    private void acknowledgeReservation(OrderMessage message) {
+        if (redis == null) {
+            return;
+        }
+        String qualificationKey = ML.Redis.SECKILL_QUALIFICATION_PREFIX
+                + message.getFkSeckillId() + ':'
+                + message.getFkCourseId() + ':'
+                + message.getFkUserId();
+        String requestId = message.getRequestId().toString();
+        String existing = redis.get(qualificationKey);
+        if (existing == null) {
+            redis.setNxEx(qualificationKey, requestId, 24, TimeUnit.HOURS);
+        } else if (!requestId.equals(existing)) {
+            log.error(
+                    "秒杀资格与订单请求不一致, qualificationKey={}, expected={}, actual={}",
+                    qualificationKey,
+                    requestId,
+                    existing);
+            return;
+        }
+        redis.zRem(ML.Redis.SECKILL_RECONCILE_PENDING_KEY, requestId);
     }
 
     private boolean reserve(OrderMessage message) {

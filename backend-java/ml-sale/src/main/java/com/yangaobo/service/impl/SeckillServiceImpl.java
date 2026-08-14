@@ -277,20 +277,22 @@ public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> impl
                         fkSeckillId,
                         fkCourseId,
                         dto.getFkUserId(),
-                        dto.getRequestId());
+                        dto.getRequestId(),
+                        dto.getPrice(),
+                        dto.getSkPrice());
             } finally {
                 if (lock.isHeldByCurrentThread()) {
                     lock.unlock();
                 }
-            }
-            if (reservation == ReservationResult.IDEMPOTENT_REPLAY) {
-                return true;
             }
             if (reservation == ReservationResult.OUT_OF_STOCK) {
                 throw new ServiceException(ResultCode.SERVER_ERROR, "库存不足，秒杀失败");
             }
             if (reservation == ReservationResult.ALREADY_QUALIFIED) {
                 throw new ServiceException(ResultCode.SERVER_ERROR, "当前用户已取得该课程秒杀资格");
+            }
+            if (reservation == ReservationResult.REQUEST_CONFLICT) {
+                throw new ServiceException(ResultCode.ILLEGAL_PARAM, "requestId 已绑定其他秒杀请求");
             }
             if (reservation == ReservationResult.STOCK_NOT_READY) {
                 throw new ServiceException(ResultCode.SERVER_ERROR, "活动库存尚未就绪，请稍后重试");
@@ -304,34 +306,35 @@ public class SeckillServiceImpl extends ServiceImpl<SeckillMapper, Seckill> impl
             orderMessage.setFkCourseId(fkCourseId);
             orderMessage.setPrice(dto.getPrice());
             orderMessage.setSkPrice(dto.getSkPrice());
-            try {
-                // 这里只确认消息已进入 Broker；订单落库由消费者异步完成，
-                // 以消息队列承接秒杀峰值，避免请求线程执行数据库写入。
-                SendResult sendResult = rocketmqTemplate.syncSend(
-                        ORDER_DESTINATION,
-                        orderMessage);
-                if (sendResult == null
-                        || sendResult.getSendStatus() != SendStatus.SEND_OK) {
-                    throw new IllegalStateException("RocketMQ send was not acknowledged");
-                }
-                log.info("秒杀订单消息发送成功, requestId={}", dto.getRequestId());
-                return true;
-            } catch (RuntimeException exception) {
-                stockReservationService.release(
-                        fkSeckillId,
-                        fkCourseId,
-                        dto.getFkUserId(),
-                        dto.getRequestId());
-                log.warn("秒杀订单消息发送失败并已补偿, requestId={}",
-                        dto.getRequestId(), exception);
-                throw new ServiceException(
-                        ResultCode.SERVER_ERROR,
-                        "下单消息发送失败，库存资格已恢复，请重试");
-            }
+            return publishOrder(orderMessage);
         } else if (status.equals(ML.Seckill.ENDED)) {
             throw new ServiceException(ResultCode.SECKILL_END, fkSeckillId + "号秒杀活动已结束");
         } else {
             throw new ServiceException(ResultCode.SERVER_ERROR, "秒杀活动状态异常");
+        }
+    }
+
+    boolean publishOrder(OrderMessage orderMessage) {
+        try {
+            // 这里只确认消息已进入 Broker；订单落库由消费者异步完成，
+            // 以消息队列承接秒杀峰值，避免请求线程执行数据库写入。
+            SendResult sendResult = rocketmqTemplate.syncSend(
+                    ORDER_DESTINATION,
+                    orderMessage);
+            if (sendResult == null
+                    || sendResult.getSendStatus() != SendStatus.SEND_OK) {
+                throw new IllegalStateException("RocketMQ send was not acknowledged");
+            }
+            log.info("秒杀订单消息发送成功, requestId={}", orderMessage.getRequestId());
+            return true;
+        } catch (RuntimeException exception) {
+            // Broker 超时无法区分“未发送”和“已发送但响应丢失”。保留库存资格，
+            // 客户端只能携带同一个 requestId 重放；消费端按 requestId 幂等去重。
+            log.warn("秒杀订单消息结果不确定，保留资格等待同 requestId 重放, requestId={}",
+                    orderMessage.getRequestId(), exception);
+            throw new ServiceException(
+                    ResultCode.SERVER_ERROR,
+                    "下单结果暂时不确定，请使用原 requestId 重试查询");
         }
     }
 

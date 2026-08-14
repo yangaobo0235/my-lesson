@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.AdjustmentRequest;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.CreateDraftRequest;
+import com.yangaobo.dto.ai.AgentLearningPlanModels.ConfirmDraftRequest;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.DraftView;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.PlanView;
 import com.yangaobo.dto.ai.AgentLearningPlanModels.ProgressRequest;
@@ -22,6 +23,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class AgentLearningPlanService {
@@ -88,6 +96,18 @@ public class AgentLearningPlanService {
                 """,
                 this::draft,
                 userId);
+    }
+
+    public DraftView draftByRequest(UUID requestId, Long userId) {
+        List<DraftView> rows = jdbcTemplate.query(
+                "SELECT * FROM agent_learning_plan_draft WHERE user_id = ? AND request_id = ? LIMIT 1",
+                this::draft,
+                userId,
+                requestId.toString());
+        if (rows.isEmpty()) {
+            throw new ServiceException(ResultCode.RECORD_NOT_FOUND, "学习计划草案不存在");
+        }
+        return rows.get(0);
     }
 
     public List<DraftView> versions(UUID draftId, Long userId) {
@@ -173,8 +193,32 @@ public class AgentLearningPlanService {
     }
 
     @Transactional
-    public PlanView confirm(UUID draftId, Long userId) {
+    public PlanView confirm(
+            UUID draftId,
+            Long userId,
+            ConfirmDraftRequest request) {
+        List<PlanView> idempotent = jdbcTemplate.query(
+                "SELECT plan.* FROM agent_learning_plan_operation op "
+                        + "JOIN agent_learning_plan plan ON plan.id = op.plan_id "
+                        + "WHERE op.user_id = ? AND op.request_id = ? AND op.payload_hash = ? LIMIT 1",
+                this::plan,
+                userId,
+                request.requestId().toString(),
+                request.payloadHash());
+        if (!idempotent.isEmpty()) {
+            return idempotent.get(0);
+        }
         DraftView draft = requireWaitingDraft(draftId, userId);
+        if (draft.version() != request.expectedVersion()) {
+            throw new ServiceException(ResultCode.ILLEGAL_PARAM, "学习计划草案版本已变化，请刷新后确认");
+        }
+        String actualHash = payloadHash(draft);
+        if (!MessageDigest.isEqual(
+                actualHash.getBytes(StandardCharsets.US_ASCII),
+                request.payloadHash().toLowerCase().getBytes(StandardCharsets.US_ASCII))) {
+            throw new ServiceException(ResultCode.ILLEGAL_PARAM, "学习计划草案内容已变化，请重新确认");
+        }
+        validateCourseAvailability(draft.courses());
         List<PlanView> existing = jdbcTemplate.query(
                 "SELECT * FROM agent_learning_plan WHERE source_draft_id = ? AND user_id = ? LIMIT 1",
                 this::plan,
@@ -206,10 +250,26 @@ public class AgentLearningPlanService {
                 json(draft.courses()),
                 json(draft.dailyRoutine()),
                 json(draft.adjustments()));
-        jdbcTemplate.update(
-                "UPDATE agent_learning_plan_draft SET status = 'CONFIRMED', updated_at = NOW() WHERE id = ? AND user_id = ?",
-                draftId.toString(),
-                userId);
+        int confirmed = jdbcTemplate.update(
+                "UPDATE agent_learning_plan_draft SET status = 'CONFIRMED', updated_at = NOW() "
+                        + "WHERE id = ? AND user_id = ? AND status = 'WAITING_CONFIRMATION' AND version = ?",
+                draftId.toString(), userId, request.expectedVersion());
+        if (confirmed != 1) {
+            throw new ServiceException(ResultCode.ILLEGAL_PARAM, "学习计划草案已被其他操作修改");
+        }
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO agent_learning_plan_operation "
+                            + "(user_id, request_id, operation_type, draft_id, plan_id, payload_hash, created_at) "
+                            + "VALUES (?, ?, 'CONFIRM', ?, ?, ?, NOW())",
+                    userId,
+                    request.requestId().toString(),
+                    draftId.toString(),
+                    planId.toString(),
+                    actualHash);
+        } catch (DuplicateKeyException exception) {
+            throw new ServiceException(ResultCode.ILLEGAL_PARAM, "requestId 已被其他参数使用");
+        }
         return requirePlan(planId, userId);
     }
 
@@ -293,7 +353,7 @@ public class AgentLearningPlanService {
 
     private DraftView draft(ResultSet resultSet, int rowNum)
             throws SQLException {
-        return new DraftView(
+        DraftView draft = new DraftView(
                 UUID.fromString(resultSet.getString("id")),
                 resultSet.getLong("user_id"),
                 resultSet.getString("goal"),
@@ -305,7 +365,12 @@ public class AgentLearningPlanService {
                 list(resultSet.getString("adjustments_json")),
                 resultSet.getString("status"),
                 resultSet.getObject("created_at", LocalDateTime.class),
-                resultSet.getObject("updated_at", LocalDateTime.class));
+                resultSet.getObject("updated_at", LocalDateTime.class),
+                null);
+        return new DraftView(
+                draft.id(), draft.userId(), draft.goal(), draft.minutesPerDay(), draft.version(),
+                draft.previousDraftId(), draft.courses(), draft.dailyRoutine(), draft.adjustments(),
+                draft.status(), draft.createdAt(), draft.updatedAt(), payloadHash(draft));
     }
 
     private PlanView plan(ResultSet resultSet, int rowNum)
@@ -347,5 +412,47 @@ public class AgentLearningPlanService {
 
     private ServiceException notFound(String message) {
         return new ServiceException(ResultCode.RECORD_NOT_FOUND, message);
+    }
+
+    private String payloadHash(DraftView draft) {
+        try {
+            String canonical = objectMapper.writeValueAsString(Map.of(
+                    "id", draft.id().toString(),
+                    "userId", draft.userId(),
+                    "goal", draft.goal(),
+                    "minutesPerDay", draft.minutesPerDay(),
+                    "version", draft.version(),
+                    "courses", draft.courses(),
+                    "dailyRoutine", draft.dailyRoutine(),
+                    "adjustments", draft.adjustments()));
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (JsonProcessingException | NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("无法计算学习计划草案摘要", exception);
+        }
+    }
+
+    void validateCourseAvailability(List<Map<String, Object>> courses) {
+        Set<Long> courseIds = courses.stream()
+                .map(course -> course.getOrDefault("courseId", course.get("id")))
+                .filter(value -> value != null)
+                .map(value -> Long.valueOf(value.toString()))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (courseIds.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(
+                courseIds.size(), "?"));
+        Integer activeCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM course WHERE deleted = 0 AND id IN ("
+                        + placeholders + ")",
+                Integer.class,
+                courseIds.toArray());
+        if (activeCount == null || activeCount != courseIds.size()) {
+            throw new ServiceException(
+                    ResultCode.ILLEGAL_PARAM,
+                    "学习计划包含已下架或不存在的课程，请重新生成草案");
+        }
     }
 }

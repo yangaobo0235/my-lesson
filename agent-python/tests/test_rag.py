@@ -58,6 +58,26 @@ def test_keyword_source_identity_is_preserved_and_validated() -> None:
     assert not HybridRetriever._source_matches(candidates[0], "COURSE", "11")
 
 
+def test_keyword_old_content_version_is_rejected_during_postgres_hydration() -> None:
+    candidates = reciprocal_rank_fusion(
+        [
+            (
+                "keyword",
+                [
+                    {
+                        "chunk_id": "shared",
+                        "score": 8.0,
+                        "content_version": 4,
+                    }
+                ],
+            )
+        ]
+    )
+
+    assert HybridRetriever._content_version_matches(candidates[0], 4)
+    assert not HybridRetriever._content_version_matches(candidates[0], 5)
+
+
 def test_citations_are_numbered_from_final_hits() -> None:
     result = RetrievalResult(
         [
@@ -75,4 +95,25 @@ def test_citations_are_numbered_from_final_hits() -> None:
     )
     citation = result.citations(1)[0]
     assert citation.index == 1
+    assert citation.chunk_id == "one"
+    assert citation.content_version == 0
     assert citation.source_type == "COURSE"
+
+
+def test_final_hits_limit_repeated_chunks_from_one_source() -> None:
+    hits = [
+        RetrievalHit(
+            chunk_id=str(index),
+            title=f"title-{index}",
+            content="content",
+            source_url=f"mylesson://course/{source_id}",
+            source_type="COURSE",
+            source_id=source_id,
+            score=1.0 - index / 10,
+        )
+        for index, source_id in enumerate(("1", "1", "1", "2", "3"), start=1)
+    ]
+
+    covered = HybridRetriever._cover_sources(hits, limit=4, max_per_source=2)
+
+    assert [hit.chunk_id for hit in covered] == ["1", "2", "4", "5"]

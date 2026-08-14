@@ -16,6 +16,9 @@ import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +27,8 @@ import static org.mockito.Mockito.when;
 
 class TokenGlobalFilterTest {
 
+    private static final KeyPair DELEGATION_KEY = keyPair();
+
     private final TokenGlobalFilter filter = new TokenGlobalFilter();
     private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
 
@@ -31,6 +36,11 @@ class TokenGlobalFilterTest {
     void setUp() {
         ReflectionTestUtils.setField(filter, "whiteList", List.of("user/loginByAccount"));
         ReflectionTestUtils.setField(filter, "identitySecret", "test-identity-secret");
+        ReflectionTestUtils.setField(
+                filter,
+                "delegationPrivateKey",
+                Base64.getEncoder().encodeToString(DELEGATION_KEY.getPrivate().getEncoded()));
+        ReflectionTestUtils.setField(filter, "delegationKeyId", "test");
         ReflectionTestUtils.setField(filter, "stringRedisTemplate", redisTemplate);
     }
 
@@ -160,5 +170,18 @@ class TokenGlobalFilterTest {
         assertEquals("1", forwardedExchange.get().getRequest()
                 .getHeaders()
                 .getFirst("X-User-Id"));
+        String delegation = forwardedExchange.get().getRequest().getHeaders()
+                .getFirst("X-ML-Delegation");
+        assertTrue(delegation != null && delegation.split("\\.").length == 3);
+    }
+
+    private static KeyPair keyPair() {
+        try {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+            generator.initialize(2048);
+            return generator.generateKeyPair();
+        } catch (Exception exception) {
+            throw new ExceptionInInitializerError(exception);
+        }
     }
 }

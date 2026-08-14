@@ -36,6 +36,16 @@ public class ML {
         String SECKILL_COURSE_COUNT_PREFIX = "seckill:course_count:";
         /** 秒杀资格缓存前缀，值为稳定 requestId。 */
         String SECKILL_QUALIFICATION_PREFIX = "seckill:qualification:";
+        /** 秒杀请求账本前缀，值绑定请求身份、价格和保留时间。 */
+        String SECKILL_REQUEST_PREFIX = "seckill:request:";
+        /** 等待订单服务确认的秒杀请求有序集合。 */
+        String SECKILL_RECONCILE_PENDING_KEY = "seckill:reconcile:pending";
+        /** 秒杀课程预热时的初始库存。 */
+        String SECKILL_COURSE_INITIAL_COUNT_PREFIX = "seckill:course_initial_count:";
+        /** 秒杀课程已保留库存计数。 */
+        String SECKILL_COURSE_RESERVED_COUNT_PREFIX = "seckill:course_reserved_count:";
+        /** 当前预热的秒杀课程集合。 */
+        String SECKILL_ACTIVE_COURSES_KEY = "seckill:active_courses";
     }
 
     public interface MinIO {

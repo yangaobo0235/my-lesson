@@ -32,6 +32,40 @@ class NoModelAnswer:
         raise AssertionError("The model must not be called without evidence")
 
 
+class EvidenceRetriever:
+    async def search(self, session: Any, question: str) -> RetrievalResult:
+        from mylesson_agent.rag.service import RetrievalHit
+
+        return RetrievalResult(
+            [
+                RetrievalHit(
+                    chunk_id="chunk-1",
+                    title="Java 入门",
+                    content="Java 支持面向对象编程。",
+                    source_url="mylesson://course/1",
+                    source_type="COURSE",
+                    source_id="1",
+                    score=1.0,
+                    content_version=2,
+                )
+            ],
+            False,
+        )
+
+
+class GroundedModel:
+    def __init__(self, supported: bool) -> None:
+        self.supported = supported
+
+    async def answer(self, system: str, prompt: str) -> str:
+        return "Java 支持面向对象编程。[1]"
+
+    async def validate_grounding(self, answer: str, citations: list[Citation]) -> Any:
+        from mylesson_agent.llm.client import GroundingResult
+
+        return GroundingResult(self.supported, () if self.supported else ("过度推断",), "test")
+
+
 async def test_runtime_refuses_before_model_call_when_retrieval_has_no_evidence() -> None:
     runtime = AgentRuntime(
         KnowledgeRouter(),  # type: ignore[arg-type]
@@ -57,7 +91,7 @@ async def test_runtime_refuses_before_model_call_when_retrieval_has_no_evidence(
     assert state["answer"] == "当前知识库中没有足够信息回答这个问题。"
 
 
-def test_runtime_adds_real_citation_footer_when_model_omits_markers() -> None:
+def test_runtime_refuses_when_model_omits_citation_markers() -> None:
     citations = [
         Citation(
             index=1,
@@ -71,4 +105,88 @@ def test_runtime_adds_real_citation_footer_when_model_omits_markers() -> None:
 
     answer = AgentRuntime._ensure_citations("可以从基础语法开始。", citations)
 
-    assert answer == "可以从基础语法开始。\n\n来源：[1] Java 入门"
+    assert answer == "当前知识库证据不足，无法生成带有可验证引用的回答。"
+
+
+def test_runtime_rejects_unknown_citation_number() -> None:
+    citations = [
+        Citation(
+            index=1,
+            title="Java 入门",
+            excerpt="Java 基础",
+            source_url="mylesson://course/1",
+            source_type="COURSE",
+            source_id="1",
+        )
+    ]
+
+    answer = AgentRuntime._ensure_citations("结论来自不存在的资料。[2]", citations)
+
+    assert answer == "当前知识库证据不足，无法生成带有可验证引用的回答。"
+
+
+def test_runtime_accepts_whitelisted_citation_number() -> None:
+    citations = [
+        Citation(
+            index=1,
+            title="Java 入门",
+            excerpt="Java 基础",
+            source_url="mylesson://course/1",
+            source_type="COURSE",
+            source_id="1",
+        )
+    ]
+
+    answer = AgentRuntime._ensure_citations("可以从基础语法开始。[1]", citations)
+
+    assert answer == "可以从基础语法开始。[1]"
+
+
+async def test_runtime_returns_answer_only_after_online_grounding_check() -> None:
+    runtime = AgentRuntime(
+        KnowledgeRouter(),  # type: ignore[arg-type]
+        EvidenceRetriever(),  # type: ignore[arg-type]
+        NoTools(),  # type: ignore[arg-type]
+        GroundedModel(True),  # type: ignore[arg-type]
+    )
+
+    state = await runtime.run(
+        session=None,  # type: ignore[arg-type]
+        question="Java 支持什么编程范式？",
+        context="",
+        user=AuthenticatedUser(
+            id=1,
+            username="student",
+            roles=["STUDENT"],
+            delegation_token="token",
+        ),
+        trace_id="trace",
+        request_id=uuid4(),
+    )
+
+    assert state["answer"] == "Java 支持面向对象编程。[1]"
+
+
+async def test_runtime_refuses_when_online_grounding_check_fails() -> None:
+    runtime = AgentRuntime(
+        KnowledgeRouter(),  # type: ignore[arg-type]
+        EvidenceRetriever(),  # type: ignore[arg-type]
+        NoTools(),  # type: ignore[arg-type]
+        GroundedModel(False),  # type: ignore[arg-type]
+    )
+
+    state = await runtime.run(
+        session=None,  # type: ignore[arg-type]
+        question="Java 支持什么编程范式？",
+        context="",
+        user=AuthenticatedUser(
+            id=1,
+            username="student",
+            roles=["STUDENT"],
+            delegation_token="token",
+        ),
+        trace_id="trace",
+        request_id=uuid4(),
+    )
+
+    assert state["answer"] == "当前知识库证据不足，无法支持回答中的全部结论。"

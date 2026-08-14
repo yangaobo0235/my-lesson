@@ -26,6 +26,10 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.net.URLEncoder;
 import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -63,6 +67,12 @@ public class TokenGlobalFilter implements GlobalFilter, Ordered {
     @Value("${ai.identity-secret:}")
     private String identitySecret;
 
+    @Value("${ai.delegation-private-key:}")
+    private String delegationPrivateKey;
+
+    @Value("${ai.delegation-key-id:v1}")
+    private String delegationKeyId;
+
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
@@ -94,9 +104,9 @@ public class TokenGlobalFilter implements GlobalFilter, Ordered {
             return buildResponseData(response, HttpStatus.UNAUTHORIZED, 8000,
                     "登录过期", "Token身份数据无效，请重新登录");
         }
-        if (StrUtil.isBlank(identitySecret)) {
+        if (StrUtil.isBlank(identitySecret) || StrUtil.isBlank(delegationPrivateKey)) {
             return buildResponseData(response, HttpStatus.SERVICE_UNAVAILABLE, 9000,
-                    "身份服务不可用", "网关未配置ai.identity-secret");
+                    "身份服务不可用", "网关未配置身份签名密钥");
         }
 
         long timestamp = System.currentTimeMillis();
@@ -148,7 +158,8 @@ public class TokenGlobalFilter implements GlobalFilter, Ordered {
     private String createDelegation(TokenPrincipal principal, long timestampMillis) {
         long issuedAt = timestampMillis / 1000L;
         Map<String, Object> header = Map.of(
-                "alg", "HS256",
+                "alg", "RS256",
+                "kid", delegationKeyId,
                 "typ", "JWT");
         Map<String, Object> claims = Map.of(
                 "iss", "ml-gateway",
@@ -162,7 +173,28 @@ public class TokenGlobalFilter implements GlobalFilter, Ordered {
         String encodedHeader = base64Url(JSONUtil.toJsonStr(header));
         String encodedClaims = base64Url(JSONUtil.toJsonStr(claims));
         String signingInput = encodedHeader + "." + encodedClaims;
-        return signingInput + "." + base64Url(hmac(signingInput));
+        return signingInput + "." + base64Url(signDelegation(signingInput));
+    }
+
+    private byte[] signDelegation(String signingInput) {
+        try {
+            Signature signature = Signature.getInstance("SHA256withRSA");
+            signature.initSign(readPrivateKey(delegationPrivateKey));
+            signature.update(signingInput.getBytes(StandardCharsets.US_ASCII));
+            return signature.sign();
+        } catch (GeneralSecurityException | IllegalArgumentException exception) {
+            throw new IllegalStateException("Unable to sign delegation token", exception);
+        }
+    }
+
+    private PrivateKey readPrivateKey(String encoded) throws GeneralSecurityException {
+        String normalized = encoded
+                .replace("-----BEGIN PRIVATE KEY-----", "")
+                .replace("-----END PRIVATE KEY-----", "")
+                .replace("\\n", "")
+                .replaceAll("\\s", "");
+        return KeyFactory.getInstance("RSA").generatePrivate(
+                new PKCS8EncodedKeySpec(Base64.getDecoder().decode(normalized)));
     }
 
     private byte[] hmac(String value) {

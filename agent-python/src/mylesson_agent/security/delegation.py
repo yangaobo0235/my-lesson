@@ -1,7 +1,6 @@
-from datetime import UTC, datetime, timedelta
+import json
 from hmac import compare_digest
 from typing import Any
-from uuid import uuid4
 
 import jwt
 from fastapi import Header, HTTPException, status
@@ -12,16 +11,23 @@ from mylesson_agent.domain.api_models import AuthenticatedUser
 
 def decode_delegation(token: str) -> AuthenticatedUser:
     settings = get_settings()
-    if settings.delegation_secret is None:
+    if settings.delegation_public_keys is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Delegation verification is not configured",
         )
     try:
+        header = jwt.get_unverified_header(token)
+        if header.get("alg") != "RS256" or not header.get("kid"):
+            raise jwt.InvalidAlgorithmError("Invalid delegation algorithm")
+        public_keys = json.loads(settings.delegation_public_keys.get_secret_value())
+        public_key = public_keys.get(str(header["kid"]))
+        if not public_key:
+            raise jwt.InvalidKeyError("Unknown delegation key")
         claims: dict[str, Any] = jwt.decode(
             token,
-            settings.delegation_secret.get_secret_value(),
-            algorithms=["HS256"],
+            public_key.replace("\\n", "\n"),
+            algorithms=["RS256"],
             issuer=settings.delegation_issuer,
             audience=settings.delegation_audience,
             options={"require": ["exp", "iat", "iss", "aud", "sub", "jti"]},
@@ -30,8 +36,8 @@ def decode_delegation(token: str) -> AuthenticatedUser:
         username = str(claims.get("username") or "")
         roles_value = claims.get("roles") or []
         roles = [str(role) for role in roles_value] if isinstance(roles_value, list) else []
-        if not username:
-            raise ValueError("Missing username")
+        if not username or not roles:
+            raise ValueError("Missing username or roles")
         return AuthenticatedUser(
             id=user_id,
             username=username,
@@ -43,27 +49,6 @@ def decode_delegation(token: str) -> AuthenticatedUser:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user delegation",
         ) from exception
-
-
-def issue_internal_delegation(user: AuthenticatedUser) -> str:
-    settings = get_settings()
-    if settings.delegation_secret is None:
-        raise RuntimeError("Delegation signing is not configured")
-    now = datetime.now(UTC)
-    return jwt.encode(
-        {
-            "iss": settings.delegation_issuer,
-            "aud": settings.delegation_audience,
-            "sub": str(user.id),
-            "username": user.username,
-            "roles": user.roles,
-            "iat": now,
-            "exp": now + timedelta(seconds=60),
-            "jti": str(uuid4()),
-        },
-        settings.delegation_secret.get_secret_value(),
-        algorithm="HS256",
-    )
 
 
 async def require_user(

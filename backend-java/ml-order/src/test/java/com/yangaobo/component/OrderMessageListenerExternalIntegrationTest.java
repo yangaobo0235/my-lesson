@@ -1,13 +1,16 @@
 package com.yangaobo.component;
 
 import com.yangaobo.dto.OrderMessage;
+import com.yangaobo.feign.UserFeign;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +22,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @EnabledIfEnvironmentVariable(
         named = "RUN_EXTERNAL_INTEGRATION_TESTS", matches = "true")
@@ -26,11 +32,12 @@ class OrderMessageListenerExternalIntegrationTest {
 
     private JdbcTemplate jdbcTemplate;
     private OrderMessageListener listener;
+    private DriverManagerDataSource dataSource;
     private final List<UUID> requestIds = new ArrayList<>();
 
     @BeforeEach
     void connectToMySql() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource = new DriverManagerDataSource();
         dataSource.setDriverClassName("com.mysql.cj.jdbc.Driver");
         dataSource.setUrl(environment(
                 "ORDER_DATASOURCE_URL",
@@ -116,6 +123,30 @@ class OrderMessageListenerExternalIntegrationTest {
 
         assertThat(first).isTrue();
         assertThat(second).isFalse();
+    }
+
+    @Test
+    void consumerCrashRollsBackProcessingMarkerForBrokerRedelivery() {
+        UUID requestId = UUID.randomUUID();
+        requestIds.add(requestId);
+        OrderMessage message = message(requestId, requestId);
+        message.setPrice(100.0);
+        message.setSkPrice(50.0);
+        UserFeign userFeign = mock(UserFeign.class);
+        when(userFeign.select(41L)).thenThrow(new IllegalStateException("consumer crash"));
+        ReflectionTestUtils.setField(listener, "userFeign", userFeign);
+        TransactionTemplate transaction = new TransactionTemplate(
+                new DataSourceTransactionManager(dataSource));
+
+        assertThatThrownBy(() -> transaction.executeWithoutResult(
+                ignored -> listener.onMessage(message)))
+                .isInstanceOf(IllegalStateException.class);
+
+        Integer rows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM seckill_order_consume WHERE request_id = ?",
+                Integer.class,
+                requestId.toString());
+        assertThat(rows).isZero();
     }
 
     private OrderMessage message(UUID requestId, UUID qualificationId) {

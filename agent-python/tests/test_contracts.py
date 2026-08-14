@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 from mylesson_agent.domain.api_models import ConversationView, StreamEvent
+
+CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "internal-tools.openapi.yaml"
 
 
 def test_api_models_serialize_as_camel_case() -> None:
@@ -37,3 +40,22 @@ def test_sse_wrapper_contains_compatibility_fields() -> None:
         "timestamp",
         "data",
     }
+
+
+def test_internal_tool_contract_covers_runtime_routes_and_security_headers() -> None:
+    contract = CONTRACT.read_text(encoding="utf-8")
+    expected_paths = {
+        "/internal/v1/agent/me/profile",
+        "/internal/v1/agent/me/orders",
+        "/internal/v1/agent/me/cart",
+        "/internal/v1/agent/courses/search",
+        "/internal/v1/agent/courses/{courseId}",
+        "/internal/v1/agent/me/learning-plan-drafts",
+        "/internal/v1/agent/me/learning-plan-drafts/by-request/{requestId}",
+    }
+
+    assert all(f"  {path}:" in contract for path in expected_paths)
+    assert "name: X-Internal-Token" in contract
+    assert "name: X-ML-Delegation" in contract
+    assert "#/components/schemas/ErrorResponse" in contract
+    assert "version: 1.1.0" in contract
