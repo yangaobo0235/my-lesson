@@ -66,6 +66,23 @@ class GroundedModel:
         return GroundingResult(self.supported, () if self.supported else ("过度推断",), "test")
 
 
+class CitationRepairModel:
+    def __init__(self, answers: list[str]) -> None:
+        self.answers = answers
+        self.prompts: list[str] = []
+        self.grounding_calls = 0
+
+    async def answer(self, system: str, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.answers[len(self.prompts) - 1]
+
+    async def validate_grounding(self, answer: str, citations: list[Citation]) -> Any:
+        from mylesson_agent.llm.client import GroundingResult
+
+        self.grounding_calls += 1
+        return GroundingResult(True, (), "test")
+
+
 async def test_runtime_refuses_before_model_call_when_retrieval_has_no_evidence() -> None:
     runtime = AgentRuntime(
         KnowledgeRouter(),  # type: ignore[arg-type]
@@ -165,6 +182,69 @@ async def test_runtime_returns_answer_only_after_online_grounding_check() -> Non
     )
 
     assert state["answer"] == "Java 支持面向对象编程。[1]"
+
+
+async def test_runtime_retries_once_when_model_omits_citation_markers() -> None:
+    model = CitationRepairModel(
+        [
+            "建议从 Java 入门开始。",
+            "建议从 Java 入门开始，因为课程覆盖面向对象编程。[1]",
+        ]
+    )
+    runtime = AgentRuntime(
+        KnowledgeRouter(),  # type: ignore[arg-type]
+        EvidenceRetriever(),  # type: ignore[arg-type]
+        NoTools(),  # type: ignore[arg-type]
+        model,  # type: ignore[arg-type]
+    )
+
+    state = await runtime.run(
+        session=None,  # type: ignore[arg-type]
+        question="推荐一门 Java 入门课",
+        context="",
+        user=AuthenticatedUser(
+            id=1,
+            username="student",
+            roles=["STUDENT"],
+            delegation_token="token",
+        ),
+        trace_id="trace",
+        request_id=uuid4(),
+    )
+
+    assert state["answer"] == "建议从 Java 入门开始，因为课程覆盖面向对象编程。[1]"
+    assert len(model.prompts) == 2
+    assert "引用要求" in model.prompts[0]
+    assert "上一版回答未通过引用格式校验" in model.prompts[1]
+    assert model.grounding_calls == 1
+
+
+async def test_runtime_refuses_when_citation_retry_is_still_invalid() -> None:
+    model = CitationRepairModel(["第一次没有引用。", "第二次仍然没有引用。"])
+    runtime = AgentRuntime(
+        KnowledgeRouter(),  # type: ignore[arg-type]
+        EvidenceRetriever(),  # type: ignore[arg-type]
+        NoTools(),  # type: ignore[arg-type]
+        model,  # type: ignore[arg-type]
+    )
+
+    state = await runtime.run(
+        session=None,  # type: ignore[arg-type]
+        question="推荐一门 Java 入门课",
+        context="",
+        user=AuthenticatedUser(
+            id=1,
+            username="student",
+            roles=["STUDENT"],
+            delegation_token="token",
+        ),
+        trace_id="trace",
+        request_id=uuid4(),
+    )
+
+    assert state["answer"] == "当前知识库证据不足，无法生成带有可验证引用的回答。"
+    assert len(model.prompts) == 2
+    assert model.grounding_calls == 0
 
 
 async def test_runtime_refuses_when_online_grounding_check_fails() -> None:
