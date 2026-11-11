@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package servicedesk.common.v1;
+
+option java_package = "com.yangaobo.servicedesk.api.common.v1";
+option java_multiple_files = true;
+option java_outer_classname = "CommonContract";
+
+// 后台用例引用用户身份，接收方必须经user重新核验，不信任调用方附加权限。
+message ActorRef {
+  // 用户所有者ID，32位小写十六进制业务标识。
+  string owner_id = 1;
+  // 不可登录的会话引用，沿用框架UUID格式，不传原始Cookie。
+  string session_ref = 2;
+  // 身份认证版本，非负且不超过Java Long上限。
+  int64 auth_version = 3;
+}
+
+// gRPC错误详情，由入口放入google.rpc.Status，不代替传输状态。
+message RpcErrorDetail {
+  // 接口约定登记的非零业务码。
+  int32 code = 1;
+  // 可向调用者公开展示的中文提示。
+  string message = 2;
+  // 可信请求追踪标识。
+  string trace_id = 3;
+  // 可选退避时长，毫秒；不存在与零时长具有不同含义。
+  optional int64 retry_after_ms = 4;
+}

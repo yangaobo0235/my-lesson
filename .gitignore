@@ -1,0 +1,26 @@
+.idea/
+.vscode/
+*.iml
+target/
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.py[cod]
+*.log
+.env
+.env.*
+!.env.example
+application-local*.yml
+application-local*.yaml
+coverage/
+
+# 构建时从desk-api生成，运行制品必须包含，源码不提交。
+desk-ai/src/desk_contracts/
+*.egg-info/
+build/
+.coverage
+htmlcov/

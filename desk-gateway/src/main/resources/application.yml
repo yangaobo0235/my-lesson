@@ -1,0 +1,42 @@
+server:
+  address: ${DESK_BIND_ADDRESS:127.0.0.1}
+  port: 28101
+spring:
+  application:
+    name: desk-gateway
+  profiles:
+    default: dev
+  jackson:
+    default-property-inclusion: always
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 15s
+          routes:
+            - id: user
+              uri: ${desk.downstream.user}
+              predicates:
+                - Path=/api/v1/users/**,/api/v1/admin/organization/**,/api/v1/admin/account/**,/api/v1/admin/audit-event/**
+            - id: ticket
+              uri: ${desk.downstream.ticket}
+              predicates:
+                - Path=/api/v1/tickets/**,/api/v1/admin/product-model/**,/api/v1/admin/device/**,/api/v1/admin/onsite-slot/**,/api/v1/admin/onsite-booking/**
+            - id: knowledge
+              uri: ${desk.downstream.knowledge}
+              predicates:
+                - Path=/api/v1/knowledge/**,/api/v1/admin/document-series/**,/api/v1/admin/document/**,/api/v1/admin/document-event/**,/api/v1/admin/index-job/**
+            - id: ai
+              uri: ${desk.downstream.ai}
+              predicates:
+                - Path=/api/v1/ai/**,/api/v1/admin/retrieval/**,/api/v1/admin/feedback/**
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

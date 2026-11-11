@@ -1,0 +1,28 @@
+server:
+  address: ${DESK_BIND_ADDRESS:127.0.0.1}
+  port: 28102
+spring:
+  application:
+    name: desk-user
+  profiles:
+    default: dev
+  web:
+    resources:
+      add-mappings: false
+  jackson:
+    default-property-inclusion: always
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+springdoc:
+  api-docs:
+    enabled: false
+    version: OPENAPI_3_0
+  swagger-ui:
+    enabled: false
+  paths-to-match: /api/v1/**

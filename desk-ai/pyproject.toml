@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "servicedesk-ai"
+version = "0.1.0"
+description = "Service Desk AI service"
+requires-python = ">=3.12.16,<3.13"
+dependencies = [
+    "fastapi==0.142.2",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.14.2",
+    "grpcio==1.76.0",
+    "protobuf==6.33.5",
+    "uvicorn==0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "grpcio-tools==1.76.0",
+    "httpx==0.28.1",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/servicedesk_ai", "src/desk_contracts"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["src/desk_contracts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["servicedesk_ai", "desk_contracts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.uv]
+required-version = ">=0.13.7,<0.14"
+constraint-dependencies = ["starlette==1.6.0"]

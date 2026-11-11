@@ -1,0 +1,8 @@
+spring:
+  config:
+    import: optional:file:./desk-knowledge/src/main/resources/application-local.yml
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true

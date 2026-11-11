@@ -1,0 +1,7 @@
+server:
+  address: ${DESK_BIND_ADDRESS:0.0.0.0}
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
