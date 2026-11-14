@@ -1,27 +1,27 @@
 # Service Desk
 
-面向 IT 服务商及其签约企业的设备售后服务台，服务对象是已登记的电脑与打印机。系统将设备登记、手动报修、客服受理、技术处理、上门预约和客户确认连成闭环，并通过有来源的知识检索与 AI 排障减少重复咨询。
+面向一家 IT 服务商及其签约企业的办公 IT 支持与协同排障服务台，覆盖办公终端、打印与扫描、办公网络连接及指定办公软件。系统以问题受理、远程处理、必要上门和客户确认为主线，AI协助客户补全信息、辅助技术人员依据知识和反馈逐步排障，并形成可核对的交接与处理建议。
 
-客户可以直接报修，也可以先按设备型号查阅手册、完成排障，再编辑确认报修草稿。人工售后独立运行，AI 或知识服务故障时仍能提交和处理工单。
+客户可以直接提交问题，也可以先在已开通服务范围内自助排障，再编辑确认交接草稿。设备按需关联，电脑和打印机是重点资产类型，不是所有问题的必填对象。技术人员在工单内使用本人私有助手，处理记录和解决结果由人确认；人工支持在AI或知识故障时仍可独立运行。
 
 ## 1. 系统范围
 
 | 业务域 | 系统提供的能力 |
 | --- | --- |
 | 身份与组织 | 服务商与客户组织、账号、角色组合、服务范围、登录改密与身份管理审计 |
-| 设备 | 产品型号、客户资产、服务期限、上门区域与地点 |
-| 工单 | 报修、受理分派、接单转派、补充、处理记录、解决、确认、取消与期限任务 |
+| 支持范围与资产 | 四类服务项目、客户服务资格及变更审计、可选电脑/打印机资产及固定问题环境 |
+| 工单 | 问题提交、待分类分流、接单转派、补充、处理、转介、确认/超时结单及期限任务 |
 | 预约 | 区域时段、出勤容量、事务确认、取消回补和真实履约记录 |
-| 知识 | 私有 PDF 原件、系列修订、解析索引、人工核对、发布、停用、恢复及替换 |
-| 排障 | 型号内授权混合检索、澄清、证据答复、引用原件、本人历史和报修草稿 |
+| 知识 | 私有PDF/Markdown原件、适用规则、修订索引、人工核对、发布、停用及替换 |
+| 排障 | 客户自助/技术人员辅助、带来源诊断事实、有界工具循环、实际证据、动作草稿及逐次调用用量 |
 | 工作台 | 客户待办、客服队列、技术人员处理、站内通知、反馈和检索诊断 |
 | 运维 | 服务治理、可观测性、可靠投递、持久任务、独立镜像交付与联合恢复 |
 
-角色包括 CUSTOMER_USER、SERVICE_AGENT、TECHNICIAN、KNOWLEDGE_ADMIN、SYSTEM_ADMIN。客户设备按组织可见，工单与排障记录按本人及原客户组织授权；服务团队按明确客户范围操作，管理员角色不自动授予全部业务正文访问权。
+角色包括 CUSTOMER_USER、SERVICE_AGENT、TECHNICIAN、KNOWLEDGE_ADMIN、SYSTEM_ADMIN。客户设备按组织可见，客户工单按本人及原客户组织授权，技术助手按本人及当前工单读取资格授权；他人工单权限不授予私有会话权限。服务团队按明确客户范围操作，管理员角色不自动授予全部业务正文访问权。
 
 ## 2. 技术栈与服务划分
 
-采用 Java21、Spring Boot、Spring Cloud Alibaba、MyBatis-Plus、MySQL、Python3.12/FastAPI 和 Vue3/TypeScript。Java 承担身份、设备、工单、预约及知识发布；Python 承担解析、检索与排障；前端承担展示和交互。
+采用 Java21、Spring Boot、Spring Cloud Alibaba、MyBatis-Plus、MySQL、Python3.12/FastAPI 和 Vue3/TypeScript。Java承担身份、支持范围、设备、工单、预约及知识发布；Python承担解析、检索、诊断事实及模型/工具执行；前端承担展示和交互。
 
 | 模块 | 类型 | 主要职责 |
 | --- | --- | --- |
@@ -29,16 +29,16 @@
 | desk-api | Java合同JAR与跨语言合同源 | Java内部模型/Feign及跨语言.proto合同 |
 | desk-gateway | WebFlux 应用 | 同源入口、路由、入口保护和身份头清理 |
 | desk-user | MVC 应用 | 身份、组织、角色、范围、会话及审计 |
-| desk-ticket | MVC 应用 | 型号、设备、工单、通知、概况、时段和预约 |
+| desk-ticket | MVC 应用 | 服务项目、客户开通范围、设备、工单、通知、概况及时段预约 |
 | desk-knowledge | MVC 应用 | 原件、修订、授权、发布及索引指令 |
-| desk-ai | Python Web、receiver与worker | MinerU、ES/Qdrant、排障、引用、草稿及反馈 |
+| desk-ai | Python Web、receiver与worker | PDF/文本解析、ES/Qdrant、诊断、工具/模型调用、来源、草稿及反馈 |
 | desk-web | Vue 应用 | 客户、服务人员及管理工作台 |
 
-每个业务服务独立维护 MySQL 库、账号和迁移。跨服务通过内部认证和明确合同访问，不共享实体或跨库联表。common/api 不独立部署，Python Web、receiver与worker共用业务模块及数据所有权。
+每个业务服务独立维护 MySQL 库和迁移；生产使用独立账号，当前开发统一使用 root 连接各自 test 库。跨服务通过内部认证和明确合同访问，不共享实体或跨库联表。common/api 不独立部署，Python Web、receiver与worker共用业务模块及数据所有权。
 
 Nacos管Java注册与配置，Feign/LoadBalancer承担Java内部通信。Redis用于登录防刷、用户日调用次数及knowledge的Redisson上传互斥，预约容量由MySQL本地事务确认。Java↔Python采用gRPC + Protobuf；跨服务异步统一RocketMQ，当前索引使用原生事务消息与本地任务事实回查，receiver落库后ACK、worker执行，不设outbox投递表/扫描发送器。XXL-JOB触发工单期限及索引过期准备收敛。Sentinel保护Gateway及Java实际依赖，Python另设队列和执行预算。
 
-原件存阿里云 OSS 私有 Bucket，knowledge 独占凭据并代理授权读取。AI 在 MySQL 保存片段与状态，ES 保存关键词副本，Qdrant 保存向量副本，采用 RRF 融合。MinerU 负责解析，百炼只提供Embedding和Chat模型API，RAG与排障流程由项目实现。报修草稿按模板预填用户确认的字段，不额外调用模型。
+原件存阿里云 OSS 私有 Bucket，knowledge 独占凭据并代理授权读取。AI 在 MySQL 保存片段与状态，ES 保存关键词副本，Qdrant 保存向量副本，采用 RRF 融合。MinerU负责PDF解析，Markdown本地确定性解析。百炼只提供Embedding与Chat/工具调用API，RAG和有界诊断执行器由项目负责。客户建单草稿使用确认事实模板，技术处理草稿采用该轮已校验结果，创建草稿不额外调用模型；正式动作均由人确认。
 
 最终方案以ELK集中检索脱敏JSON日志，Zipkin贯通Java、Python、MQ接收与持久worker追踪；业务审计和终态仍在MySQL。上述组件均纳入最终交付，按真实职责接入并验证故障恢复。组件选择依据见[系统设计](docs/设计/系统设计.md#13-组件职责与使用依据)。
 
@@ -67,22 +67,28 @@ Java使用Controller/RPC适配、Service、Mapper和独立Model，主实体业�
 | HTTP、gRPC、内部认证、幂等、MQ和SSE | [接口约定](docs/设计/接口约定.md) |
 | Java / Python / Vue 写法 | [Java后端规范](docs/开发/Java后端规范.md) · [Python后端规范](docs/开发/Python后端规范.md) · [前端规范](docs/开发/前端规范.md) |
 
-默认本机入口为 Gateway28101、user28102、ticket28103、knowledge28104、AI28105、Web28199。前端同源调用 /api/v1，内部接口不通过浏览器入口发布。具体启动、配置与验证合同由部署说明和各端规范统一维护。
+默认本机入口为 Gateway26101、user26102、ticket26103、knowledge26104、AI26105、Web26199。前端同源调用 /api/v1，内部接口不通过浏览器入口发布。具体启动、配置与验证合同由部署说明和各端规范统一维护。
+
+开发环境通过IDEA的MySQL root数据源创建四个空库，三个Java服务启动执行Flyway，AI API启动执行Alembic；已有手工表先按[数据库初始化与迁移](docs/sql/README.md)比对并显式接管，不重复执行初始DDL。Java三服务的application-local.yml和AI的.env使用root用户名，各自填写MySQL root密码；开发迁移复用该账号，密码不纳入版本管理。
 
 ## 5. 当前骨架与本地检查
+
+当前已完成办公IT支持目标的工程骨架与数据库结构准备：31张自有表、435个字段；ticket/knowledge的增量迁移、AI的Alembic 0003，以及15个管理资源的网关白名单已同步。V1/0001和手工SQL保留不可变旧基线，新版本在全部旧业务表为空时升级；非空旧库在任何DDL前拒绝执行，必须另做显式数据映射。步骤和恢复边界见[数据库初始化与迁移](docs/sql/README.md#6-办公it支持目标的增量迁移)。表结构就绪不表示业务接口已经实现。
 
 | 范围 | 已实现 |
 | --- | --- |
 | Maven | 六模块聚合；common/api普通JAR，四个应用独立Boot JAR；JDK/Maven约束及本机配置打包排除 |
+| 数据库迁移 | user的Flyway V1、ticket的V1→V2、knowledge的V1→V3、AI的0001→0003；启动迁移、非空基线保护、校验和与失败就绪边界；保留初始快照 |
 | common | Result、公共错误与BusinessException、BaseEnum及无Spring环境快照，已接入真实应用边界 |
 | api | ActorRef/RpcErrorDetail唯一.proto、Java生成与JAR打包、Python生成与wheel打包、固定线向量检查 |
 | Java应用 | dev/prod配置、MVC/Reactive独立错误处理、请求关联标识、原生健康；MVC开发OpenAPI3.0及生产关闭 |
-| Gateway | 公开资源及13个管理资源白名单、原路径转发、外来身份/追踪头清理、下游地址启动校验 |
-| AI | 类型化配置、HTTP模块入口、进程健康、安全错误及环境文档开关，生成合同可脱离源码导入 |
+| Gateway | 公开资源及15个管理资源白名单、原路径转发、外来身份/追踪头清理、下游地址启动校验 |
+| AI | 类型化组件配置、ASGI资源生命周期、索引receiver/worker、百炼类型化Chat/工具建议/Embedding合同、实际用量及向量校验、JSON日志/Zipkin、HTTP错误和健康，生成合同可脱离源码导入 |
+| 组件配置 | Java各应用本机YAML、AI独立dotenv及原生启动；Java默认组件装配、MySQL/Lettuce、OSS/Redisson、XXL执行器、条件事务MQ生产者、Nacos/Feign/Zipkin及Gateway Sentinel冷启动基线 |
 | Web | 公共布局、主页、404、路由、样式入口及严格类型检查 |
-| CI | 文件/依赖边界、公共错误编号对齐、生成目录忽略、真实JAR及wheel检查，Java/Python/前端检查 |
+| CI | 文件/依赖边界、公共错误编号对齐、生成目录忽略、真实JAR及wheel检查，Java/Python/前端检查，独占MySQL原生迁移与业务约束检查 |
 
-公共分页/动作表单、标识校验、字段级序列化和枚举文档定制器在对应业务消费者接入时建立。当前未建立空Controller/Service/Mapper或业务目录；api尚无业务Feign与RPC方法。AI当前仅启动HTTP进程，双监听、receiver与worker随业务用例落地，不以空进程假装可靠执行。跨服务认证、Nacos、数据库迁移、MQ、XXL-JOB、Redisson、Sentinel、ELK及Zipkin尚未联调；它们仍属于最终范围，P0关键依赖实验与后续业务阶段按改造计划完成。
+P1–P3已落地组织/账号与范围管理、JDBC Session/CSRF/改密、内部HTTP与双向TLS身份RPC、服务目录/资格/审计、可选资产、直接提单、人工处理/确认、通知/概况及XXL期限扫描；P4–P6已落地现场、知识、索引receiver/worker、客户/技术私有排障及人工草稿采用；P7补齐知识管理员共享反馈队列、来源复核和版本化处置；P8已有固定隔离证据。Vue页面使用真实接口，人工链不依赖知识、解析或AI。实现、验证及未验收边界见[P0–P3实施与验收](docs/开发计划/P0-P3实施与验收.md)、[P4–P6实施与验收](docs/开发计划/P4-P6实施与验收.md)和[P7–P8本地交付与验收](docs/开发计划/P7-P8本地交付与验收.md)。
 
 先核对mvn -version使用JDK21、uv为0.13.7同系、Node/npm符合版本约定；终端java与Maven的JDK可能不同。以下检查不连接共享业务库，也不要求启动中间件。
 
@@ -103,13 +109,22 @@ uv sync --locked
 uv run --locked ruff check --config pyproject.toml . ../.github/scripts
 uv run --locked ruff format --check --config pyproject.toml . ../.github/scripts
 uv run --locked pytest
-uv run --locked python -m servicedesk_ai
 ```
 
-API默认监听127.0.0.1:28105，GET /health为进程探针；DESK_AI_ENVIRONMENT=prod关闭文档，DESK_AI_HTTP_HOST/PORT控制监听。构建AI制品使用 `uv run --locked python ../.github/scripts/build_ai.py --output <仓库外制品目录>`，脚本在构建前生成合同并核对wheel内容，不在应用启动时生成类型。
+API默认监听127.0.0.1:26105，GET /health为进程探针；DESK_AI_ENVIRONMENT=prod关闭文档，DESK_AI_HTTP_HOST/PORT控制监听。构建AI制品使用 `uv run --locked python ../.github/scripts/build_ai.py --output ../.local/build/artifacts`，脚本在构建前生成合同并核对wheel内容，不在应用启动时生成类型。
 
-Java从仓库根目录以 `java -jar desk-user/target/desk-user-0.1.0-SNAPSHOT.jar --spring.profiles.active=dev` 启动，其他应用替换模块和JAR名称。dev默认回环绑定；可在所属模块src/main/resources/application-local.yml维护忽略的本机配置，由仓库根工作目录显式读取，真实文件及同名模板均不打入JAR。prod不读取本机文件；Gateway须提供四个DESK_*_URL下游地址，其余运行参数按部署说明维护。
+组件服务器已配置为192.168.23.66。Java将各应用src/main/resources/application-local.example.yml复制为同目录application-local.yml，分别填写本服务的空密码、密钥、本机回调IP及实际账号/桶名。以仓库根为工作目录，在IDEA将Active profiles留空（默认dev）或只填dev，直接运行所属启动类即连接所需组件；也可运行：
 
-在desk-web目录执行npm ci、npm run typecheck、npm run lint、npm run format:check、npm run build；npm run dev启动28199并将/api代理至28101。未交付业务返回明确错误，不以页面占位或健康UP表示业务可用。
+```shell
+java -jar desk-user/target/desk-user-0.1.0-SNAPSHOT.jar
+```
 
-本次骨架验证：JDK21.0.6、Maven3.9.9、CPython3.12.16、uv0.13.7、Node24.22.2、npm11.19.1；Java24项、Python7项测试通过，失败/错误/跳过均为0，前端类型/lint/格式/构建通过。JAR边界、AI wheel内容及仓库外安装/HTTP进程健康/生产文档关闭通过。Java HTTP测试使用临时下游，协议测试使用固定线向量；没有验证业务gRPC调用、数据库或中间件，也没有部署。
+其他应用替换模块及JAR名。默认dev直接启用所需组件，先原生导入本机YAML，再由本机文件链式导入Nacos；真实文件及空模板都不打入JAR，prod不加载本机文件。各服务只保存自己的凭据，不引用其他服务本机文件。
+
+AI将[.env.example](desk-ai/.env.example)复制为desk-ai/.env，直接填写DESK_AI_*嵌套字段，在desk-ai目录运行 `uv run --locked python -m servicedesk_ai`；入口由Pydantic Settings原生加载，进程变量优先。生产通过进程环境提供DESK_AI_ENVIRONMENT=prod及所需参数，不读取开发.env。IDEA/Python无需根目录配置转换或专用启动脚本。
+
+具体填写、Nacos配置、Topic及空间准备见[本机组件连接](docs/开发/部署说明.md#51-本机配置与连接)。[数据库初始化文档](docs/sql/README.md)保留原24表基线的手工SQL快照；新环境建空库后执行完整迁移链，已有手工结构先显式接管。当前完整迁移为user V1、ticket V2、knowledge V3和AI 0003，共31张自有表435字段。MQ事务回查、receiver/worker及领域mTLS RPC已接入；启动顺序及解析对账见部署说明。
+
+在desk-web目录执行npm ci、npm run typecheck、npm run lint、npm run format:check、npm run test、npm run build；npm run dev启动26199并将/api代理至26101。未交付业务返回明确错误，不以页面占位或健康UP表示业务可用。
+
+2026-11-14已实现P1–P8的本地开发范围，并取得现场容量/履约、真实OSS→MQ→AI→MinerU/Markdown→双索引→发布、客户/技术私有排障、人工草稿采用、共享反馈来源复核及固定故障分支的分项证据。Nacos动态规则、实际Gateway Reactive生命周期、XXL注册/触发/回调及Zipkin跨语言/持久worker接续通过。没有打印机及Microsoft 365环境，相关设备实测明确未验证；生产级MQ/ELK完整故障矩阵、非空旧库迁移、镜像交付和联合恢复留待实际部署。未部署业务应用，未改共享业务数据。具体结果和限制见[P0–P3记录](docs/开发计划/P0-P3实施与验收.md)、[P4–P6记录](docs/开发计划/P4-P6实施与验收.md)及[P7–P8本地交付与验收](docs/开发计划/P7-P8本地交付与验收.md)。

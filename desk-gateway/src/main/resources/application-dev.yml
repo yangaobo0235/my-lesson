@@ -1,9 +1,8 @@
+# 开发环境：先加载本机参数，再连接对应命名空间的Nacos；test仅用于隔离自动化测试。
 spring:
   config:
-    import: optional:file:./desk-gateway/src/main/resources/application-local.yml
-desk:
-  downstream:
-    user: ${DESK_USER_URL:http://127.0.0.1:28102}
-    ticket: ${DESK_TICKET_URL:http://127.0.0.1:28103}
-    knowledge: ${DESK_KNOWLEDGE_URL:http://127.0.0.1:28104}
-    ai: ${DESK_AI_URL:http://127.0.0.1:28105}
+    activate:
+      on-profile: '!test'
+    import: file:./desk-gateway/src/main/resources/application-local.yml
+---
+DESK_RESOURCE_ENV: test

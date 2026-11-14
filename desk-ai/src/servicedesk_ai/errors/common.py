@@ -1,6 +1,21 @@
 """维护与Java公共合同同义的数字错误，不存储传输状态。"""
 
 from enum import Enum
+from typing import Protocol
+
+
+class ErrorDefinition(Protocol):
+    """业务层只引用安全编号和提示，不携带HTTP状态。"""
+
+    @property
+    def code(self) -> int:
+        """返回登记编号。"""
+        ...
+
+    @property
+    def message(self) -> str:
+        """返回安全提示。"""
+        ...
 
 
 class CommonErrorCode(Enum):
@@ -35,7 +50,7 @@ class CommonErrorCode(Enum):
 class BusinessError(Exception):
     """在用例与适配层之间表达安全业务拒绝。"""
 
-    def __init__(self, error: CommonErrorCode) -> None:
+    def __init__(self, error: ErrorDefinition) -> None:
         """保留错误定义，不接收任意供应商原始消息。"""
         super().__init__(error.message)
         self.error = error

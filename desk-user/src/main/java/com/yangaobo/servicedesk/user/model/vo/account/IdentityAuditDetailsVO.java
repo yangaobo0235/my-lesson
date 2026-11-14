@@ -1,0 +1,28 @@
+package com.yangaobo.servicedesk.user.model.vo.account;
+
+import lombok.Data;
+
+import java.io.Serial;
+import java.io.Serializable;
+
+/**
+ * 不可变审计的公开历史投影，明确区分变更前后。
+ *
+ * @author yangaobo
+ */
+@Data
+public class IdentityAuditDetailsVO implements Serializable {
+    @Serial private static final long serialVersionUID = 1L;
+
+    /** 变更前；创建时为空。 */
+    @io.swagger.v3.oas.annotations.media.Schema(description = "变更前；创建时为空。")
+    private IdentityAuditStateVO before;
+
+    /** 变更后；不含内部配置。 */
+    @io.swagger.v3.oas.annotations.media.Schema(description = "变更后；不含内部配置。")
+    private IdentityAuditStateVO after;
+
+    /** 操作者提供的变更原因。 */
+    @io.swagger.v3.oas.annotations.media.Schema(description = "操作者提供的变更原因。")
+    private String reason;
+}

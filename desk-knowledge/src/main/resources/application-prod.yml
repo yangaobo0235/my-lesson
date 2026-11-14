@@ -1,5 +1,20 @@
+# 生产环境：参数由进程环境或受控运行配置提供，不导入开发机文件。
+spring:
+  config:
+    activate:
+      on-profile: '!test'
+    import: nacos:desk-knowledge.yaml?group=${DESK_NACOS_GROUP:DESK_GROUP}&refreshEnabled=true
+---
+DESK_RESOURCE_ENV: prod
+
+spring:
+  flyway:
+    user: ${DESK_KNOWLEDGE_MIGRATION_USERNAME}
+    password: ${DESK_KNOWLEDGE_MIGRATION_PASSWORD}
+
 server:
   address: ${DESK_BIND_ADDRESS:0.0.0.0}
+
 springdoc:
   api-docs:
     enabled: false

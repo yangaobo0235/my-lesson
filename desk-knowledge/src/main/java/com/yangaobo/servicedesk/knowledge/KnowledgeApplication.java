@@ -20,6 +20,11 @@ public class KnowledgeApplication {
      * @param args 启动参数
      */
     public static void main(String[] args) {
+        // Sentinel在Spring配置加载前初始化，显式设置其原生日志路径以避免写入用户HOME。
+        if (System.getProperty("csp.sentinel.log.dir") == null) {
+            String directory = System.getenv().getOrDefault("DESK_LOG_DIRECTORY", "./.local/runtime/logs");
+            System.setProperty("csp.sentinel.log.dir", directory + "/desk-knowledge/sentinel");
+        }
         SpringApplication.run(KnowledgeApplication.class, args);
     }
 }

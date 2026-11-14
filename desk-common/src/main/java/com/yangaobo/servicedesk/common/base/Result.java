@@ -1,5 +1,7 @@
 package com.yangaobo.servicedesk.common.base;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Objects;
@@ -50,7 +52,9 @@ public final class Result<T> implements Serializable {
      * @param data 有效载荷
      * @param traceId 请求追踪标识
      */
-    private Result(int code, String message, T data, String traceId) {
+    @JsonCreator
+    private Result(@JsonProperty("code") int code, @JsonProperty("message") String message,
+                   @JsonProperty("data") T data, @JsonProperty("traceId") String traceId) {
         this.code = code;
         this.message = message;
         this.data = data;

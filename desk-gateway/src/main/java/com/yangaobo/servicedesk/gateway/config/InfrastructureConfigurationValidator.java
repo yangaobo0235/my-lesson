@@ -48,11 +48,13 @@ public class InfrastructureConfigurationValidator implements InitializingBean {
             } catch (IllegalArgumentException exception) {
                 throw new IllegalStateException(errorMessage(key));
             }
-            if (!("http".equals(target.getScheme()) || "https".equals(target.getScheme()))
+            boolean discoveredJavaService = !"ai".equals(service)
+                    && ("lb://desk-" + service).equals(target.toString());
+            if (!discoveredJavaService && (!("http".equals(target.getScheme()) || "https".equals(target.getScheme()))
                     || target.getHost() == null || target.getUserInfo() != null
                     || target.getQuery() != null || target.getFragment() != null
                     || (target.getPath() != null && !target.getPath().isEmpty() && !"/".equals(target.getPath()))
-                    || target.getPort() == 0 || target.getPort() > 65535) {
+                    || target.getPort() == 0 || target.getPort() > 65535)) {
                 throw new IllegalStateException(errorMessage(key));
             }
         }
@@ -66,6 +68,6 @@ public class InfrastructureConfigurationValidator implements InitializingBean {
      */
     private String errorMessage(String key) {
         return systemEnvironment.getBaseEnvironment().getValue() + "环境的" + key
-                + "必须是无凭据、查询串及路径前缀的HTTP(S)服务地址";
+                + "必须是无凭据、查询串及路径前缀的HTTP(S)服务地址或所属Java服务的精确lb地址";
     }
 }

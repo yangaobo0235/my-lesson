@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
+from servicedesk_ai.errors.diagnosis import DiagnosisErrorCode
+from servicedesk_ai.infrastructure.identity import IdentityFailure
 from servicedesk_ai.schemas.result import Result
 
 LOGGER = logging.getLogger(__name__)
@@ -34,8 +36,16 @@ def _error_for_status(status: int) -> CommonErrorCode:
     return mapping.get(status, default)
 
 
-def _status_for_error(error: CommonErrorCode) -> int:
+def _status_for_error(error: CommonErrorCode | DiagnosisErrorCode) -> int:
     """只为已登记错误显式选择传输状态。"""
+    if isinstance(error, DiagnosisErrorCode):
+        return {
+            DiagnosisErrorCode.GENERATION_QUEUE_FULL: 503,
+            DiagnosisErrorCode.DAILY_GENERATION_LIMIT: 429,
+            DiagnosisErrorCode.RETRIEVAL_UNAVAILABLE: 503,
+            DiagnosisErrorCode.INDEX_UNAVAILABLE: 503,
+            DiagnosisErrorCode.DRAFT_EXPIRED: 409,
+        }[error]
     return {
         CommonErrorCode.INTERNAL_ERROR: 500,
         CommonErrorCode.INVALID_REQUEST: 400,
@@ -54,7 +64,9 @@ def _status_for_error(error: CommonErrorCode) -> int:
     }[error]
 
 
-def _response(request: Request, error: CommonErrorCode, status: int) -> JSONResponse:
+def _response(
+    request: Request, error: CommonErrorCode | DiagnosisErrorCode, status: int
+) -> JSONResponse:
     """只输出安全Result，不转发异常原始消息。"""
     trace_id = request.state.trace_id
     result = Result[None](code=error.code, message=error.message, trace_id=trace_id)
@@ -67,6 +79,35 @@ def _response(request: Request, error: CommonErrorCode, status: int) -> JSONResp
 
 def register_error_handlers(app: FastAPI) -> None:
     """向所属应用注册框架、输入、业务与未知错误转换。"""
+
+    @app.exception_handler(IdentityFailure)
+    async def identity_error(request: Request, exception: IdentityFailure) -> JSONResponse:
+        """只有可信user合同2001/2002为用户失效，服务认证失败保持依赖故障。"""
+        statuses = {
+            2001: 401,
+            2002: 401,
+            2004: 403,
+            1001: 400,
+            1003: 403,
+            1002: 404,
+            1004: 409,
+            3001: 409,
+            3101: 409,
+            1011: 503,
+            1012: 502,
+            1013: 504,
+        }
+        code = exception.code if exception.code in statuses else 1011
+        result = Result[None](
+            code=code,
+            message=exception.message if code == exception.code else "身份依赖暂不可用",
+            trace_id=request.state.trace_id,
+        )
+        return JSONResponse(
+            result.model_dump(mode="json", by_alias=True),
+            status_code=statuses[code],
+            headers={"X-Trace-Id": request.state.trace_id},
+        )
 
     @app.exception_handler(HTTPException)
     async def framework_error(request: Request, exception: HTTPException) -> JSONResponse:
@@ -87,7 +128,7 @@ def register_error_handlers(app: FastAPI) -> None:
     async def business_error(request: Request, exception: BusinessError) -> JSONResponse:
         """仅允许已登记公共错误；本地未知类型回退500/1。"""
         error = exception.error
-        if not isinstance(error, CommonErrorCode):
+        if not isinstance(error, (CommonErrorCode, DiagnosisErrorCode)):
             error = CommonErrorCode.INTERNAL_ERROR
         return _response(request, error, _status_for_error(error))
 

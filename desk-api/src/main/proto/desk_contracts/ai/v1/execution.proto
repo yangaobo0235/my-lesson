@@ -1,0 +1,50 @@
+syntax = "proto3";
+package servicedesk.ai.v1;
+import "desk_contracts/common/v1/common.proto";
+import "desk_contracts/knowledge/v1/source.proto";
+option java_package = "com.yangaobo.servicedesk.api.ai.v1";
+option java_multiple_files = true;
+
+// 任务仅经MQ受理，RPC没有提交或取消旁路。
+service IndexJobService { rpc GetStatus(IndexStatusRequest) returns (IndexStatus); }
+service ActionDraftService { rpc ValidateDraft(ValidateDraftRequest) returns (ValidatedDraft); }
+service EvidenceContextService { rpc ResolveContext(EvidenceContextRequest) returns (servicedesk.knowledge.v1.SourceQuery); }
+message IndexStatusRequest { string job_id = 1; }
+message IndexStatus {
+  string job_id = 1;
+  string request_hash = 2;
+  string last_command = 3;
+  string status = 4;
+  optional string stage = 5;
+  string parser_state = 6;
+  optional int32 page_count = 7;
+  int32 chunk_count = 8;
+  bool replicas_verified = 9;
+}
+message ValidateDraftRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string draft_id = 2;
+  string purpose = 3;
+  string customer_id = 4;
+  optional string service_item_id = 5;
+  optional string device_id = 6;
+  optional string ticket_id = 7;
+  optional int64 ticket_version = 8;
+}
+// 草稿仅返回最小确认事实；不保存消费结果或第二份工单事实。
+message ValidatedDraft {
+  string id = 1;
+  string source_generation_id = 2;
+  string purpose = 3;
+  string title = 4;
+  string symptom = 5;
+  string attempted_actions = 6;
+  string content = 7;
+  optional string resolution_type = 8;
+  optional string referral_target = 9;
+}
+message EvidenceContextRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string generation_id = 2;
+  string source_usage_id = 3;
+}

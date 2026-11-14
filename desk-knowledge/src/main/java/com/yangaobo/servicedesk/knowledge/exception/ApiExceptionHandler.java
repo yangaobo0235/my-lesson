@@ -39,9 +39,11 @@ public class ApiExceptionHandler {
     public ResponseEntity<Result<Void>> handle(Exception exception, HttpServletRequest request) {
         String traceId = RequestTraceFilter.traceId(request);
         if (exception instanceof BusinessException business) {
-            CommonErrorCode error = HttpErrorMapping.registered(business.getErrorCode());
-            return ResponseEntity.status(HttpErrorMapping.statusOf(error))
-                    .body(Result.failure(error, traceId));
+            var error = HttpErrorMapping.registered(business.getErrorCode());
+            var response = ResponseEntity.status(HttpErrorMapping.statusOf(error));
+            if (error == com.yangaobo.servicedesk.knowledge.model.enums.DocumentErrorCode.UPLOAD_IN_PROGRESS)
+                response.header("Retry-After", "2");
+            return response.body(Result.failure(error, traceId));
         }
         if (exception instanceof ErrorResponse framework) {
             int status = framework.getStatusCode().value();

@@ -12,7 +12,8 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check .",
-    "build": "npm run typecheck && vite build"
+    "build": "npm run typecheck && vite build",
+    "test": "vitest run"
   },
   "dependencies": {
     "element-plus": "2.14.7",
@@ -31,6 +32,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.1",
     "vite": "7.3.7",
+    "vitest": "5.1.0",
     "vue-tsc": "3.3.14"
   },
   "packageManager": "npm@11.19.1",

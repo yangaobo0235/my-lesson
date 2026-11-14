@@ -1,0 +1,43 @@
+# 本机开发模板：复制为同目录application-local.yml后填写。
+# IDEA/Java工作目录设为仓库根目录，默认dev，填写后直接运行Application，无需额外Profile。
+# 此文件及真实副本均不进入classes/JAR；只填写本服务凭据，不放模型或其他服务密钥。
+
+# 本机可被服务器访问的IPv4，用于Nacos注册与XXL回调。
+DESK_APP_HOST: ""
+# 监听地址须与服务消费者可达地址一致；Gateway默认仅回环。
+DESK_BIND_ADDRESS: "${DESK_APP_HOST}"
+DESK_COMPONENT_HOST: "192.168.23.66"
+DESK_LOG_DIRECTORY: "./.local/runtime/logs"
+# 启动时执行本服务尚未应用的版本化迁移；开发使用同一root账号。
+DESK_MIGRATIONS_ENABLED: "true"
+DESK_NACOS_GROUP: "DESK_GROUP"
+# 真实namespace ID，不是控制台显示名称；desk-test须预建。
+DESK_NACOS_NAMESPACE: "desk-test"
+DESK_NACOS_PASSWORD: ""
+DESK_NACOS_USERNAME: "nacos"
+DESK_RESOURCE_ENV: "test"
+DESK_TRACE_SAMPLING: "0.1"
+DESK_USER_DB_PASSWORD: ""
+DESK_USER_DB_USERNAME: "root"
+DESK_USER_MIGRATION_PASSWORD: "${DESK_USER_DB_PASSWORD}"
+DESK_USER_MIGRATION_USERNAME: "${DESK_USER_DB_USERNAME}"
+DESK_USER_REDIS_PASSWORD: ""
+DESK_USER_REDIS_USERNAME: "default"
+
+# 链式导入保证配置中心读取前已取得上面的本机参数。
+spring:
+  config:
+    import: nacos:desk-user.yaml?group=${DESK_NACOS_GROUP:DESK_GROUP}&refreshEnabled=true
+
+# 独立随机密钥，至少32字节，供会话绑定CSRF令牌使用。
+DESK_USER_CSRF_SECRET: ""
+
+# 三个调用方分别生成独立凭据，仅分发给对应服务。
+DESK_TICKET_USER_TOKEN: ""
+DESK_KNOWLEDGE_USER_TOKEN: ""
+DESK_AI_USER_TOKEN: ""
+
+# 身份RPC独立开发CA及user证书；不允许明文回退。
+DESK_RPC_CA_FILE: ""
+DESK_USER_RPC_CERTIFICATE_FILE: ""
+DESK_USER_RPC_PRIVATE_KEY_FILE: ""

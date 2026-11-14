@@ -1,9 +1,79 @@
+# 公共配置：默认开发环境，所需组件随应用装配；凭据由环境或本机文件提供。
 server:
   address: ${DESK_BIND_ADDRESS:127.0.0.1}
-  port: 28104
+  port: 26104
+
 spring:
+  servlet:
+    multipart:
+      location: ${DESK_KNOWLEDGE_UPLOAD_DIRECTORY:./.local/runtime/knowledge/uploads}
+      max-file-size: 20MB
+      max-request-size: 21MB
+      file-size-threshold: 0
   application:
     name: desk-knowledge
+  cloud:
+    nacos:
+      discovery:
+        enabled: true
+        server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+        namespace: ${DESK_NACOS_NAMESPACE}
+        group: ${DESK_NACOS_GROUP:DESK_GROUP}
+        username: ${DESK_NACOS_USERNAME:nacos}
+        password: ${DESK_NACOS_PASSWORD}
+        ip: ${DESK_APP_HOST}
+      config:
+        enabled: true
+        server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+        namespace: ${DESK_NACOS_NAMESPACE}
+        group: ${DESK_NACOS_GROUP:DESK_GROUP}
+        username: ${DESK_NACOS_USERNAME:nacos}
+        password: ${DESK_NACOS_PASSWORD}
+    sentinel:
+      enabled: true
+      eager: true
+      transport:
+        port: 26704
+      datasource:
+        flow:
+          nacos:
+            server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+            namespace: ${DESK_NACOS_NAMESPACE}
+            group-id: ${DESK_NACOS_GROUP:DESK_GROUP}
+            data-id: desk-knowledge-${DESK_RESOURCE_ENV}-flow.json
+            username: ${DESK_NACOS_USERNAME:nacos}
+            password: ${DESK_NACOS_PASSWORD}
+            rule-type: flow
+            data-type: json
+        degrade:
+          nacos:
+            server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+            namespace: ${DESK_NACOS_NAMESPACE}
+            group-id: ${DESK_NACOS_GROUP:DESK_GROUP}
+            data-id: desk-knowledge-${DESK_RESOURCE_ENV}-degrade.json
+            username: ${DESK_NACOS_USERNAME:nacos}
+            password: ${DESK_NACOS_PASSWORD}
+            rule-type: degrade
+            data-type: json
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 2000
+            readTimeout: 5000
+            loggerLevel: none
+          desk-user:
+            readTimeout: 3000
+  flyway:
+    enabled: ${DESK_MIGRATIONS_ENABLED:true}
+    url: ${spring.datasource.url}
+    user: ${DESK_KNOWLEDGE_MIGRATION_USERNAME:${spring.datasource.username}}
+    password: ${DESK_KNOWLEDGE_MIGRATION_PASSWORD:${spring.datasource.password}}
+    locations: classpath:db/migration,classpath:com/yangaobo/servicedesk/knowledge/migration
+    clean-disabled: true
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    validate-migration-naming: true
   profiles:
     default: dev
   web:
@@ -11,7 +81,27 @@ spring:
       add-mappings: false
   jackson:
     default-property-inclusion: always
+  datasource:
+    url: jdbc:mysql://${DESK_COMPONENT_HOST:192.168.23.66}:3306/desk_knowledge_${DESK_RESOURCE_ENV}?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8&connectTimeout=2000&socketTimeout=5000
+    username: ${DESK_KNOWLEDGE_DB_USERNAME:desk_knowledge_${DESK_RESOURCE_ENV}}
+    password: ${DESK_KNOWLEDGE_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 0
+      connection-timeout: 3000
+      validation-timeout: 2000
+      initialization-fail-timeout: -1
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+      connection-init-sql: SET SESSION time_zone = '+00:00', innodb_lock_wait_timeout = 2, wait_timeout = 60
+
 management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: ${DESK_TRACE_SAMPLING:0.1}
+    propagation:
+      type: w3c
   endpoints:
     web:
       exposure:
@@ -19,6 +109,15 @@ management:
   endpoint:
     health:
       show-details: never
+  zipkin:
+    tracing:
+      endpoint: http://${DESK_COMPONENT_HOST:192.168.23.66}:9411/api/v2/spans
+  health:
+    db:
+      enabled: false
+    redis:
+      enabled: false
+
 springdoc:
   api-docs:
     enabled: false
@@ -26,3 +125,74 @@ springdoc:
   swagger-ui:
     enabled: false
   paths-to-match: /api/v1/**
+
+desk:
+  support:
+    ai-token: ${DESK_AI_SERVICE_TOKEN}
+    ticket-token: ${DESK_KNOWLEDGE_TICKET_TOKEN}
+    rpc:
+      host: ${DESK_BIND_ADDRESS:127.0.0.1}
+      port: 26204
+      ca-file: ${DESK_KNOWLEDGE_RPC_CA_FILE}
+      certificate-file: ${DESK_KNOWLEDGE_RPC_CERTIFICATE_FILE}
+      private-key-file: ${DESK_KNOWLEDGE_RPC_PRIVATE_KEY_FILE}
+  ai:
+    rpc:
+      target: ${DESK_AI_RPC_TARGET:localhost:26205}
+      token: ${DESK_KNOWLEDGE_AI_RPC_TOKEN}
+      ca-file: ${DESK_KNOWLEDGE_RPC_CA_FILE}
+      certificate-file: ${DESK_KNOWLEDGE_RPC_CERTIFICATE_FILE}
+      private-key-file: ${DESK_KNOWLEDGE_RPC_PRIVATE_KEY_FILE}
+  identity:
+    user-token: ${DESK_KNOWLEDGE_USER_TOKEN}
+  infrastructure:
+    enabled: true
+    resource-env: ${DESK_RESOURCE_ENV}
+  internal:
+    user-http-timeout: 3s
+    rpc-connect-timeout: 2s
+    rpc-max-message-bytes: 4194304
+  xxl-job:
+    admin-addresses: http://${DESK_COMPONENT_HOST:192.168.23.66}:28088/xxl-job-admin
+    access-token: ${DESK_XXL_ACCESS_TOKEN}
+    app-name: desk-knowledge-${DESK_RESOURCE_ENV}
+    address: http://${DESK_APP_HOST}:29902/
+    ip: ${DESK_APP_HOST}
+    port: 29902
+    log-path: ${DESK_LOG_DIRECTORY:./.local/runtime/logs}/desk-knowledge/xxl-job
+    log-retention-days: 3
+  redisson:
+    address: redis://${DESK_COMPONENT_HOST:192.168.23.66}:6379
+    username: ${DESK_KNOWLEDGE_REDIS_USERNAME:default}
+    password: ${DESK_KNOWLEDGE_REDIS_PASSWORD}
+    database: 0
+    watchdog-timeout-ms: 30000
+    wait-timeout-ms: 2000
+    key-prefix: 'desk:${DESK_RESOURCE_ENV}:knowledge:upload:'
+  oss:
+    region: ${DESK_OSS_REGION:cn-hangzhou}
+    endpoint: ${DESK_OSS_ENDPOINT:https://oss-cn-hangzhou.aliyuncs.com}
+    bucket: ${DESK_OSS_BUCKET}
+    access-key-id: ${DESK_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${DESK_OSS_ACCESS_KEY_SECRET}
+    object-prefix: desk/${DESK_RESOURCE_ENV}/originals/
+  rocketmq:
+    endpoints: ${DESK_COMPONENT_HOST:192.168.23.66}:8081
+    access-key: ${DESK_MQ_PRODUCER_ACCESS_KEY}
+    secret-key: ${DESK_MQ_PRODUCER_SECRET_KEY}
+    tls-enabled: ${DESK_MQ_TLS_ENABLED:false}
+    topic: desk-knowledge-index-command-${DESK_RESOURCE_ENV}
+    request-timeout-seconds: 10
+
+logging:
+  structured:
+    format:
+      file: logstash
+  file:
+    name: ${DESK_LOG_DIRECTORY:./.local/runtime/logs}/desk-knowledge/application.json
+  logback:
+    rollingpolicy:
+      file-name-pattern: ${DESK_LOG_DIRECTORY:./.local/runtime/logs}/desk-knowledge/application.%d{yyyy-MM-dd}.%i.json
+      max-file-size: 20MB
+      max-history: 3
+      total-size-cap: 512MB

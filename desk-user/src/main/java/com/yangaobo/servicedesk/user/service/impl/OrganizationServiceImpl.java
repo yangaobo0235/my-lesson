@@ -1,0 +1,148 @@
+package com.yangaobo.servicedesk.user.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
+import com.yangaobo.servicedesk.common.base.CommonErrorCode;
+import com.yangaobo.servicedesk.common.base.PageVO;
+import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.user.mapper.AccountMapper;
+import com.yangaobo.servicedesk.user.mapper.OrganizationMapper;
+import com.yangaobo.servicedesk.user.model.entity.OrganizationEntity;
+import com.yangaobo.servicedesk.user.model.form.auth.IdentityQueryForm;
+import com.yangaobo.servicedesk.user.model.form.organization.OrganizationCreateForm;
+import com.yangaobo.servicedesk.user.model.form.organization.OrganizationUpdateForm;
+import com.yangaobo.servicedesk.user.model.vo.organization.OrganizationVO;
+import com.yangaobo.servicedesk.user.service.IIdentityAdministrationService;
+import com.yangaobo.servicedesk.user.service.IOrganizationService;
+
+import lombok.RequiredArgsConstructor;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Locale;
+import java.util.UUID;
+
+/**
+ * 组织的业务边界。
+ *
+ * @author yangaobo
+ */
+@Service
+@RequiredArgsConstructor
+@ConditionalOnProperty(name = "desk.identity.enabled", havingValue = "true", matchIfMissing = true)
+public class OrganizationServiceImpl extends ServiceImpl<OrganizationMapper, OrganizationEntity>
+        implements IOrganizationService {
+    private final AccountMapper accountMapper;
+    private final IIdentityAdministrationService administration;
+
+    /** {@inheritDoc} */
+    @Override
+    public PageVO<OrganizationVO> listOrganizations(IdentityDTO actor, IdentityQueryForm form) {
+        administration.requireAdministrator(actor);
+        LambdaQueryWrapper<OrganizationEntity> query =
+                new LambdaQueryWrapper<OrganizationEntity>()
+                        .eq(
+                                form.getStatus() != null,
+                                OrganizationEntity::getStatus,
+                                form.getStatus());
+        if (form.getKeyword() != null && !form.getKeyword().isBlank())
+            query.likeRight(OrganizationEntity::getOrganizationName, form.getKeyword().strip());
+        long total = baseMapper.selectCount(query);
+        query.orderByAsc(OrganizationEntity::getId)
+                .last(
+                        "LIMIT "
+                                + form.getPageSize()
+                                + " OFFSET "
+                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
+        PageVO<OrganizationVO> result = new PageVO<>();
+        result.setRecords(baseMapper.selectList(query).stream().map(this::view).toList());
+        result.setTotal(total);
+        result.setPageNum(form.getPageNum());
+        result.setPageSize(form.getPageSize());
+        return result;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public OrganizationVO query(IdentityDTO actor, String id) {
+        administration.requireAdministrator(actor);
+        OrganizationEntity organization = baseMapper.selectById(id);
+        if (organization == null) throw new BusinessException(CommonErrorCode.NOT_FOUND);
+        return view(organization);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    @Transactional
+    public OrganizationVO create(IdentityDTO actor, OrganizationCreateForm form) {
+        administration.lockAdministrator(actor);
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(UUID.randomUUID().toString().replace("-", ""));
+        organization.setOrganizationCode(
+                form.getOrganizationCode().strip().toLowerCase(Locale.ROOT));
+        organization.setOrganizationName(form.getOrganizationName().strip());
+        organization.setOrganizationType("CUSTOMER");
+        organization.setStatus("ACTIVE");
+        organization.setRowVersion(0L);
+        organization.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        organization.setUpdatedAt(organization.getCreatedAt());
+        baseMapper.insert(organization);
+        OrganizationVO result = view(organization);
+        administration.audit(
+                actor.getOwnerId(),
+                null,
+                organization.getId(),
+                "ORGANIZATION_CREATED",
+                null,
+                result,
+                "管理员开通客户组织");
+        return result;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    @Transactional
+    public OrganizationVO updateOrganization(IdentityDTO actor, OrganizationUpdateForm form) {
+        administration.lockAdministrator(actor);
+        OrganizationEntity organization = baseMapper.lock(form.getId());
+        if (organization == null) throw new BusinessException(CommonErrorCode.NOT_FOUND);
+        if (!organization.getRowVersion().equals(form.getRowVersion()))
+            throw new BusinessException(CommonErrorCode.CONFLICT);
+        OrganizationVO before = view(organization);
+        organization.setOrganizationName(form.getOrganizationName().strip());
+        organization.setStatus(form.getStatus());
+        organization.setRowVersion(organization.getRowVersion() + 1);
+        organization.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        baseMapper.updateById(organization);
+        if (!before.getStatus().equals(organization.getStatus()))
+            accountMapper.revokeOrganization(organization.getId());
+        administration.ensureAdministrator();
+        OrganizationVO after = view(organization);
+        administration.audit(
+                actor.getOwnerId(),
+                null,
+                organization.getId(),
+                "ORGANIZATION_UPDATED",
+                before,
+                after,
+                form.getReason());
+        return after;
+    }
+
+    /** 显式映射组织公开字段。 */
+    private OrganizationVO view(OrganizationEntity entity) {
+        OrganizationVO result = new OrganizationVO();
+        result.setId(entity.getId());
+        result.setOrganizationCode(entity.getOrganizationCode());
+        result.setOrganizationName(entity.getOrganizationName());
+        result.setOrganizationType(entity.getOrganizationType());
+        result.setStatus(entity.getStatus());
+        result.setRowVersion(entity.getRowVersion());
+        return result;
+    }
+}

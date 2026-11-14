@@ -16,7 +16,7 @@ from servicedesk_ai.main import create_app
 @pytest_asyncio.fixture
 async def client() -> AsyncIterator[httpx.AsyncClient]:
     """以真实应用边界构造隔离ASGI客户端。"""
-    app = create_app(Settings(environment="dev"))
+    app = create_app(Settings(infrastructure_enabled=False, environment="dev"))
     _register_probes(app)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as session:
@@ -105,7 +105,9 @@ async def test_documentation_is_native_in_dev_and_closed_in_prod(client: httpx.A
     assert development.status_code == 200
     assert development.json()["openapi"].startswith("3.")
     assert "code" not in development.json()
-    transport = httpx.ASGITransport(app=create_app(Settings(environment="prod")))
+    transport = httpx.ASGITransport(
+        app=create_app(Settings(infrastructure_enabled=False, environment="prod"))
+    )
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as production:
         for path in ["/openapi.json", "/docs", "/redoc"]:
             assert (await production.get(path)).status_code == 404

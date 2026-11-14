@@ -29,12 +29,26 @@ def main() -> None:
         names = set(archive.namelist())
         required = {
             "servicedesk_ai/main.py",
+            "servicedesk_ai/migrations/env.py",
+            "servicedesk_ai/migrations/script.py.mako",
+            "servicedesk_ai/migrations/versions/0001_initial_schema.py",
+            "servicedesk_ai/migrations/versions/0002_office_it_support.py",
+            "servicedesk_ai/migrations/versions/0003_restore_original_digest.py",
+            "servicedesk_ai/migrations/sql/0002_office_it_support.sql",
+            "servicedesk_ai/worker.py",
+            "servicedesk_ai/receiver.py",
+            "servicedesk_ai/reconcile_parser.py",
             "desk_contracts/common/v1/common_pb2.py",
             "desk_contracts/common/v1/common_pb2_grpc.py",
             "desk_contracts/common/v1/common_pb2.pyi",
+            "desk_contracts/ticket/v1/support_pb2.py",
+            "desk_contracts/knowledge/v1/source_pb2.py",
+            "desk_contracts/ai/v1/execution_pb2.py",
         }
         if not required <= names:
             raise RuntimeError("AI制品未包含完整生成合同")
+        if any(Path(name).name.startswith(".env") for name in names):
+            raise RuntimeError("AI制品不得包含本机dotenv配置或模板")
     print(wheels[-1])
 
 

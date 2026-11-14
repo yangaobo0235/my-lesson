@@ -1,23 +1,25 @@
 package com.yangaobo.servicedesk.ticket.component.web;
 
+import io.micrometer.tracing.Tracer;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * 为尚未接入可信分布式追踪的请求建立本地关联标识。
+ * 复用当前Micrometer span作为请求关联标识，隔离测试关闭追踪时生成本地标识。
  *
  * @author yangaobo
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class RequestTraceFilter extends OncePerRequestFilter {
 
     /**
@@ -25,8 +27,19 @@ public class RequestTraceFilter extends OncePerRequestFilter {
      */
     public static final String TRACE_ATTRIBUTE = RequestTraceFilter.class.getName() + ".traceId";
 
+    /** 当前应用追踪器，测试关闭追踪时允许不存在。 */
+    private final ObjectProvider<Tracer> tracerProvider;
+
     /**
-     * 在业务处理前生成标识，不接受客户端传入的追踪身份。
+     * 注入由应用显式启用的追踪器，不创建第二个分布式上下文。
+     * @param tracerProvider 可选Micrometer追踪器
+     */
+    public RequestTraceFilter(ObjectProvider<Tracer> tracerProvider) {
+        this.tracerProvider = tracerProvider;
+    }
+
+    /**
+     * 在业务处理前接续可信内部追踪；公开Gateway负责清理外来头。
      *
      * @param request 当前请求
      * @param response 当前响应
@@ -37,7 +50,10 @@ public class RequestTraceFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        request.setAttribute(TRACE_ATTRIBUTE, UUID.randomUUID().toString().replace("-", ""));
+        Tracer tracer = tracerProvider.getIfAvailable();
+        String traceId = tracer != null && tracer.currentSpan() != null
+                ? tracer.currentSpan().context().traceId() : UUID.randomUUID().toString().replace("-", "");
+        request.setAttribute(TRACE_ATTRIBUTE, traceId);
         response.setHeader("X-Trace-Id", traceId(request));
         filterChain.doFilter(request, response);
     }

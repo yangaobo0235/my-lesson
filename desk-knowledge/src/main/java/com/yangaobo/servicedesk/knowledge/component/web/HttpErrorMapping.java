@@ -23,8 +23,12 @@ public final class HttpErrorMapping {
      * @param error 业务错误
      * @return 可公开展示的已登记错误
      */
-    public static CommonErrorCode registered(ErrorCode error) {
-        return error instanceof CommonErrorCode common ? common : CommonErrorCode.INTERNAL_ERROR;
+    public static ErrorCode registered(ErrorCode error) {
+        return error instanceof CommonErrorCode
+                || error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError
+                || error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteSupportError
+                || error instanceof com.yangaobo.servicedesk.knowledge.model.enums.DocumentErrorCode
+                ? error : CommonErrorCode.INTERNAL_ERROR;
     }
 
     /**
@@ -34,7 +38,17 @@ public final class HttpErrorMapping {
      * @return 明确的HTTP状态
      */
     public static HttpStatus statusOf(ErrorCode error) {
-        return switch (registered(error)) {
+        if (error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError identity)
+            return identity == com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError.PASSWORD_CHANGE_REQUIRED
+                    ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED;
+        if (error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteSupportError) return HttpStatus.CONFLICT;
+        if (error instanceof com.yangaobo.servicedesk.knowledge.model.enums.DocumentErrorCode document)
+            return switch (document) {
+                case UPLOAD_IN_PROGRESS -> HttpStatus.CONFLICT;
+                case INVALID_PDF_TYPE -> HttpStatus.UNSUPPORTED_MEDIA_TYPE;
+                case EMPTY_PDF -> HttpStatus.BAD_REQUEST;
+            };
+        return switch ((CommonErrorCode) registered(error)) {
             case INVALID_REQUEST -> HttpStatus.BAD_REQUEST;
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;

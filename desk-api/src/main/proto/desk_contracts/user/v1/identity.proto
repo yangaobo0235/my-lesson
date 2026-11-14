@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package servicedesk.user.v1;
+
+import "desk_contracts/common/v1/common.proto";
+
+option java_package = "com.yangaobo.servicedesk.api.user.v1";
+option java_multiple_files = true;
+option java_outer_classname = "IdentityContract";
+
+// AI进程经独立TLS端口核验身份；服务凭据只在metadata传输。
+service IdentityService {
+  // 浏览器请求原Cookie只交给user，写请求必须带原CSRF。
+  rpc VerifyBrowserSession(VerifyBrowserSessionRequest) returns (VerifiedIdentity);
+  // 后台复核原会话引用，角色和客户范围重新读取当前数据库。
+  rpc VerifySessionRef(servicedesk.common.v1.ActorRef) returns (VerifiedIdentity);
+}
+
+message VerifyBrowserSessionRequest {
+  // 原始Cookie请求头，不得记录到日志。
+  string cookie = 1;
+  // 原始HTTP方法。
+  string method = 2;
+  // 写请求的原始CSRF令牌。
+  optional string csrf_token = 3;
+}
+
+message VerifiedIdentity {
+  // 可交给后续后台用例的非登录凭据引用。
+  servicedesk.common.v1.ActorRef actor = 1;
+  // 当前组织标识。
+  string organization_id = 2;
+  // CUSTOMER或SERVICE_PROVIDER。
+  string organization_type = 3;
+  // 当前显示名。
+  string display_name = 4;
+  // 当前角色，接收方不得扩大权限。
+  repeated string roles = 5;
+  // 当前授权客户范围。
+  repeated string customer_ids = 6;
+}

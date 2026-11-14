@@ -1,5 +1,6 @@
 .idea/
 .vscode/
+/.local/
 *.iml
 target/
 node_modules/
@@ -16,6 +17,8 @@ __pycache__/
 !.env.example
 application-local*.yml
 application-local*.yaml
+!application-local.example.yml
+!application-local.example.yaml
 coverage/
 
 # 构建时从desk-api生成，运行制品必须包含，源码不提交。
@@ -24,3 +27,9 @@ desk-ai/src/desk_contracts/
 build/
 .coverage
 htmlcov/
+
+# 本机运行日志及内部TLS私钥不得进入源码。
+logs/
+*.key
+*.p12
+*.pfx

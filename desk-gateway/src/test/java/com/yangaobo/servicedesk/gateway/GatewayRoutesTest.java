@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @author yangaobo
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles({"dev", "test"})
 class GatewayRoutesTest {
 
     /**
@@ -101,6 +103,7 @@ class GatewayRoutesTest {
                     "/api/v1/knowledge/probe", "/api/v1/ai/probe",
                     "/api/v1/admin/organization/query", "/api/v1/admin/account/list",
                     "/api/v1/admin/audit-event/list", "/api/v1/admin/product-model/list",
+                    "/api/v1/admin/service-item/list", "/api/v1/admin/service-entitlement/query",
                     "/api/v1/admin/device/query", "/api/v1/admin/onsite-slot/list",
                     "/api/v1/admin/onsite-booking/query", "/api/v1/admin/document-series/list",
                     "/api/v1/admin/document/query", "/api/v1/admin/document-event/list",
@@ -111,7 +114,8 @@ class GatewayRoutesTest {
                 assertEquals(path, response.body(), path);
                 assertEquals(java.util.List.of("c".repeat(32)), response.headers().allValues("X-Trace-Id"), path);
             }
-            for (String path : new String[]{"/api/v1/admin/unknown/query", "/internal/v1/users/probe",
+            for (String path : new String[]{"/api/v1/admin/service-item-extra/query", "/api/v1/admin/service-entitlements/query",
+                    "/api/v1/admin/unknown/query", "/internal/v1/users/probe",
                     "/v3/api-docs", "/swagger-ui.html", "/api/v1/admin/accounting/list"}) {
                 HttpResponse<String> response = client.send(request(path).build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(404, response.statusCode(), path);

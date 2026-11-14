@@ -1,0 +1,28 @@
+# 仅供自动化测试：不读取本机凭据、不注册服务、不连接真实组件。
+DESK_RESOURCE_ENV: ci
+
+desk:
+  ticket:
+    enabled: false
+  infrastructure:
+    enabled: false
+
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+        import-check:
+          enabled: false
+    sentinel:
+      enabled: false
+  flyway:
+    enabled: false
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+management:
+  tracing:
+    enabled: false

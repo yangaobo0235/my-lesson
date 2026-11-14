@@ -1,0 +1,71 @@
+syntax = "proto3";
+package servicedesk.ticket.v1;
+import "desk_contracts/common/v1/common.proto";
+option java_package = "com.yangaobo.servicedesk.api.ticket.v1";
+option java_multiple_files = true;
+
+// AI只读支持范围与当前工单，不允许内部RPC执行业务写入。
+service SupportAccessService {
+  rpc CheckContext(ContextRequest) returns (SupportContext);
+  rpc ReadTicketContext(TicketRequest) returns (SupportContext);
+  rpc ReadTicketEvents(TicketEventsRequest) returns (TicketEvents);
+  rpc VerifyTicketContext(VerifyTicketRequest) returns (SupportContext);
+}
+// 用户明确报告的环境，不作为遥测实证。
+message Environment {
+  optional string os_name = 1;
+  optional string os_version = 2;
+  optional string software_name = 3;
+  optional string software_version = 4;
+  string connection_type = 5;
+  string affected_scope = 6;
+  optional string error_code = 7;
+}
+message ContextRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string purpose = 2;
+  string service_item_id = 3;
+  optional string device_id = 4;
+  Environment environment = 5;
+}
+message TicketRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string ticket_id = 2;
+}
+// 受理资格与设备事实由ticket重新核验。
+message SupportContext {
+  string customer_id = 1;
+  optional string service_item_id = 2;
+  optional string device_id = 3;
+  optional string product_model_id = 4;
+  Environment environment = 5;
+  optional string ticket_id = 6;
+  optional int64 ticket_version = 7;
+  string support_scope = 8;
+  string title = 9;
+  string symptom = 10;
+  string status = 11;
+  optional string assignee_id = 12;
+}
+message TicketEventsRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string ticket_id = 2;
+  repeated string event_ids = 3;
+  optional int32 after_sequence = 4;
+  int32 limit = 5;
+}
+message TicketEvent {
+  string id = 1;
+  int32 sequence = 2;
+  string event_type = 3;
+  string visibility = 4;
+  string content = 5;
+  string created_at = 6;
+}
+message TicketEvents { repeated TicketEvent events = 1; }
+message VerifyTicketRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string ticket_id = 2;
+  int64 ticket_version = 3;
+  repeated string event_ids = 4;
+}

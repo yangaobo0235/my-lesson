@@ -99,7 +99,7 @@ public class DocumentAdminController {
 
 | 服务性质 | 接口与实现 | 数据访问 |
 | --- | --- | --- |
-| 有自然主实体 | IXxxService extends `IService<Entity>`；XxxServiceImpl extends `ServiceImpl<Mapper, Entity>` | 主实体 Mapper extends `BaseMapper<Entity>` |
+| 有自然主实体 | IXxxService extends `IService<Entity>`；XxxServiceImpl extends `ServiceImpl<Mapper, Entity>` | 单id主实体Mapper extends `BaseMapper<Entity>` |
 | 无自然主实体的业务聚合/编排 | 普通 IXxxService 与 XxxServiceImpl | 组合业务 Service 或专用查询 Mapper |
 | 独立技术能力 | Component，有替换/隔离需要时提供技术接口 | 对应客户端，不虚构业务实体 |
 
@@ -108,13 +108,15 @@ MyBatis-Plus 3.5.18 的 IService 和 ServiceImpl 分别使用 `com.baomidou.myba
 | 本项目职责 | 主实体或组织方式 |
 | --- | --- |
 | 账号与认证、组织 | UserEntity、OrganizationEntity；各稳定职责使用三件套，可共享实体 Mapper |
-| 型号、设备、工单 | ProductModelEntity、DeviceEntity、TicketEntity；状态与时间线/通知可跨表 |
+| 服务项目、开通范围、型号、设备及工单 | ServiceItemEntity、ServiceEntitlementEntity、ProductModelEntity、DeviceEntity、TicketEntity；按完整资格/处理用例跨表，不按表机械建CRUD |
 | 上门时段、申请确认 | OnsiteSlotEntity、OnsiteBookingEntity；容量事务属于确认用例 |
 | 资料、发布与索引协调 | DocumentEntity，配合系列、关联、事件及IndexJobEntity本地尝试/事务事实，不设投递表 |
 | 工单工作台概况 | ITicketOverviewService / TicketOverviewServiceImpl，普通聚合服务，无概况实体 |
 | 索引副本运维等无主实体用例 | 按实际消费者定义普通接口和实现，不挂无关实体、不搬入 Component |
 
-一个 Service 可跨表，多个独立职责的 Service 可共享主实体。不按每张表生成接口，也不因统计工单就强迫概况继承 TicketEntity 三件套。ticket 的通知和时间线可由维护工单完整动作的服务协作，不为凑数量拆模块。
+MyBatis-Plus不支持复合主键通用CRUD。具有生命周期的客户资格使用单id及(customer_id,service_item_id)唯一键；角色/人员范围等纯关联复合主键由所属完整用例Mapper显式操作，不声明双@TableId或给其生成错误的getById。目录/资格与不可变it_service_event同事务，后者不是单独审计CRUD服务。
+
+一个Service可跨表，多个独立职责的 Service 可共享主实体。不按每张表生成接口，也不因统计工单就强迫概况继承 TicketEntity 三件套。ticket 的通知和时间线可由维护工单完整动作的服务协作，不为凑数量拆模块。
 
 ### 3.2 完整动作与 Mapper 使用
 
@@ -125,6 +127,8 @@ MyBatis-Plus 3.5.18 的 IService 和 ServiceImpl 分别使用 `com.baomidou.myba
 Service 可接收普通 Form、操作者及明确参数，返回安全 VO、内部结果或无传输依赖的业务事件。取得 Cookie、读取 Session、写响应及 SSE 编码由 Web 边界负责。
 
 ### 3.3 事务与并发
+
+服务资格由ticket的项目及客户开通范围维护，设备可空，不用设备到期替代服务资格。采用AI草稿仍调用原建单/记录/解决用例，先查回执再核验草稿用途、目标、期限、版本及当前动作权限，不允许模型直接调用通用保存方法。客户确认事实与内部备注按可见性保存，技术人员私有AI会话不进入共享工单正文。
 
 事务放在负责完整本地原子动作的方法上，不统一加到整个类。多表变更明确回滚策略，必要时 `rollbackFor = Exception.class`，不能捕获异常后误提交；短事务经被代理接口调用，避免 this 自调用失效。
 
@@ -182,7 +186,7 @@ Mapper 返回 Entity、DTO、字段合同一致的直接 VO 投影、标量或�
 
 使用 MySQL 方言；业务 ID 为字符串，JSON、复合 FK、生成列唯一与 UTC 转换按数据库设计执行，Entity 不写生成列。真实 MySQL 8.4 验证映射、锁等待、JSON、时间与约束，不能用 H2 或旧 PG 样例替代。
 
-Flyway core/flyway-mysql 同版，各服务独立库及迁移历史，版本号在所属链内唯一。共享环境执行后的迁移不修改，禁止 clean 或默认 baseline。MySQL DDL 通常隐式提交，失败先核查已生效结构，不假定整脚本回滚。删除与引用保留按生命周期，不统一级联或 @TableLogic。
+Flyway core/flyway-mysql 同版，各服务独立库及迁移历史，版本号在所属链内唯一。三个MVC服务默认在启动就绪前执行Flyway，失败中止启动；后续变更新增所属链中下一个版本。普通DDL使用SQL迁移；需要DDL前置数据检查时使用所属migration包的JavaMigration，显式配置locations、以SQL资源校验和参与验证，并将SQL放db/upgrade以避免同版重复发现，不根据Entity自动改表。共享环境执行后的迁移不修改，禁止clean或默认baseline；已有手工结构必须与初始迁移逐项比对后显式baseline到1，步骤见[数据库初始化与迁移](../sql/README.md)。MySQL DDL 通常隐式提交，失败先核查已生效结构，不假定整脚本回滚。删除与引用保留按生命周期，不统一级联或 @TableLogic。
 
 ## 5. Model 分类与写法
 
@@ -197,7 +201,7 @@ Flyway core/flyway-mysql 同版，各服务独立库及迁移历史，版本号�
 
 ### 5.1 归属与公共输入
 
-Entity直接放本服务model/entity，一实体一同名文件；业务枚举归本服务model/enums，按实际业务域分组。Form/DTO/VO按auth、account、organization、device、ticket、booking、document等实际业务分包，不把所有管理模型堆进administration。Service接口放service，实现放service/impl，Mapper放mapper，不加biz中间层。业务模型独立顶层文件，不以嵌套模型集合类收纳一组接口输入。
+Entity直接放本服务model/entity，一实体一同名文件；业务枚举归本服务model/enums，按实际业务域分组。Form/DTO/VO按auth、account、organization、support、device、ticket、booking、document等实际业务分包，不把所有管理模型堆进administration。Service接口放service，实现放service/impl，Mapper放mapper，不加biz中间层。业务模型独立顶层文件，不以嵌套模型集合类收纳一组接口输入。
 
 Result、PageVO、BasePageForm、IdForm、VersionForm、IdVersionForm、BaseEnum、ErrorCode及CommonErrorCode统一归common/base，不在各服务保留同义副本。Python按线合同实现自身类型，不引Java类。
 
@@ -228,7 +232,7 @@ BaseEnum不附加@JsonValue/@EnumValue，不自动改变JSON或MyBatis映射；�
 
 ```java
 /**
- * 提交人工报修的输入参数。
+ * 提交办公IT问题的输入参数。
  *
  * @author yangaobo
  */
@@ -308,7 +312,7 @@ HttpErrorMapping归所属应用component/web，按已登记枚举项显式选择
 
 错误响应为`Result<Void>`且data=null，失败不返回成功码或空列表。未知本地异常及未登记ErrorCode类型统一安全回退HTTP500/code=1，内部保留异常链；未登记上游载荷按HTTP502/code=1012处理，不回显外部消息。已知网络、超时、限流及协议故障显式转相应稳定码，不能一律掩盖为参数错误。框架原状态及Allow、Retry-After、Content-Range等必要头保留。MVC只补traceId，过滤链与WebFlux使用同一请求标识，不泄露上游堆栈或另加coderMessage。
 
-持久任务的last_error_code、error_code、failure_code以及预约resultCode是独立事实，不能批量替换成数字响应码。SSE已提交后只发送约定安全事件，PDF已开始传输后不能改写Result；失败状态和取消仍以业务库及专用协议为准。
+持久任务的last_error_code、error_code、failure_code以及预约resultCode是独立事实，不能批量替换成数字响应码。SSE已提交后只发送约定安全事件，原件已开始传输后不能改写Result；失败状态和取消仍以业务库及专用协议为准。
 
 Spring Security 负责入口及会话，资源 Service 逐次授权；Gateway 及业务服务均不信任客户端身份头。权限依赖失败关闭，不能回退默认管理员或过期权限。内部凭据只证明调用方，用户 ID 本身不证明用户权限。
 
@@ -338,7 +342,7 @@ common/env提供不依赖Spring的SystemEnvironmentEnum与不可变SystemEnviron
 
 JacksonConfig在各真实JSON应用定制Boot builder，不另建替代ObjectMapper，不丢模块发现、不全局忽略null；DecimalStringSerializer只作用字段。Gateway错误编码也使用Boot配置后的JSON能力，不能复制一套默认ObjectMapper。Java/Python时间均按接口约定，数据库UTC与浏览器显示时区分别处理。
 
-Java应用YAML在各自resources，dev显式导入忽略的application-local.yml，prod不加载本机文件。application-local.example.yml只留空凭据；根POM排除application-local*.yml/yaml的资源复制与打包，Git与镜像上下文另行排除。common/api无应用配置、真实连接或启动类。
+Java应用YAML及本机模板在各自resources。将application-local.example.yml复制为同目录application-local.yml，填写本服务凭据；dev通过spring.config.import原生导入，工作目录为仓库根目录，不依赖专用配置启动脚本。application.yml集中公共组件配置，dev必需导入本机文件，再由本机文件链式导入Nacos以保证参数可用，默认dev直接运行Application即启用所需组件，不另设连接Profile；prod显式激活且不导入本机文件，运行参数由进程环境或受控配置提供，进程变量可覆盖本机同名配置。模板只留空凭据；根POM排除application-local*.yml/yaml的资源复制与打包，Git只纳管空模板，镜像上下文另行排除真实副本。自动化测试显式使用dev,test或prod,test及仅位于src/test/resources的application-test.yml，test关闭外部导入和组件连接，不读取真实本机配置；运行制品不提供离线骨架环境。common/api无应用配置、真实连接或启动类。
 
 ### 10.2 HTTP接口文档
 

@@ -1,17 +1,103 @@
+# 公共配置：默认开发环境，所需组件随应用装配；凭据由环境或本机文件提供。
 server:
   address: ${DESK_BIND_ADDRESS:127.0.0.1}
-  port: 28103
+  port: 26103
+
 spring:
   application:
     name: desk-ticket
+  cloud:
+    nacos:
+      discovery:
+        enabled: true
+        server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+        namespace: ${DESK_NACOS_NAMESPACE}
+        group: ${DESK_NACOS_GROUP:DESK_GROUP}
+        username: ${DESK_NACOS_USERNAME:nacos}
+        password: ${DESK_NACOS_PASSWORD}
+        ip: ${DESK_APP_HOST}
+      config:
+        enabled: true
+        server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+        namespace: ${DESK_NACOS_NAMESPACE}
+        group: ${DESK_NACOS_GROUP:DESK_GROUP}
+        username: ${DESK_NACOS_USERNAME:nacos}
+        password: ${DESK_NACOS_PASSWORD}
+    sentinel:
+      enabled: true
+      eager: true
+      transport:
+        port: 26703
+      datasource:
+        flow:
+          nacos:
+            server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+            namespace: ${DESK_NACOS_NAMESPACE}
+            group-id: ${DESK_NACOS_GROUP:DESK_GROUP}
+            data-id: desk-ticket-${DESK_RESOURCE_ENV}-flow.json
+            username: ${DESK_NACOS_USERNAME:nacos}
+            password: ${DESK_NACOS_PASSWORD}
+            rule-type: flow
+            data-type: json
+        degrade:
+          nacos:
+            server-addr: ${DESK_COMPONENT_HOST:192.168.23.66}:8848
+            namespace: ${DESK_NACOS_NAMESPACE}
+            group-id: ${DESK_NACOS_GROUP:DESK_GROUP}
+            data-id: desk-ticket-${DESK_RESOURCE_ENV}-degrade.json
+            username: ${DESK_NACOS_USERNAME:nacos}
+            password: ${DESK_NACOS_PASSWORD}
+            rule-type: degrade
+            data-type: json
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 2000
+            readTimeout: 5000
+            loggerLevel: none
+          desk-user:
+            readTimeout: 3000
+  flyway:
+    enabled: ${DESK_MIGRATIONS_ENABLED:true}
+    url: ${spring.datasource.url}
+    user: ${DESK_TICKET_MIGRATION_USERNAME:${spring.datasource.username}}
+    password: ${DESK_TICKET_MIGRATION_PASSWORD:${spring.datasource.password}}
+    locations: classpath:db/migration,classpath:com/yangaobo/servicedesk/ticket/migration
+    clean-disabled: true
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    validate-migration-naming: true
   profiles:
     default: dev
   web:
     resources:
       add-mappings: false
   jackson:
+    deserialization:
+      fail-on-unknown-properties: true
     default-property-inclusion: always
+  datasource:
+    url: jdbc:mysql://${DESK_COMPONENT_HOST:192.168.23.66}:3306/desk_ticket_${DESK_RESOURCE_ENV}?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8&connectTimeout=2000&socketTimeout=5000
+    username: ${DESK_TICKET_DB_USERNAME:desk_ticket_${DESK_RESOURCE_ENV}}
+    password: ${DESK_TICKET_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 0
+      connection-timeout: 3000
+      validation-timeout: 2000
+      initialization-fail-timeout: -1
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+      connection-init-sql: SET SESSION time_zone = '+00:00', innodb_lock_wait_timeout = 2, wait_timeout = 60
+
 management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: ${DESK_TRACE_SAMPLING:0.1}
+    propagation:
+      type: w3c
   endpoints:
     web:
       exposure:
@@ -19,6 +105,15 @@ management:
   endpoint:
     health:
       show-details: never
+  zipkin:
+    tracing:
+      endpoint: http://${DESK_COMPONENT_HOST:192.168.23.66}:9411/api/v2/spans
+  health:
+    db:
+      enabled: false
+    redis:
+      enabled: false
+
 springdoc:
   api-docs:
     enabled: false
@@ -26,3 +121,52 @@ springdoc:
   swagger-ui:
     enabled: false
   paths-to-match: /api/v1/**
+
+desk:
+  support:
+    ai-token: ${DESK_AI_SERVICE_TOKEN}
+    knowledge-token: ${DESK_KNOWLEDGE_TICKET_TOKEN}
+    rpc:
+      host: ${DESK_BIND_ADDRESS:127.0.0.1}
+      port: 26203
+      ca-file: ${DESK_TICKET_RPC_CA_FILE}
+      certificate-file: ${DESK_TICKET_RPC_CERTIFICATE_FILE}
+      private-key-file: ${DESK_TICKET_RPC_PRIVATE_KEY_FILE}
+  ai:
+    rpc:
+      target: ${DESK_AI_RPC_TARGET:localhost:26205}
+      token: ${DESK_TICKET_AI_RPC_TOKEN:}
+      ca-file: ${DESK_TICKET_RPC_CA_FILE}
+      certificate-file: ${DESK_TICKET_RPC_CERTIFICATE_FILE}
+      private-key-file: ${DESK_TICKET_RPC_PRIVATE_KEY_FILE}
+  identity:
+    user-token: ${DESK_TICKET_USER_TOKEN}
+  infrastructure:
+    enabled: true
+    resource-env: ${DESK_RESOURCE_ENV}
+  internal:
+    user-http-timeout: 3s
+    rpc-connect-timeout: 2s
+    rpc-max-message-bytes: 4194304
+  xxl-job:
+    admin-addresses: http://${DESK_COMPONENT_HOST:192.168.23.66}:28088/xxl-job-admin
+    access-token: ${DESK_XXL_ACCESS_TOKEN}
+    app-name: desk-ticket-${DESK_RESOURCE_ENV}
+    address: http://${DESK_APP_HOST}:29901/
+    ip: ${DESK_APP_HOST}
+    port: 29901
+    log-path: ${DESK_LOG_DIRECTORY:./.local/runtime/logs}/desk-ticket/xxl-job
+    log-retention-days: 3
+
+logging:
+  structured:
+    format:
+      file: logstash
+  file:
+    name: ${DESK_LOG_DIRECTORY:./.local/runtime/logs}/desk-ticket/application.json
+  logback:
+    rollingpolicy:
+      file-name-pattern: ${DESK_LOG_DIRECTORY:./.local/runtime/logs}/desk-ticket/application.%d{yyyy-MM-dd}.%i.json
+      max-file-size: 20MB
+      max-history: 3
+      total-size-cap: 512MB

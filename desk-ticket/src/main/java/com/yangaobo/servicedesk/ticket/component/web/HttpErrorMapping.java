@@ -3,6 +3,10 @@ package com.yangaobo.servicedesk.ticket.component.web;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.ErrorCode;
 import org.springframework.http.HttpStatus;
+import com.yangaobo.servicedesk.ticket.component.RemoteIdentityError;
+import com.yangaobo.servicedesk.ticket.error.SupportErrorCode;
+import com.yangaobo.servicedesk.ticket.error.DeviceErrorCode;
+import com.yangaobo.servicedesk.ticket.error.TicketErrorCode;
 
 /**
  * 在所属应用显式转换公共错误与HTTP状态，不按编号推断状态。
@@ -23,8 +27,10 @@ public final class HttpErrorMapping {
      * @param error 业务错误
      * @return 可公开展示的已登记错误
      */
-    public static CommonErrorCode registered(ErrorCode error) {
-        return error instanceof CommonErrorCode common ? common : CommonErrorCode.INTERNAL_ERROR;
+    public static ErrorCode registered(ErrorCode error) {
+        return error instanceof CommonErrorCode || error instanceof RemoteIdentityError || error instanceof SupportErrorCode
+                || error instanceof DeviceErrorCode || error instanceof TicketErrorCode
+                || error instanceof com.yangaobo.servicedesk.ticket.component.RemoteDraftError ? error : CommonErrorCode.INTERNAL_ERROR;
     }
 
     /**
@@ -34,7 +40,10 @@ public final class HttpErrorMapping {
      * @return 明确的HTTP状态
      */
     public static HttpStatus statusOf(ErrorCode error) {
-        return switch (registered(error)) {
+        if (error instanceof RemoteIdentityError remote) return remote == RemoteIdentityError.PASSWORD_CHANGE_REQUIRED ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED;
+        if (error instanceof SupportErrorCode || error instanceof DeviceErrorCode || error instanceof TicketErrorCode
+                || error instanceof com.yangaobo.servicedesk.ticket.component.RemoteDraftError) return HttpStatus.CONFLICT;
+        return switch ((CommonErrorCode) registered(error)) {
             case INVALID_REQUEST -> HttpStatus.BAD_REQUEST;
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;

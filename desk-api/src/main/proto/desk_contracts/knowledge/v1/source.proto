@@ -1,0 +1,51 @@
+syntax = "proto3";
+package servicedesk.knowledge.v1;
+import "desk_contracts/common/v1/common.proto";
+import "desk_contracts/ticket/v1/support.proto";
+option java_package = "com.yangaobo.servicedesk.api.knowledge.v1";
+option java_multiple_files = true;
+
+// 当前发布与适用范围是唯一知识授权事实。
+service KnowledgeSourceService {
+  rpc QueryAuthorizedSources(SourceQuery) returns (AuthorizedSources);
+  rpc VerifySources(VerifySourcesRequest) returns (AuthorizedSources);
+}
+service OriginalFileService {
+  rpc ReadOriginal(OriginalRequest) returns (stream OriginalPart);
+}
+message SourceQuery {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string purpose = 2;
+  optional string service_item_id = 3;
+  optional string device_id = 4;
+  optional string ticket_id = 5;
+  servicedesk.ticket.v1.Environment environment = 6;
+  optional string generation_id = 7;
+  optional string source_usage_id = 8;
+  // ResolveContext返回的实际引用约束；普通新检索不填写。
+  optional string referenced_document_id = 9;
+  optional string referenced_index_job_id = 10;
+}
+message KnowledgeSource {
+  string document_id = 1;
+  string index_job_id = 2;
+  int64 row_version = 3;
+  string title = 4;
+  string content_format = 5;
+  string source_type = 6;
+  string audience = 7;
+}
+message AuthorizedSources { repeated KnowledgeSource sources = 1; }
+message VerifySourcesRequest {
+  SourceQuery context = 1;
+  repeated KnowledgeSource sources = 2;
+}
+message OriginalRequest { string document_id = 1; string job_id = 2; }
+// 首块含元数据，其余为连续offset的至多64KiB字节块；最终RPC成功后才可使用。
+message OriginalPart {
+  int64 offset = 1;
+  bytes data = 2;
+  optional int64 total_bytes = 3;
+  optional string sha256 = 4;
+  optional string content_format = 5;
+}

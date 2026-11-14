@@ -16,10 +16,26 @@ JAVA_MODULES = {
     "desk-ticket",
     "desk-knowledge",
 }
-ROOT_FILES = {"AGENTS.md", "README.md", "pom.xml", ".gitignore", ".gitattributes", ".editorconfig"}
+ROOT_FILES = {
+    "AGENTS.md",
+    "README.md",
+    "pom.xml",
+    ".gitignore",
+    ".gitattributes",
+    ".editorconfig",
+}
 ROOT_DIRECTORIES = JAVA_MODULES | {".github", "docs", "desk-ai", "desk-web"}
-AI_ROOT = {".python-version", "pyproject.toml", "uv.lock", "src", "tests"}
+AI_ROOT = {
+    ".python-version",
+    ".env.example",
+    "pyproject.toml",
+    "uv.lock",
+    "alembic.ini",
+    "src",
+    "tests",
+}
 WEB_ROOT = {
+    "tests",
     "package.json",
     "package-lock.json",
     "index.html",
@@ -89,7 +105,13 @@ def main() -> None:
             if artifact in JAVA_MODULES and artifact not in allowed[module]:
                 errors.append(f"禁止模块依赖：{module} -> {artifact}")
             if module in {"desk-common", "desk-api"} and scope != "test":
-                if group.startswith("org.springframework") or "starter" in artifact:
+                contract_dependency = module == "desk-api" and artifact in {
+                    "spring-web",
+                    "spring-cloud-openfeign-core",
+                }
+                if (
+                    group.startswith("org.springframework") or "starter" in artifact
+                ) and not contract_dependency:
                     errors.append(f"基础库不得包含Spring装配依赖：{module} -> {artifact}")
             if module == "desk-gateway" and any(
                 word in artifact for word in ("webmvc", "mybatis", "jdbc", "mysql", "flyway")

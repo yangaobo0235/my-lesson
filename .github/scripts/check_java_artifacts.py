@@ -24,11 +24,37 @@ def main() -> None:
                 raise RuntimeError(f"普通库/启动制品边界不正确：{name}")
             if any(Path(path).name.startswith("application-local") for path in files):
                 raise RuntimeError(f"制品包含本机配置或模板：{name}")
+            if any(
+                Path(path).name in {"application-test.yml", "application-connected.yml"}
+                for path in files
+            ):
+                raise RuntimeError(f"制品包含测试配置或已移除的功能配置：{name}")
             if name == "desk-api":
                 for model in ["ActorRef", "RpcErrorDetail"]:
                     expected = f"com/yangaobo/servicedesk/api/common/v1/{model}.class"
                     if expected not in files:
                         raise RuntimeError(f"api JAR未包含生成合同：{model}")
+            if name in {"desk-user", "desk-ticket", "desk-knowledge"}:
+                if "BOOT-INF/classes/db/migration/V1__initial_schema.sql" not in files:
+                    raise RuntimeError(f"应用制品未包含数据库初始迁移：{name}")
+            if name in {"desk-ticket", "desk-knowledge"}:
+                service = name.removeprefix("desk-")
+                expected = {
+                    "BOOT-INF/classes/db/upgrade/V2__office_it_support.sql",
+                    f"BOOT-INF/classes/com/yangaobo/servicedesk/{service}/migration/"
+                    "V2__office_it_support.class",
+                }
+                if not expected <= set(files):
+                    raise RuntimeError(f"应用制品未包含受控增量迁移：{name}")
+            if (
+                name == "desk-knowledge"
+                and (
+                    "BOOT-INF/classes/com/yangaobo/servicedesk/knowledge/migration/"
+                    "V3__restore_original_digest.class"
+                )
+                not in files
+            ):
+                raise RuntimeError("knowledge制品未包含原件摘要修复迁移")
             print(f"制品边界通过：{jar.name}")
 
 

@@ -2,6 +2,7 @@ package com.yangaobo.servicedesk.user.exception;
 
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.Result;
+import com.yangaobo.servicedesk.common.base.ErrorCode;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.user.component.web.HttpErrorMapping;
 import com.yangaobo.servicedesk.user.component.web.RequestTraceFilter;
@@ -39,9 +40,16 @@ public class ApiExceptionHandler {
     public ResponseEntity<Result<Void>> handle(Exception exception, HttpServletRequest request) {
         String traceId = RequestTraceFilter.traceId(request);
         if (exception instanceof BusinessException business) {
-            CommonErrorCode error = HttpErrorMapping.registered(business.getErrorCode());
+            ErrorCode error = HttpErrorMapping.registered(business.getErrorCode());
             return ResponseEntity.status(HttpErrorMapping.statusOf(error))
+                    .header("Cache-Control", "no-store")
                     .body(Result.failure(error, traceId));
+        }
+        if (exception instanceof org.springframework.dao.DuplicateKeyException) {
+            return ResponseEntity.status(409).body(Result.failure(CommonErrorCode.DUPLICATE_VALUE, traceId));
+        }
+        if (exception instanceof org.springframework.dao.ConcurrencyFailureException) {
+            return ResponseEntity.status(409).body(Result.failure(CommonErrorCode.CONFLICT, traceId));
         }
         if (exception instanceof ErrorResponse framework) {
             int status = framework.getStatusCode().value();

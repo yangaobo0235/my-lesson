@@ -21,6 +21,15 @@
     <module>desk-knowledge</module>
   </modules>
   <properties>
+    <mybatis-plus-spring-boot3-starter.version>3.5.18</mybatis-plus-spring-boot3-starter.version>
+    <flyway-core.version>11.20.3</flyway-core.version>
+    <flyway-mysql.version>11.20.3</flyway-mysql.version>
+    <redisson.version>3.52.0</redisson.version>
+    <xxl-job-core.version>3.3.0</xxl-job-core.version>
+    <alibabacloud-oss-v2.version>0.6.1</alibabacloud-oss-v2.version>
+    <rocketmq-client-java.version>5.2.2</rocketmq-client-java.version>
+    <proto-google-common-protos.version>2.61.0</proto-google-common-protos.version>
+    <javax.annotation-api.version>1.3.2</javax.annotation-api.version>
     <java.version>21</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <grpc.version>1.76.0</grpc.version>
@@ -34,6 +43,16 @@
   </properties>
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>com.google.api.grpc</groupId>
+        <artifactId>proto-google-common-protos</artifactId>
+        <version>${proto-google-common-protos.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>javax.annotation</groupId>
+        <artifactId>javax.annotation-api</artifactId>
+        <version>${javax.annotation-api.version}</version>
+      </dependency>
       <!-- 显式优先采用 Boot 管理的基础依赖，避免 Alibaba BOM 回退日志与 Lombok 版本。 -->
       <dependency>
         <groupId>org.springframework.boot</groupId>
@@ -90,6 +109,41 @@
         <artifactId>swagger-annotations-jakarta</artifactId>
         <version>${swagger-annotations.version}</version>
       </dependency>
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        <version>${mybatis-plus-spring-boot3-starter.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.flywaydb</groupId>
+        <artifactId>flyway-core</artifactId>
+        <version>${flyway-core.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.flywaydb</groupId>
+        <artifactId>flyway-mysql</artifactId>
+        <version>${flyway-mysql.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.redisson</groupId>
+        <artifactId>redisson</artifactId>
+        <version>${redisson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.xuxueli</groupId>
+        <artifactId>xxl-job-core</artifactId>
+        <version>${xxl-job-core.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.aliyun</groupId>
+        <artifactId>alibabacloud-oss-v2</artifactId>
+        <version>${alibabacloud-oss-v2.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.rocketmq</groupId>
+        <artifactId>rocketmq-client-java</artifactId>
+        <version>${rocketmq-client-java.version}</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
   <build>
@@ -103,6 +157,15 @@
       </resource>
     </resources>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <csp.sentinel.log.dir>${maven.multiModuleProjectDirectory}/.local/verification/sentinel/${project.artifactId}</csp.sentinel.log.dir>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>

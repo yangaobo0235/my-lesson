@@ -1,6 +1,12 @@
+# 开发环境：先加载本机参数，再连接对应命名空间的Nacos；test仅用于隔离自动化测试。
 spring:
   config:
-    import: optional:file:./desk-knowledge/src/main/resources/application-local.yml
+    activate:
+      on-profile: '!test'
+    import: file:./desk-knowledge/src/main/resources/application-local.yml
+---
+DESK_RESOURCE_ENV: test
+
 springdoc:
   api-docs:
     enabled: true

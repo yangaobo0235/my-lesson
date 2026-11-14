@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * @author yangaobo
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("prod")
+@ActiveProfiles({"prod", "test"})
 class ProductionDocsTest {
 
     /**

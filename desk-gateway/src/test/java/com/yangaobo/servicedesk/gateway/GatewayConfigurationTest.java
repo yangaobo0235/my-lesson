@@ -19,7 +19,8 @@ class GatewayConfigurationTest {
      */
     @Test
     void acceptsExplicitServiceOrigins() {
-        runner("https://knowledge.internal:28104").run(context -> assertThat(context).hasNotFailed());
+        runner("https://knowledge.internal:26104").run(context -> assertThat(context).hasNotFailed());
+        runner("lb://desk-knowledge").run(context -> assertThat(context).hasNotFailed());
     }
 
     /**
@@ -27,7 +28,8 @@ class GatewayConfigurationTest {
      */
     @Test
     void rejectsCredentialAndPathBearingOrigins() {
-        for (String target : new String[]{"http://user:secret-value@host", "http://host/prefix", "file:///tmp"}) {
+        for (String target : new String[]{"http://user:secret-value@host", "http://host/prefix", "file:///tmp",
+                "lb://desk-user", "lb://desk-knowledge/private"}) {
             runner(target).run(context -> {
                 assertThat(context).hasFailed();
                 assertThat(context.getStartupFailure()).hasStackTraceContaining("desk.downstream.knowledge");
@@ -48,9 +50,9 @@ class GatewayConfigurationTest {
         return new ApplicationContextRunner()
                 .withInitializer(context -> context.getEnvironment().setActiveProfiles("dev"))
                 .withUserConfiguration(EnvironmentConfig.class, InfrastructureConfigurationValidator.class)
-                .withPropertyValues("desk.downstream.user=http://user:28102",
-                        "desk.downstream.ticket=http://ticket:28103",
+                .withPropertyValues("desk.downstream.user=http://user:26102",
+                        "desk.downstream.ticket=http://ticket:26103",
                         "desk.downstream.knowledge=" + knowledge,
-                        "desk.downstream.ai=http://ai:28105");
+                        "desk.downstream.ai=http://ai:26105");
     }
 }
