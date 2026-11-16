@@ -6,7 +6,8 @@ import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, cast
+from uuid import uuid4
 
 import grpc
 from google.protobuf import any_pb2
@@ -22,7 +23,15 @@ from desk_contracts.knowledge.v1.source_pb2 import SourceQuery
 from servicedesk_ai.bootstrap.application import ApplicationServices
 from servicedesk_ai.bootstrap.components import RpcSettings
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
+from servicedesk_ai.errors.draft import DraftErrorCode
+from servicedesk_ai.errors.generation import GenerationErrorCode
+from servicedesk_ai.errors.retrieval import RetrievalErrorCode
 from servicedesk_ai.infrastructure.identity import IdentityFailure
+from servicedesk_ai.infrastructure.rpc_contract import (
+    maximum_seconds,
+    request_budget,
+    status_for_code,
+)
 from servicedesk_ai.repositories import diagnosis as store
 from servicedesk_ai.repositories.index_jobs import read_chunks
 from servicedesk_ai.services.evidence import source_query
@@ -51,10 +60,16 @@ class RpcSecurity(grpc.aio.ServerInterceptor):
     ) -> grpc.RpcMethodHandler | None:
         """标准TLS验证之后再做常量时间凭据比较和方法白名单。"""
         handler = await continuation(details)
-        headers = dict(details.invocation_metadata)
+        headers = {
+            key: value for key, value in details.invocation_metadata if isinstance(value, str)
+        }
         expected = self.methods.get(details.method)
-        if handler is None:
-            return None
+        if handler is None or handler.unary_unary is None:
+            return handler
+        # grpc通用handler的存根同时服务同步和aio；在适配边界明确实际异步协议。
+        unary = cast(
+            Callable[[Message, grpc.aio.ServicerContext], Awaitable[Message]], handler.unary_unary
+        )
 
         async def call(request: Message, context: grpc.aio.ServicerContext) -> Message:
             if expected is None or not secrets.compare_digest(
@@ -62,9 +77,9 @@ class RpcSecurity(grpc.aio.ServerInterceptor):
             ):
                 await context.abort(grpc.StatusCode.PERMISSION_DENIED, "调用服务未获授权")
             remaining = context.time_remaining()
-            if remaining is None or remaining > 3.01:
+            if remaining is None or remaining > maximum_seconds(details.method) + 0.01:
                 await context.abort(
-                    grpc.StatusCode.INVALID_ARGUMENT, "内部调用必须声明至多三秒Deadline"
+                    grpc.StatusCode.INVALID_ARGUMENT, "内部调用必须声明合同范围内的Deadline"
                 )
             parent = propagate.extract(
                 {
@@ -76,7 +91,8 @@ class RpcSecurity(grpc.aio.ServerInterceptor):
             with self.tracer.start_as_current_span(
                 "ai.rpc", context=parent, record_exception=False, set_status_on_exception=False
             ):
-                return await handler.unary_unary(request, context)
+                with request_budget(remaining):
+                    return await unary(request, context)
 
         return grpc.unary_unary_rpc_method_handler(
             call,
@@ -87,25 +103,29 @@ class RpcSecurity(grpc.aio.ServerInterceptor):
 
 async def failure(context: grpc.aio.ServicerContext, error: Exception) -> NoReturn:
     """标准数字详情不替代传输状态，未知错误不暴露内部文本。"""
-    if isinstance(error, BusinessError):
+    if isinstance(error, BusinessError) and isinstance(
+        error.error, (CommonErrorCode, GenerationErrorCode, RetrievalErrorCode, DraftErrorCode)
+    ):
         code, message = error.error.code, error.error.message
+    elif isinstance(error, TimeoutError):
+        code, message = 1013, "内部调用超出预算"
     elif isinstance(error, IdentityFailure):
         code, message = error.code, error.message
     else:
         code, message = 1, "内部依赖暂不可用"
-    status = {
-        1001: grpc.StatusCode.INVALID_ARGUMENT,
-        1002: grpc.StatusCode.NOT_FOUND,
-        1003: grpc.StatusCode.PERMISSION_DENIED,
-        1004: grpc.StatusCode.FAILED_PRECONDITION,
-        2001: grpc.StatusCode.UNAUTHENTICATED,
-        2002: grpc.StatusCode.UNAUTHENTICATED,
-        2004: grpc.StatusCode.PERMISSION_DENIED,
-        5201: grpc.StatusCode.FAILED_PRECONDITION,
-        1013: grpc.StatusCode.DEADLINE_EXCEEDED,
-    }.get(code, grpc.StatusCode.UNAVAILABLE)
+    status = status_for_code(code)
     packed = any_pb2.Any()
-    packed.Pack(RpcErrorDetail(code=code, message=message))
+    packed.Pack(
+        RpcErrorDetail(
+            code=code,
+            message=message,
+            trace_id=(
+                format(trace.get_current_span().get_span_context().trace_id, "032x")
+                if trace.get_current_span().get_span_context().is_valid
+                else uuid4().hex
+            ),
+        )
+    )
     await context.abort_with_status(
         rpc_status.to_status(
             status_pb2.Status(code=status.value[0], message=message, details=[packed])
@@ -184,12 +204,14 @@ class EvidenceRpc(stubs.EvidenceContextServiceServicer):
             async with self.services.index.engine.connect() as db:
                 run = await store.generation(db, request.generation_id)
             await self.services.conversations.authorized(actor, run.conversation_id)
-            items = await self.services.evidence.list(run.id)
+            items = await self.services.evidence.list_items(run.id)
             item = next((value for value in items if value.id == request.source_usage_id), None)
             if item is None or item.source_type != "KNOWLEDGE_CHUNK":
                 raise BusinessError(CommonErrorCode.NOT_FOUND)
             result = source_query(run, actor.actor)
             source = item.source_version["knowledge_source"]
+            if not isinstance(source, dict):
+                raise BusinessError(CommonErrorCode.CONFLICT)
             result.referenced_document_id = source["document_id"]
             result.referenced_index_job_id = source["index_job_id"]
             return result

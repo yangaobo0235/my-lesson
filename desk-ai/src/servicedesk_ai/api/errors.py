@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
-from servicedesk_ai.errors.diagnosis import DiagnosisErrorCode
+from servicedesk_ai.errors.draft import DraftErrorCode
+from servicedesk_ai.errors.generation import GenerationErrorCode
+from servicedesk_ai.errors.retrieval import RetrievalErrorCode
 from servicedesk_ai.infrastructure.identity import IdentityFailure
 from servicedesk_ai.schemas.result import Result
 
@@ -36,15 +38,17 @@ def _error_for_status(status: int) -> CommonErrorCode:
     return mapping.get(status, default)
 
 
-def _status_for_error(error: CommonErrorCode | DiagnosisErrorCode) -> int:
+def _status_for_error(
+    error: CommonErrorCode | GenerationErrorCode | RetrievalErrorCode | DraftErrorCode,
+) -> int:
     """只为已登记错误显式选择传输状态。"""
-    if isinstance(error, DiagnosisErrorCode):
+    if isinstance(error, (GenerationErrorCode, RetrievalErrorCode, DraftErrorCode)):
         return {
-            DiagnosisErrorCode.GENERATION_QUEUE_FULL: 503,
-            DiagnosisErrorCode.DAILY_GENERATION_LIMIT: 429,
-            DiagnosisErrorCode.RETRIEVAL_UNAVAILABLE: 503,
-            DiagnosisErrorCode.INDEX_UNAVAILABLE: 503,
-            DiagnosisErrorCode.DRAFT_EXPIRED: 409,
+            GenerationErrorCode.GENERATION_QUEUE_FULL: 503,
+            GenerationErrorCode.DAILY_GENERATION_LIMIT: 429,
+            RetrievalErrorCode.RETRIEVAL_UNAVAILABLE: 503,
+            RetrievalErrorCode.INDEX_UNAVAILABLE: 503,
+            DraftErrorCode.DRAFT_EXPIRED: 409,
         }[error]
     return {
         CommonErrorCode.INTERNAL_ERROR: 500,
@@ -65,7 +69,9 @@ def _status_for_error(error: CommonErrorCode | DiagnosisErrorCode) -> int:
 
 
 def _response(
-    request: Request, error: CommonErrorCode | DiagnosisErrorCode, status: int
+    request: Request,
+    error: CommonErrorCode | GenerationErrorCode | RetrievalErrorCode | DraftErrorCode,
+    status: int,
 ) -> JSONResponse:
     """只输出安全Result，不转发异常原始消息。"""
     trace_id = request.state.trace_id
@@ -93,6 +99,7 @@ def register_error_handlers(app: FastAPI) -> None:
             1004: 409,
             3001: 409,
             3101: 409,
+            3102: 409,
             1011: 503,
             1012: 502,
             1013: 504,
@@ -128,7 +135,9 @@ def register_error_handlers(app: FastAPI) -> None:
     async def business_error(request: Request, exception: BusinessError) -> JSONResponse:
         """仅允许已登记公共错误；本地未知类型回退500/1。"""
         error = exception.error
-        if not isinstance(error, (CommonErrorCode, DiagnosisErrorCode)):
+        if not isinstance(
+            error, (CommonErrorCode, GenerationErrorCode, RetrievalErrorCode, DraftErrorCode)
+        ):
             error = CommonErrorCode.INTERNAL_ERROR
         return _response(request, error, _status_for_error(error))
 

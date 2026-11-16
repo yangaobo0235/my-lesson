@@ -1,23 +1,41 @@
 package com.yangaobo.servicedesk.ticket.model.form.ticket;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.io.Serial;
+import java.io.Serializable;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+
 /**
  * 现场资格版本化动作。
  *
  * @author yangaobo
  */
-@lombok.Data
-@lombok.NoArgsConstructor
-@lombok.EqualsAndHashCode(callSuper = true)
-public class OnsiteEligibilityForm extends TicketActionForm implements java.io.Serializable {
-    @java.io.Serial private static final long serialVersionUID = 1L;
+@Data
+@NoArgsConstructor
+@EqualsAndHashCode(callSuper = true)
+public class OnsiteEligibilityForm extends TicketActionForm implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L;
 
-    /** 人工确认的现场资格。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "人工确认的现场资格")
-    @jakarta.validation.constraints.NotNull
+    /**
+     * 人工确认的现场资格。
+     */
+    @Schema(description = "人工确认的现场资格")
+    @NotNull
     private Boolean onsiteEligible;
 
-    /** 核对或撤回原因。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "核对或撤回原因")
-    @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 500)
+    /**
+     * 核对或撤回原因。
+     */
+    @Schema(description = "核对或撤回原因")
+    @NotBlank
+    @Size(max = 500)
     private String reason;
 }

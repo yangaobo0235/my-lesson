@@ -13,10 +13,15 @@ import com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketMetadataVO;
  * @author yangaobo
  */
 public final class TicketSnapshotViews {
-    /** 禁止实例化无状态转换器。 */
-    private TicketSnapshotViews() {}
+    /**
+     * 禁止实例化无状态转换器。
+     */
+    private TicketSnapshotViews() {
+    }
 
-    /** 已确认环境及逐字段来源；未知保持空值。 */
+    /**
+     * 已确认环境及逐字段来源；未知保持空值。
+     */
     public static SupportContextVO context(JsonNode node) {
         if (node == null || node.isNull()) return null;
         SupportContextVO result = new SupportContextVO();
@@ -31,7 +36,9 @@ public final class TicketSnapshotViews {
         return result;
     }
 
-    /** 公开环境来源标签，不允许用户自行提交可信来源。 */
+    /**
+     * 公开环境来源标签，不允许用户自行提交可信来源。
+     */
     public static SupportFieldSourcesVO sources(JsonNode node) {
         if (node == null || node.isNull()) return null;
         SupportFieldSourcesVO result = new SupportFieldSourcesVO();
@@ -45,7 +52,9 @@ public final class TicketSnapshotViews {
         return result;
     }
 
-    /** 受理时服务范围的安全历史投影。 */
+    /**
+     * 受理时服务范围的安全历史投影。
+     */
     public static ServiceScopeSnapshotVO scope(JsonNode node) {
         if (node == null || node.isNull()) return null;
         ServiceScopeSnapshotVO result = new ServiceScopeSnapshotVO();
@@ -64,7 +73,9 @@ public final class TicketSnapshotViews {
         return result;
     }
 
-    /** 受理时资产与型号的安全历史投影，不含序列号。 */
+    /**
+     * 受理时资产与型号的安全历史投影，不含序列号。
+     */
     public static DeviceSnapshotVO device(JsonNode node) {
         if (node == null || node.isNull()) return null;
         DeviceSnapshotVO result = new DeviceSnapshotVO();
@@ -75,7 +86,9 @@ public final class TicketSnapshotViews {
         return result;
     }
 
-    /** 工单事件可公开的结构化变更，不直出持久化快照。 */
+    /**
+     * 工单事件可公开的结构化变更，不直出持久化快照。
+     */
     public static TicketMetadataVO metadata(JsonNode node) {
         if (node == null || node.isNull()) return null;
         TicketMetadataVO result = new TicketMetadataVO();
@@ -94,7 +107,9 @@ public final class TicketSnapshotViews {
         return result;
     }
 
-    /** 缺失或JSON null均保留未知，禁止默认成字符串null。 */
+    /**
+     * 缺失或JSON null均保留未知，禁止默认成字符串null。
+     */
     private static String text(JsonNode node, String field) {
         return node.hasNonNull(field) ? node.get(field).asText() : null;
     }

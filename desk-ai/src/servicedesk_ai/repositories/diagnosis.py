@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import uuid4
 
 from sqlalchemy import text
@@ -12,6 +13,8 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
+from servicedesk_ai.schemas.diagnosis import DiagnosisResult
+from servicedesk_ai.schemas.execution import GenerationContext, GenerationPipeline
 
 
 def new_id() -> str:
@@ -31,7 +34,7 @@ class Conversation:
     id: str
     owner_id: str
     customer_id: str
-    mode: str
+    mode: Literal["CUSTOMER_SELF_SERVICE", "TECHNICIAN_ASSIST"]
     ticket_id: str | None
     service_item_id: str | None
     device_id: str | None
@@ -58,15 +61,15 @@ class Generation:
     ticket_version: int | None
     question_text: str
     answer_text: str | None
-    structured_result: dict[str, object] | None
+    structured_result: DiagnosisResult | None
     client_request_id: str
     request_hash: str
     session_ref: str
     auth_version: int
-    status: str
-    answer_type: str | None
-    pipeline_config: dict[str, object]
-    context_snapshot: dict[str, object]
+    status: Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED"]
+    answer_type: Literal["ANSWERED", "CLARIFICATION", "INSUFFICIENT_EVIDENCE"] | None
+    pipeline_config: GenerationPipeline
+    context_snapshot: GenerationContext
     trace_context: dict[str, object] | None
     answer_model: str | None
     claim_token: str | None
@@ -93,6 +96,13 @@ def decode[T: (Conversation, Generation)](row: RowMapping, kind: type[T]) -> T:
     ):
         if name in values and isinstance(values[name], str):
             values[name] = json.loads(values[name])
+    if kind is Generation:
+        values["pipeline_config"] = GenerationPipeline.model_validate(values["pipeline_config"])
+        values["context_snapshot"] = GenerationContext.model_validate(values["context_snapshot"])
+        if values["structured_result"] is not None:
+            values["structured_result"] = DiagnosisResult.model_validate(
+                values["structured_result"]
+            )
     return kind(**values)
 
 
@@ -233,7 +243,7 @@ async def claim(db: AsyncConnection) -> Generation | None:
         return None
     now = (await db.execute(text("SELECT UTC_TIMESTAMP(6)"))).scalar_one()
     run = await generation(db, row[0])
-    if (now - run.created_at).total_seconds() >= int(run.pipeline_config["total_seconds"]):
+    if (now - run.created_at).total_seconds() >= int(run.pipeline_config.total_seconds):
         await db.execute(
             text("""
                 UPDATE ai_generation SET status='FAILED',error_code='QUEUE_BUDGET_EXCEEDED',
@@ -249,7 +259,7 @@ async def claim(db: AsyncConnection) -> Generation | None:
                 SECOND,updated_at=UTC_TIMESTAMP(6)
                 WHERE id=:id
             """),
-        {"id": run.id, "token": str(uuid4()), "lease": run.pipeline_config["lease_seconds"]},
+        {"id": run.id, "token": str(uuid4()), "lease": run.pipeline_config.lease_seconds},
     )
     return await generation(db, run.id)
 
@@ -263,7 +273,7 @@ async def renew(db: AsyncConnection, run: Generation) -> bool:
                 claim_token=:token
                 AND claim_until>UTC_TIMESTAMP(6)
             """),
-        {"id": run.id, "token": run.claim_token, "lease": run.pipeline_config["lease_seconds"]},
+        {"id": run.id, "token": run.claim_token, "lease": run.pipeline_config.lease_seconds},
     )
     return result.rowcount == 1
 

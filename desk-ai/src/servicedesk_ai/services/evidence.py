@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 import grpc
 from google.protobuf.json_format import MessageToDict, ParseDict
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from desk_contracts.common.v1.common_pb2 import ActorRef
@@ -16,6 +15,7 @@ from desk_contracts.ticket.v1.support_pb2 import Environment, VerifyTicketReques
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
 from servicedesk_ai.infrastructure.domain_rpc import DomainRpc
 from servicedesk_ai.infrastructure.identity import translate_failure
+from servicedesk_ai.repositories import evidence as queries
 from servicedesk_ai.repositories.diagnosis import Generation, json_value, new_id, owned
 
 
@@ -45,14 +45,15 @@ def actor_ref(run: Generation) -> ActorRef:
 def source_query(run: Generation, actor: ActorRef | None = None) -> SourceQuery:
     """环境与固定范围来自受理快照，不能让模型扩大客户或项目。"""
     snapshot = run.context_snapshot
-    environment = Environment()
-    for name, value in snapshot.get("environment", {}).items():
-        if value is not None and name in Environment.DESCRIPTOR.fields_by_name:
-            setattr(environment, name, value)
-    result = SourceQuery(actor=actor or actor_ref(run), purpose="HISTORY", environment=environment)
+    result = SourceQuery(
+        actor=actor or actor_ref(run),
+        purpose="HISTORY",
+        environment=Environment(**snapshot.environment.model_dump(exclude_none=True)),
+    )
     for name in ("service_item_id", "device_id", "ticket_id"):
-        if snapshot.get(name):
-            setattr(result, name, snapshot[name])
+        value = getattr(snapshot, name)
+        if value:
+            setattr(result, name, value)
     return result
 
 
@@ -63,23 +64,10 @@ class EvidenceService:
         """真实领域授权由RPC所有者提供，不把本地payload当权限。"""
         self.engine, self.rpc = engine, rpc
 
-    async def list(self, run_id: str) -> list[Evidence]:
+    async def list_items(self, run_id: str) -> list[Evidence]:
         """读取限长实际使用清单，不读取未使用候选。"""
         async with self.engine.connect() as db:
-            rows = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT id,source_number,source_type,chunk_id,ticket_event_id,
-                fact_id,source_version,locator_snapshot,excerpt_snapshot FROM ai_source_usage
-                WHERE generation_id=:id ORDER BY source_number
-            """),
-                        {"id": run_id},
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            rows = await queries.source_usages(db, {"id": run_id})
         return [
             Evidence(
                 id=row["id"],
@@ -98,7 +86,7 @@ class EvidenceService:
 
     async def verify(self, run: Generation, actor: ActorRef | None = None) -> list[Evidence]:
         """实际依赖取传递闭包，禁止仅凭本地factId绕过知识撤权。"""
-        evidence = await self.list(run.id)
+        evidence = await self.list_items(run.id)
         await self.verify_items(run, evidence, actor or actor_ref(run), set())
         return evidence
 
@@ -115,26 +103,17 @@ class EvidenceService:
             if len(visited) > 64:
                 raise BusinessError(CommonErrorCode.CONFLICT)
             if item.source_type == "KNOWLEDGE_CHUNK":
-                knowledge.append(
-                    ParseDict(item.source_version["knowledge_source"], KnowledgeSource())
-                )
+                source = item.source_version.get("knowledge_source")
+                if not isinstance(source, dict):
+                    raise BusinessError(CommonErrorCode.CONFLICT)
+                knowledge.append(ParseDict(source, KnowledgeSource()))
             elif item.source_type == "TICKET_EVENT":
+                if item.ticket_event_id is None:
+                    raise BusinessError(CommonErrorCode.CONFLICT)
                 events.append(item.ticket_event_id)
             elif item.source_type == "DIAGNOSTIC_FACT":
                 async with self.engine.connect() as db:
-                    fact = (
-                        (
-                            await db.execute(
-                                text("""
-                SELECT conversation_id,source_type,source_generation_id
-                FROM ai_diagnostic_fact WHERE id=:id
-            """),
-                                {"id": item.fact_id},
-                            )
-                        )
-                        .mappings()
-                        .first()
-                    )
+                    fact = await queries.fact_dependency(db, {"id": item.fact_id})
                 if fact is None or fact["conversation_id"] != run.conversation_id:
                     raise BusinessError(CommonErrorCode.FORBIDDEN)
                 if fact["source_type"] in {"ASSISTANT_PROPOSAL", "TOOL_OBSERVATION"}:
@@ -142,7 +121,9 @@ class EvidenceService:
 
                     async with self.engine.connect() as db:
                         parent = await generation(db, fact["source_generation_id"])
-                    await self.verify_items(parent, await self.list(parent.id), actor, visited)
+                    await self.verify_items(
+                        parent, await self.list_items(parent.id), actor, visited
+                    )
         try:
             if knowledge:
                 await self.rpc.verify_sources(source_query(run, actor), knowledge)
@@ -154,7 +135,7 @@ class EvidenceService:
                     await self.rpc.ticket.VerifyTicketContext(
                         VerifyTicketRequest(
                             actor=actor,
-                            ticket_id=run.context_snapshot["ticket_id"],
+                            ticket_id=run.context_snapshot.ticket_id,
                             ticket_version=run.ticket_version,
                             event_ids=batch,
                         ),
@@ -187,20 +168,7 @@ class EvidenceService:
         """只有真正裁剪进入上下文的摘录才登记；相同来源版本与摘录复用。"""
         await owned(db, run)
         identity = (chunk_id, ticket_event_id, fact_id)
-        rows = (
-            (
-                await db.execute(
-                    text("""
-                SELECT id,source_number,chunk_id,ticket_event_id,fact_id,
-                excerpt_snapshot,source_version FROM ai_source_usage WHERE generation_id=:id
-                ORDER BY source_number
-            """),
-                    {"id": run.id},
-                )
-            )
-            .mappings()
-            .all()
-        )
+        rows = await queries.generation_sources(db, {"id": run.id})
         version = {"schema_version": 1, "title": title, **source_version}
         for row in rows:
             if (
@@ -223,14 +191,8 @@ class EvidenceService:
         evidence = Evidence(
             new_id(), len(rows) + 1, source_type, title, excerpt, locator, version, *identity
         )
-        await db.execute(
-            text("""
-                INSERT INTO ai_source_usage
-                (id,generation_id,conversation_id,source_number,source_type,chunk_id,ticket_event_id,fact_id,
-                source_version,locator_snapshot,excerpt_snapshot)
-                VALUES
-                (:id,:run,:conversation,:number,:type,:chunk,:event,:fact,:version,:locator,:excerpt)
-            """),
+        await queries.insert_source_usage(
+            db,
             {
                 "id": evidence.id,
                 "run": run.id,
@@ -246,13 +208,7 @@ class EvidenceService:
             },
         )
         manifest = [row["id"] for row in rows] + [evidence.id]
-        await db.execute(
-            text("""
-                UPDATE ai_generation SET context_snapshot=JSON_SET(context_snapshot,
-                '$.source_usage_ids',CAST(:manifest AS JSON)) WHERE id=:id
-            """),
-            {"id": run.id, "manifest": json_value(manifest)},
-        )
+        await queries.update_source_manifest(db, {"id": run.id, "manifest": json_value(manifest)})
         return evidence
 
     async def knowledge(
@@ -265,21 +221,7 @@ class EvidenceService:
         result = []
         async with self.engine.begin() as db:
             for identifier in ids:
-                row = (
-                    (
-                        await db.execute(
-                            text("""
-                SELECT c.id,c.index_job_id,c.document_id,c.content,c.source_locations,
-                j.status,j.last_command FROM ai_chunk c JOIN ai_index_job j ON
-                j.id=c.index_job_id
-                WHERE c.id=:id
-            """),
-                            {"id": identifier},
-                        )
-                    )
-                    .mappings()
-                    .first()
-                )
+                row = await queries.readable_chunk(db, {"id": identifier})
                 if (
                     row is None
                     or row["index_job_id"] not in allowed_jobs

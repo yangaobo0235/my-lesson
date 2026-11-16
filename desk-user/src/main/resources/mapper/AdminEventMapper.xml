@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.user.mapper.AdminEventMapper">
+  <resultMap id="adminEventMap" type="com.yangaobo.servicedesk.user.model.entity.AdminEventEntity" autoMapping="true">
+    <id column="id" property="id"/>
+    <result column="details" property="details"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+  </resultMap>
+
+  <insert id="append">
+    INSERT INTO sys_admin_event (
+      id,
+      actor_type,
+      actor_user_id,
+      target_user_id,
+      target_organization_id,
+      event_type,
+      details
+    )
+    VALUES (
+      #{id},
+      #{actorType},
+      #{actor},
+      #{user},
+      #{organization},
+      #{type},
+      #{details}
+    )
+  </insert>
+
+  <sql id="auditTargetFromWhere">
+    FROM sys_admin_event
+    <where>
+      <if test="user != null">
+        target_user_id = #{user}
+      </if>
+      <if test="organization != null">
+        AND target_organization_id = #{organization}
+      </if>
+    </where>
+  </sql>
+
+  <select id="list" resultMap="adminEventMap">
+    SELECT
+      id,
+      actor_type,
+      actor_user_id,
+      target_user_id,
+      target_organization_id,
+      event_type,
+      details,
+      created_at
+    <include refid="auditTargetFromWhere"/>
+    ORDER BY
+      created_at DESC,
+      id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="count" resultType="long">
+    SELECT COUNT(*)
+    <include refid="auditTargetFromWhere"/>
+  </select>
+</mapper>

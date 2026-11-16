@@ -16,18 +16,28 @@ import com.yangaobo.servicedesk.ticket.model.vo.support.ServiceItemVO;
  * @author yangaobo
  */
 public interface IServiceItemService extends IService<ServiceItemEntity> {
-    /** 管理员分页查询全局服务目录。 */
+    /**
+     * 管理员分页查询全局服务目录。
+     */
     PageVO<ServiceItemVO> listItems(IdentityDTO actor, SupportQueryForm form);
 
-    /** 管理员读取目标项目。 */
+    /**
+     * 管理员读取目标项目。
+     */
     ServiceItemVO query(IdentityDTO actor, String id);
 
-    /** 按原动作键创建服务目录及事件。 */
+    /**
+     * 按原动作键创建服务目录及事件。
+     */
     ServiceItemVO create(IdentityDTO actor, ServiceItemCreateForm form);
 
-    /** 带版本调整支持条件，既有工单快照不回写。 */
+    /**
+     * 带版本调整支持条件，既有工单快照不回写。
+     */
     ServiceItemVO updateItem(IdentityDTO actor, ServiceItemUpdateForm form);
 
-    /** 停用阻止新开通和新明确项目受理。 */
+    /**
+     * 停用阻止新开通和新明确项目受理。
+     */
     ServiceItemVO disable(IdentityDTO actor, ServiceStatusForm form);
 }

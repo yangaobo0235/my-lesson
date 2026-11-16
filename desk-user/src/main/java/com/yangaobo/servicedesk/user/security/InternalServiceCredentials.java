@@ -3,12 +3,12 @@ package com.yangaobo.servicedesk.user.security;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 
 /**
  * 内部调用服务凭据的业务边界。
@@ -22,7 +22,9 @@ public class InternalServiceCredentials {
     private final byte[] knowledgeToken;
     private final byte[] aiToken;
 
-    /** 每个调用方必须使用独立凭据，缺失或复用拒绝启动。 */
+    /**
+     * 每个调用方必须使用独立凭据，缺失或复用拒绝启动。
+     */
     public InternalServiceCredentials(
             @Value("${desk.identity.ticket-token}") String ticket,
             @Value("${desk.identity.knowledge-token}") String knowledge,
@@ -38,7 +40,9 @@ public class InternalServiceCredentials {
         aiToken = ("Bearer " + ai).getBytes(StandardCharsets.UTF_8);
     }
 
-    /** HTTP仅允许Java业务服务，身份资格核验只对ticket开放。 */
+    /**
+     * HTTP仅允许Java业务服务，身份资格核验只对ticket开放。
+     */
     public void requireHttp(String header, boolean eligibility) {
         byte[] actual = header == null ? new byte[0] : header.getBytes(StandardCharsets.UTF_8);
         if (MessageDigest.isEqual(ticketToken, actual)) return;
@@ -46,7 +50,9 @@ public class InternalServiceCredentials {
         throw new BusinessException(CommonErrorCode.FORBIDDEN);
     }
 
-    /** RPC只允许AI调用明确身份用途。 */
+    /**
+     * RPC只允许AI调用明确身份用途。
+     */
     public boolean isAi(String header) {
         return header != null
                 && MessageDigest.isEqual(aiToken, header.getBytes(StandardCharsets.UTF_8));

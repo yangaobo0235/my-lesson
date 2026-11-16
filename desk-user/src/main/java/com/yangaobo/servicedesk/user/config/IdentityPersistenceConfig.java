@@ -16,7 +16,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @ConditionalOnProperty(name = "desk.identity.enabled", havingValue = "true", matchIfMissing = true)
 @MapperScan("com.yangaobo.servicedesk.user.mapper")
 public class IdentityPersistenceConfig {
-    /** 使用包含算法标识的密码哈希，不安装默认口令。 */
+    /**
+     * 使用包含算法标识的密码哈希，不安装默认口令。
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();

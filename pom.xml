@@ -162,7 +162,11 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
-            <csp.sentinel.log.dir>${maven.multiModuleProjectDirectory}/.local/verification/sentinel/${project.artifactId}</csp.sentinel.log.dir>
+            <DESK_LOG_DIRECTORY>${maven.multiModuleProjectDirectory}/.local/verification/logs</DESK_LOG_DIRECTORY>
+            <DESK_KNOWLEDGE_UPLOAD_DIRECTORY>${maven.multiModuleProjectDirectory}/.local/verification/uploads</DESK_KNOWLEDGE_UPLOAD_DIRECTORY>
+            <csp.sentinel.log.dir>
+              ${maven.multiModuleProjectDirectory}/.local/verification/sentinel/${project.artifactId}
+            </csp.sentinel.log.dir>
           </systemPropertyVariables>
         </configuration>
       </plugin>
@@ -190,5 +194,16 @@
         </executions>
       </plugin>
     </plugins>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <configuration>
+            <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
   </build>
 </project>

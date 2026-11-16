@@ -23,10 +23,15 @@ import java.time.ZoneOffset;
  * @author yangaobo
  */
 public final class TicketViews {
-    /** 禁止实例化映射工具。 */
-    private TicketViews() {}
+    /**
+     * 禁止实例化映射工具。
+     */
+    private TicketViews() {
+    }
 
-    /** 显式投影ServiceItem安全字段。 */
+    /**
+     * 显式投影ServiceItem安全字段。
+     */
     public static ServiceItemVO of(ServiceItemEntity entity) {
         ServiceItemVO result = new ServiceItemVO();
         result.setId(entity.getId());
@@ -49,7 +54,9 @@ public final class TicketViews {
         return result;
     }
 
-    /** 显式投影ServiceEntitlement安全字段。 */
+    /**
+     * 显式投影ServiceEntitlement安全字段。
+     */
     public static ServiceEntitlementVO of(ServiceEntitlementEntity entity) {
         ServiceEntitlementVO result = new ServiceEntitlementVO();
         result.setId(entity.getId());
@@ -71,7 +78,9 @@ public final class TicketViews {
         return result;
     }
 
-    /** 显式投影ServiceEvent安全字段。 */
+    /**
+     * 显式投影ServiceEvent安全字段。
+     */
     public static ServiceEventVO of(ServiceEventEntity entity) {
         ServiceEventVO result = new ServiceEventVO();
         result.setId(entity.getId());
@@ -87,7 +96,9 @@ public final class TicketViews {
         return result;
     }
 
-    /** 显式投影ProductModel安全字段。 */
+    /**
+     * 显式投影ProductModel安全字段。
+     */
     public static ProductModelVO of(ProductModelEntity entity) {
         ProductModelVO result = new ProductModelVO();
         result.setId(entity.getId());
@@ -108,7 +119,9 @@ public final class TicketViews {
         return result;
     }
 
-    /** 显式投影Device安全字段。 */
+    /**
+     * 显式投影Device安全字段。
+     */
     public static DeviceVO of(DeviceEntity entity) {
         DeviceVO result = new DeviceVO();
         result.setId(entity.getId());
@@ -131,7 +144,9 @@ public final class TicketViews {
         return result;
     }
 
-    /** 显式投影Ticket安全字段。 */
+    /**
+     * 显式投影Ticket安全字段。
+     */
     public static TicketVO of(TicketEntity entity) {
         TicketVO result = new TicketVO();
         result.setId(entity.getId());
@@ -195,7 +210,9 @@ public final class TicketViews {
         return result;
     }
 
-    /** 显式投影TicketEvent安全字段。 */
+    /**
+     * 显式投影TicketEvent安全字段。
+     */
     public static TicketEventVO of(TicketEventEntity entity) {
         TicketEventVO result = new TicketEventVO();
         result.setId(entity.getId());

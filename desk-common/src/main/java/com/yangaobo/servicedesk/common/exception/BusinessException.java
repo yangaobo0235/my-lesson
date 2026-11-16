@@ -1,8 +1,10 @@
 package com.yangaobo.servicedesk.common.exception;
 
 import com.yangaobo.servicedesk.common.base.ErrorCode;
+
 import java.io.Serial;
 import java.util.Objects;
+
 import lombok.Getter;
 
 /**

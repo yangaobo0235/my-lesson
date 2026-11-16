@@ -116,9 +116,17 @@ MyBatis-Plus 3.5.18 的 IService 和 ServiceImpl 分别使用 `com.baomidou.myba
 
 MyBatis-Plus不支持复合主键通用CRUD。具有生命周期的客户资格使用单id及(customer_id,service_item_id)唯一键；角色/人员范围等纯关联复合主键由所属完整用例Mapper显式操作，不声明双@TableId或给其生成错误的getById。目录/资格与不可变it_service_event同事务，后者不是单独审计CRUD服务。
 
-一个Service可跨表，多个独立职责的 Service 可共享主实体。不按每张表生成接口，也不因统计工单就强迫概况继承 TicketEntity 三件套。ticket 的通知和时间线可由维护工单完整动作的服务协作，不为凑数量拆模块。
+一个Service可跨表，多个独立职责的 Service 可共享主实体。保留各层文件不意味着按表生成HTTP操作，也不因统计工单就强迫概况继承 TicketEntity 三件套。ticket 的通知和时间线可由维护工单完整动作的服务协作，不为凑数量拆模块。
 
-### 3.2 完整动作与 Mapper 使用
+### 3.2 各层文件对应
+
+对已纳入实现的每个真实持久化 Entity，所属服务必须保留对应 Controller、Service 接口、ServiceImpl、Mapper、Entity 和 Mapper XML 文件。通过完整业务职责对应，不要求 Controller、Service 与表名机械同名；同一实体可以由认证、管理等多个入口消费，已有对应文件不重复建立。每个 Mapper 都有同名 XML，即使暂时没有自定义 SQL，也保留声明准确 namespace 的空 mapper。
+
+暂时没有独立入口或业务方法的层允许为空，但 Java 文件必须有有效类型声明和中文职责 Javadoc；空 Controller 不声明请求映射或占用 URL，空 Service/实现不提供模拟成功和无意义转发。辅助实体的空服务默认采用普通接口和实现，不通过继承通用写接口扩大不可变审计的能力；真正维护主实体生命周期的服务继续使用三件套。框架注册遵循本应用的业务启用条件。
+
+事件、审计和适用规则仍在所属完整用例的事务中维护，补齐文件不自动授予独立增删改权限，不新增表或 HTTP 接口。纯复合键关联仍由所属用例显式维护，无独立 Entity 时不为凑文件创建持久化模型。无独立表的概况/编排复用真实数据模型与查询投影，不虚构 Entity；其实际 Mapper 同样保留对应 XML。文件映射登记在项目结构，变更时同步核对。
+
+### 3.3 完整动作与 Mapper 使用
 
 公开 acceptTicket、confirmBooking、publishDocument 等完整动作，负责当前操作者、范围、存在性、状态、版本、幂等与失败语义。Controller、任务和跨业务消费者不能调用通用 getById/save/removeById 绕过规则。
 
@@ -126,7 +134,7 @@ MyBatis-Plus不支持复合主键通用CRUD。具有生命周期的客户资格�
 
 Service 可接收普通 Form、操作者及明确参数，返回安全 VO、内部结果或无传输依赖的业务事件。取得 Cookie、读取 Session、写响应及 SSE 编码由 Web 边界负责。
 
-### 3.3 事务与并发
+### 3.4 事务与并发
 
 服务资格由ticket的项目及客户开通范围维护，设备可空，不用设备到期替代服务资格。采用AI草稿仍调用原建单/记录/解决用例，先查回执再核验草稿用途、目标、期限、版本及当前动作权限，不允许模型直接调用通用保存方法。客户确认事实与内部备注按可见性保存，技术人员私有AI会话不进入共享工单正文。
 
@@ -140,9 +148,20 @@ Service 可接收普通 Form、操作者及明确参数，返回安全 VO、内�
 
 ### 4.1 组织与参数
 
-实体 Mapper 默认按实体集中维护，统一 @MapperScan 注册；专用聚合 Mapper 可以是普通接口，不绑定无关实体。简单单表用 BaseMapper 与 Lambda Wrapper，联表、授权、统计、复杂筛选和竞争用注解 SQL 与 Java 文本块。动态条件使用 script/if/where/set/foreach，不新增 Mapper XML；DDL 与索引用 Flyway。
+实体 Mapper 按实体集中维护，统一 @MapperScan 注册；专用聚合 Mapper 可以是普通接口，不绑定无关实体。每个接口在所属应用 `src/main/resources/mapper/` 下保留同名 XML，namespace 为接口全限定名，statement id 与自定义方法名一致；无自定义方法时保留空 mapper。应用在 application.yml 显式声明 `mybatis-plus.mapper-locations: classpath*:/mapper/**/*.xml`，不新增公共 starter 或另一套 SqlSessionFactory。
 
-自定义参数显式 @Param，值用 `#{...}` 绑定。排序与动态标识来自服务器白名单，不拼接用户 `${...}`。SQL 关键字大写，列、JOIN、WHERE、GROUP BY、ORDER BY 分段排列；多列逐行，动态标签独立缩进，转义 XML 比较符。明确 null、空串与有效文本，模糊查询说明通配符语义。
+简单单表操作使用 BaseMapper 与 Lambda Wrapper；手写联表、授权、统计、分页、子查询、有界扫描和竞争 SQL 统一归 XML。Mapper 接口只保留合同、类型和 @Param，不使用 Select/Insert/Update/Delete 或 Provider 注解，不在 Service/RPC 中通过 last/inSql/setSql 等嵌入 SQL，也不借 `${ew.customSqlSegment}` 间接保留 SQL 拼装。DDL、索引和版本升级数据变更归 Flyway；框架 JDBC 与 Python 仓储不纳入 MyBatis XML。
+
+自定义参数显式 @Param，值用 `#{...}` 绑定。排序与动态标识来自服务器白名单，当前不使用 `${...}`。SQL 关键字大写，按语义换行，短小的简单语句可保留单行。明确 null、空串、布尔 false 和数值0的区别，LIKE 明确通配符语义。
+
+- XML 和 SQL 层次均使用2空格；SELECT 多列时每列一行，单列或简单聚合可与 SELECT 同行。FROM、各 JOIN、WHERE、GROUP BY、ORDER BY、LIMIT、OFFSET 和 FOR UPDATE 分段。
+- AND/OR 放在后续条件行首，保留括号及运算优先级；JOIN 的 ON 另起一行，附加连接条件与 ON 对齐。INSERT 列与 VALUES 参数顺序一致；UPDATE 的 SET 项逐行排列。
+- 在 statement 中直接使用 where、if、choose、foreach、set 等动态标签，不添加 script 包装；标签单独成行，每层缩进2空格。比较符 `<` 使用 `&lt;`，`&` 使用 `&amp;`，不重复转义，也不将动态标签整体包入 CDATA。
+- list/count 在同一 Mapper 内复用 FROM/JOIN/授权/筛选片段，count 不含排序和分页；一对多联表按实际记录口径计数。空授权必须无结果，空批量写入拒绝或无操作，不能因省略动态条件而执行全量操作。
+
+普通结果使用全限定 resultType，集合填元素类型；JSON及特殊类型使用具名 resultMap，不能同时声明两者。XML 显式维护特殊字段的 typeHandler，不能假定 Entity 注解自动作用于自定义查询；BaseMapper 使用的 autoResultMap 和字段策略继续保留。手写更新明确写 NULL 的语义，不用非空 if 阻止必要字段清空。
+
+分页保持显式 COUNT/LIMIT/OFFSET、稳定唯一排序及现有 PageVO，不默认引入分页插件。锁、状态、版本、影响行数及锁后独立查询 UTC 时间的语义不因迁移改变；不引入二级缓存，锁和时间查询的缓存策略须通过同一事务内重复读取验证，useCache=false 本身不禁用一级缓存。调整后检查真实生成 SQL、参数绑定、映射及制品资源，Java 格式器不负责 XML 排版。
 
 ```java
 /**
@@ -160,22 +179,33 @@ public interface TicketEventMapper extends BaseMapper<TicketEventEntity> {
      * @param actionId 原动作幂等键
      * @return 原事件；不存在时为 null
      */
-    @Select("""
-            SELECT
-                id,
-                sequence_number,
-                to_status,
-                action_request_hash
-            FROM sd_ticket_event
-            WHERE ticket_id = #{ticketId}
-                AND actor_id = #{actorId}
-                AND client_action_id = #{actionId}
-            """)
     TicketActionReceiptDTO findActionReceipt(
             @Param("ticketId") String ticketId,
             @Param("actorId") String actorId,
             @Param("actionId") String actionId);
 }
+```
+
+对应 XML 使用接口 namespace；该示例假定返回投影类型已经存在：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.TicketEventMapper">
+  <select id="findActionReceipt"
+    resultType="com.yangaobo.servicedesk.ticket.model.dto.TicketActionReceiptDTO">
+    SELECT
+      id,
+      sequence_number,
+      to_status,
+      action_request_hash
+    FROM sd_ticket_event
+    WHERE ticket_id = #{ticketId}
+      AND actor_id = #{actorId}
+      AND client_action_id = #{actionId}
+  </select>
+</mapper>
 ```
 
 Mapper 返回 Entity、DTO、字段合同一致的直接 VO 投影、标量或影响行数，不返回 Result。COUNT 用 long/Long，EXISTS 可返回 boolean，写入返回 int，Service 解释结果。查询模型独立放 model，不在 Mapper 内嵌套类型；同一字段合同不机械复制 DTO/VO。
@@ -302,7 +332,7 @@ Controller 方法、Service 业务接口与实现、自定义 Mapper、公共技
 
 模型字段逐个写中文说明，必要时标单位、范围、空值和状态，UID不写无意义说明。作者不放方法或字段。面向HTTP的Controller使用中文@Tag/@Operation，Form/VO使用@Schema，不能替代Javadoc或校验；OpenAPI接入及不同运行栈的边界见第10节。
 
-Java21、4空格，包/导入/类型分组，无通配符和无效导入。成员按常量、依赖/字段、构造、公开方法、私有协作排列。类型、方法和字段注解独立成行；参数保持 `@Valid @RequestBody XxxForm form` 一组，长参数按参数换行。Stream 用于清楚转换，状态与异常使用直观控制流。
+Java21、4空格，续行8空格。排版以 IDEA 原生格式器及 `.github/format/intellij-java.xml` 为准，使用 `python .github/scripts/format_java.py --idea-home "<IDEA安装目录>"`，加 `--check` 只检查；也可设置 `DESK_IDEA_HOME`。IDEA 在 Settings → Editor → Code Style 导入该 XML 为项目方案，启用 EditorConfig 后使用 Ctrl+Alt+L；本机方案位于被忽略的 `.idea/codeStyles/`，跨机器以受版本管理的 XML 为准。不叠加其他 Java 格式器。包/导入/类型分组，无通配符和无效导入；整理导入由 Optimize Imports 单独负责。成员按常量、依赖/字段、构造、公开方法、私有协作排列。类型、方法和字段注解独立成行；参数保持 `@Valid @RequestBody XxxForm form` 一组，长参数按参数换行。Stream 用于清楚转换，状态与异常使用直观控制流。
 
 ## 8. 安全、异常与日志
 

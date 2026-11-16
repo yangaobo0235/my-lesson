@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta, timezone
+from inspect import isawaitable
+from typing import overload
 
 import grpc
 from google.protobuf.json_format import MessageToDict
 from redis.asyncio import Redis
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -21,10 +22,11 @@ from desk_contracts.ticket.v1.support_pb2 import (
 from desk_contracts.user.v1.identity_pb2 import VerifiedIdentity
 from servicedesk_ai.bootstrap.settings import Settings
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
-from servicedesk_ai.errors.diagnosis import DiagnosisErrorCode
+from servicedesk_ai.errors.generation import GenerationErrorCode
 from servicedesk_ai.infrastructure.domain_rpc import DomainRpc
 from servicedesk_ai.infrastructure.identity import translate_failure
 from servicedesk_ai.infrastructure.tracing import snapshot as trace_snapshot
+from servicedesk_ai.repositories import conversation_queries as queries
 from servicedesk_ai.repositories import diagnosis as store
 from servicedesk_ai.schemas.diagnosis import (
     ConversationChange,
@@ -47,6 +49,14 @@ from servicedesk_ai.schemas.indexing import canonical_hash
 from servicedesk_ai.services.evidence import EvidenceService
 
 
+@overload
+def instant(value: datetime) -> datetime: ...
+
+
+@overload
+def instant(value: None) -> None: ...
+
+
 def instant(value: datetime | None) -> datetime | None:
     """MySQL UTC无时区列在公开边界恢复UTC，不按宿主本地时区解释。"""
     return value.replace(tzinfo=UTC) if value is not None else None
@@ -57,6 +67,14 @@ def environment(value: dict[str, object]) -> SupportEnvironment:
     return SupportEnvironment.model_validate(
         {key: item for key, item in value.items() if key != "schema_version"}
     )
+
+
+async def async_eval(redis: Redis, script: str, count: int, *args: str | int) -> object:
+    """只等待所属异步Redis资源，防止错误同步连接进入事件循环。"""
+    result = redis.eval(script, count, *args)
+    if not isawaitable(result):
+        raise TypeError("需要异步Redis资源")
+    return await result
 
 
 class ConversationService:
@@ -177,13 +195,8 @@ class ConversationService:
             {k: v for k, v in snapshot.items() if k != "schema_version"}
         ).model_dump()
         async with self.engine.begin() as db:
-            await db.execute(
-                text("""
-                INSERT INTO ai_conversation
-                (id,owner_id,customer_id,mode,ticket_id,service_item_id,device_id,product_model_id,support_context,title)
-                VALUES
-                (:id,:owner,:customer,:mode,:ticket,:service,:device,:model,:context,:title)
-            """),
+            await queries.insert_conversation(
+                db,
                 {
                     "id": identifier,
                     "owner": actor.actor.owner_id,
@@ -215,29 +228,9 @@ class ConversationService:
         """按本人数据库分页，不读取全库；技术记录逐项当前授权。"""
         parameters = {"owner": actor.actor.owner_id, "mode": mode, "ticket": ticket_id}
         async with self.engine.connect() as db:
-            count = (
-                await db.execute(
-                    text(
-                        "SELECT COUNT(*) FROM ai_conversation WHERE "
-                        "owner_id=:owner AND deleted_at IS NULL AND (:mode IS NULL OR mode=:mode) "
-                        "AND (:ticket IS NULL OR ticket_id=:ticket)"
-                    ),
-                    parameters,
-                )
-            ).scalar_one()
-            rows = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT id FROM ai_conversation WHERE owner_id=:owner AND deleted_at IS NULL
-                AND (:mode IS NULL OR mode=:mode) AND (:ticket IS NULL OR ticket_id=:ticket)
-                ORDER BY updated_at DESC,id LIMIT :limit OFFSET :offset
-            """),
-                        {**parameters, "limit": size, "offset": (page - 1) * size},
-                    )
-                )
-                .scalars()
-                .all()
+            count = await queries.count_conversations(db, parameters)
+            rows = await queries.page_conversation_ids(
+                db, {**parameters, "limit": size, "offset": (page - 1) * size}
             )
         values = []
         for identifier in rows:
@@ -265,38 +258,15 @@ class ConversationService:
             if value.row_version != int(form.row_version):
                 raise BusinessError(CommonErrorCode.CONFLICT)
             if delete:
-                active = (
-                    (
-                        await db.execute(
-                            text(
-                                "SELECT id FROM ai_generation WHERE "
-                                "conversation_id=:id AND status IN "
-                                "('QUEUED','RUNNING') FOR UPDATE"
-                            ),
-                            {"id": identifier},
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
+                active = await queries.lock_active_generation_ids(db, {"id": identifier})
                 for run_id in active:
                     await store.stop(
                         db, await store.generation(db, run_id), "CANCELLED", "CONVERSATION_DELETED"
                     )
-                await db.execute(
-                    text("""
-                UPDATE ai_conversation SET deleted_at=UTC_TIMESTAMP(6),
-                row_version=row_version+1,updated_at=UTC_TIMESTAMP(6) WHERE id=:id
-            """),
-                    {"id": identifier},
-                )
+                await queries.mark_conversation_deleted(db, {"id": identifier})
                 return None
-            await db.execute(
-                text("""
-                UPDATE ai_conversation SET title=:title,row_version=row_version+1,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=:id
-            """),
-                {"id": identifier, "title": form.title.strip()},
+            await queries.rename_conversation(
+                db, {"id": identifier, "title": (form.title or "").strip()}
             )
             return self.view(await store.conversation(db, identifier))
 
@@ -306,29 +276,9 @@ class ConversationService:
         """更正记录追加保留；来源撤回隐藏相关提议，不隐藏本人原始反馈。"""
         value = await self.authorized(actor, identifier)
         async with self.engine.connect() as db:
-            count = (
-                await db.execute(
-                    text("SELECT COUNT(*) FROM ai_diagnostic_fact WHERE conversation_id=:id"),
-                    {"id": identifier},
-                )
-            ).scalar_one()
-            rows = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT f.id,f.state_version,f.fact_kind,f.operation,f.statement,f.source_type,
-                f.supersedes_fact_id,f.source_generation_id,f.source_locator,f.created_at,
-                (f.operation='ASSERT' AND NOT EXISTS(SELECT 1 FROM ai_diagnostic_fact later
-                WHERE later.conversation_id=f.conversation_id AND later.supersedes_fact_id=f.id))
-                AS active FROM ai_diagnostic_fact f
-                WHERE f.conversation_id=:id ORDER BY f.state_version,f.id LIMIT :limit OFFSET
-                :offset
-            """),
-                        {"id": identifier, "limit": size, "offset": (page - 1) * size},
-                    )
-                )
-                .mappings()
-                .all()
+            count = await queries.count_facts(db, {"id": identifier})
+            rows = await queries.page_facts(
+                db, {"id": identifier, "limit": size, "offset": (page - 1) * size}
             )
         result = []
         verified = {}
@@ -375,16 +325,9 @@ class ConversationService:
         async with self.engine.begin() as db:
             value = await store.conversation(db, identifier, lock=True)
             self.owner(actor, value)
-            old = (
-                await db.execute(
-                    text(
-                        "SELECT action_request_hash FROM ai_diagnostic_fact "
-                        "WHERE conversation_id=:id "
-                        "AND client_action_id=:key"
-                    ),
-                    {"id": identifier, "key": form.client_action_id},
-                )
-            ).first()
+            old = await queries.find_fact_request(
+                db, {"id": identifier, "key": form.client_action_id}
+            )
             if old:
                 if old[0] != request_hash:
                     raise BusinessError(CommonErrorCode.CONFLICT)
@@ -395,30 +338,19 @@ class ConversationService:
             if form.action == "SET_CONTEXT" and value.mode != "CUSTOMER_SELF_SERVICE":
                 raise BusinessError(CommonErrorCode.FORBIDDEN)
             if form.fact_id:
-                predecessor = (
-                    await db.execute(
-                        text("""
-                SELECT id FROM ai_diagnostic_fact f WHERE f.id=:fact AND f.conversation_id=:id
-                AND f.operation='ASSERT' AND NOT EXISTS (SELECT 1 FROM
-                ai_diagnostic_fact s WHERE s.supersedes_fact_id=f.id)
-            """),
-                        {"fact": form.fact_id, "id": identifier},
-                    )
-                ).first()
+                predecessor = await queries.lock_current_assertion(
+                    db, {"fact": form.fact_id, "id": identifier}
+                )
                 if predecessor is None:
                     raise BusinessError(CommonErrorCode.CONFLICT)
             snapshot = value.support_context
             if form.action == "SET_CONTEXT":
+                if form.support_context is None:
+                    raise BusinessError(CommonErrorCode.INVALID_REQUEST)
                 snapshot = {"schema_version": 1, **form.support_context.model_dump()}
             statement = form.statement or "本人更新了问题环境，旧环境检查需复核"
-            await db.execute(
-                text("""
-                INSERT INTO ai_diagnostic_fact
-                (id,conversation_id,state_version,fact_kind,operation,statement,source_type,reported_by,
-                source_locator,supersedes_fact_id,client_action_id,action_request_hash)
-                VALUES
-                (:fact,:id,:version,:kind,:operation,:statement,:source,:actor,:locator,:predecessor,:key,:hash)
-            """),
+            await queries.insert_user_fact(
+                db,
                 {
                     "fact": store.new_id(),
                     "id": identifier,
@@ -438,13 +370,8 @@ class ConversationService:
                     "hash": request_hash,
                 },
             )
-            await db.execute(
-                text("""
-                UPDATE ai_conversation SET
-                support_context=:context,state_version=state_version+1,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=:id
-            """),
-                {"id": identifier, "context": store.json_value(snapshot)},
+            await queries.update_environment(
+                db, {"id": identifier, "context": store.json_value(snapshot)}
             )
             return self.view(await store.conversation(db, identifier))
 
@@ -475,7 +402,8 @@ class ConversationService:
             + ":"
             + actor.actor.owner_id
         )
-        accepted = await self.redis.eval(
+        accepted = await async_eval(
+            self.redis,
             "local n=tonumber(redis.call('GET',KEYS[1]) or '0'); "
             "if n>=tonumber(ARGV[1]) then return 0 end; "
             "redis.call('INCR',KEYS[1]); redis.call('EXPIRE',KEYS[1],172800); return 1",
@@ -484,7 +412,7 @@ class ConversationService:
             self.settings.redis.daily_limit,
         )
         if not accepted:
-            raise BusinessError(DiagnosisErrorCode.DAILY_GENERATION_LIMIT)
+            raise BusinessError(GenerationErrorCode.DAILY_GENERATION_LIMIT)
         created = False
         try:
             async with self.engine.begin() as db:
@@ -501,23 +429,11 @@ class ConversationService:
                     if value.state_version != int(form.state_version):
                         raise BusinessError(CommonErrorCode.CONFLICT)
                     await store.require_idle(db, identifier)
-                    queued = (
-                        await db.execute(
-                            text("SELECT COUNT(*) FROM ai_generation WHERE status='QUEUED'")
-                        )
-                    ).scalar_one()
+                    queued = await queries.queued_generation_count(db)
                     if queued >= 100:
-                        raise BusinessError(DiagnosisErrorCode.GENERATION_QUEUE_FULL)
-                    round_number = (
-                        await db.execute(
-                            text(
-                                "SELECT COALESCE(MAX(round_number),0)+1 FROM "
-                                "ai_generation WHERE conversation_id=:id"
-                            ),
-                            {"id": identifier},
-                        )
-                    ).scalar_one()
-                    snapshot = {
+                        raise BusinessError(GenerationErrorCode.GENERATION_QUEUE_FULL)
+                    round_number = await queries.next_round_number(db, {"id": identifier})
+                    snapshot: dict[str, object] = {
                         "schema_version": 1,
                         "mode": value.mode,
                         "customer_id": value.customer_id,
@@ -540,14 +456,8 @@ class ConversationService:
                         "tool_version": "readonly-v1",
                         "model": self.settings.model.chat_model,
                     }
-                    await db.execute(
-                        text("""
-                INSERT INTO ai_generation
-                (id,conversation_id,owner_id,round_number,input_state_version,ticket_version,question_text,
-                client_request_id,request_hash,session_ref,auth_version,pipeline_config,context_snapshot,trace_context)
-                VALUES
-                (:id,:conversation,:owner,:round,:version,:ticket_version,:question,:key,:hash,:session,:auth,:pipeline,:context,:trace)
-            """),
+                    await queries.insert_generation(
+                        db,
                         {
                             "id": run_id,
                             "conversation": identifier,
@@ -569,13 +479,8 @@ class ConversationService:
                             else None,
                         },
                     )
-                    await db.execute(
-                        text("""
-                INSERT INTO ai_diagnostic_fact
-                (id,conversation_id,state_version,fact_kind,statement,source_type,source_generation_id,reported_by,source_locator)
-                VALUES
-                (:id,:conversation,:version,'OBSERVATION',:question,:source,:run,:actor,:locator)
-            """),
+                    await queries.insert_question_fact(
+                        db,
                         {
                             "id": store.new_id(),
                             "conversation": identifier,
@@ -595,16 +500,17 @@ class ConversationService:
                             ),
                         },
                     )
-                    await db.execute(
-                        text("""
-                UPDATE ai_conversation SET
-                state_version=state_version+1,support_context=:context,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=:id
-            """),
+                    await queries.advance_environment(
+                        db,
                         {
                             "id": identifier,
                             "context": store.json_value(
-                                {"schema_version": 1, **snapshot["environment"]}
+                                {
+                                    "schema_version": 1,
+                                    **MessageToDict(
+                                        context.environment, preserving_proto_field_name=True
+                                    ),
+                                }
                             ),
                         },
                     )
@@ -620,7 +526,8 @@ class ConversationService:
             created = False
         finally:
             if not created:
-                await self.redis.eval(
+                await async_eval(
+                    self.redis,
                     "local n=tonumber(redis.call('GET',KEYS[1]) or '0'); "
                     "if n>0 then return redis.call('DECR',KEYS[1]) end; return 0",
                     1,
@@ -641,21 +548,7 @@ class ConversationService:
                 raise
             hidden = True
         async with self.engine.connect() as db:
-            rows = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT c.citation_number,c.source_usage_id,c.title_snapshot,
-                c.locator_snapshot,c.evidence_excerpt,u.source_version FROM ai_citation c
-                JOIN ai_source_usage u ON u.id=c.source_usage_id WHERE c.generation_id=:id
-                ORDER BY c.citation_number
-            """),
-                        {"id": identifier},
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            rows = await queries.generation_citations(db, {"id": identifier})
         return GenerationView(
             id=run.id,
             conversation_id=run.conversation_id,
@@ -706,24 +599,9 @@ class ConversationService:
         """历史分页逐轮复核实际来源，断线只查询原运行，不重新生成。"""
         await self.authorized(actor, identifier)
         async with self.engine.connect() as db:
-            count = (
-                await db.execute(
-                    text("SELECT COUNT(*) FROM ai_generation WHERE conversation_id=:id"),
-                    {"id": identifier},
-                )
-            ).scalar_one()
-            ids = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT id FROM ai_generation WHERE conversation_id=:id ORDER BY round_number
-                LIMIT :limit OFFSET :offset
-            """),
-                        {"id": identifier, "limit": size, "offset": (page - 1) * size},
-                    )
-                )
-                .scalars()
-                .all()
+            count = await queries.count_turns(db, {"id": identifier})
+            ids = await queries.page_generation_ids(
+                db, {"id": identifier, "limit": size, "offset": (page - 1) * size}
             )
         return PageView(
             records=[await self.get_generation(actor, item) for item in ids],
@@ -748,30 +626,8 @@ class ConversationService:
         """复核本人及全部来源后读取有界调用摘要，不返回参数正文和完整Prompt。"""
         output = await self.get_generation(actor, identifier)
         async with self.engine.connect() as db:
-            models = (
-                (
-                    await db.execute(
-                        text("""SELECT call_number,purpose,status,requested_model,response_model,
-                input_tokens,output_tokens,estimated_cost FROM ai_model_call WHERE generation_id=:id
-                ORDER BY call_number"""),
-                        {"id": identifier},
-                    )
-                )
-                .mappings()
-                .all()
-            )
-            tools = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT tool_number,tool_name,status,result_summary,result_refs FROM ai_tool_call
-                WHERE generation_id=:id ORDER BY tool_number"""),
-                        {"id": identifier},
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            models = await queries.model_calls(db, {"id": identifier})
+            tools = await queries.tool_calls(db, {"id": identifier})
         return CallsView(
             model_calls=[
                 ModelCallView(

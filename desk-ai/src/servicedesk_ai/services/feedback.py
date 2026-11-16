@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC
 
-from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from desk_contracts.user.v1.identity_pb2 import VerifiedIdentity
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
+from servicedesk_ai.repositories import feedback as queries
 from servicedesk_ai.repositories.diagnosis import new_id
 from servicedesk_ai.schemas.diagnosis import FeedbackHandle, FeedbackInput, FeedbackShare
 from servicedesk_ai.schemas.diagnosis_views import (
@@ -42,42 +44,9 @@ class FeedbackService:
         if status not in {None, "PENDING", "RESOLVED", "DISMISSED"}:
             raise BusinessError(CommonErrorCode.INVALID_REQUEST)
         async with self.engine.connect() as db:
-            where = (
-                "f.share_with_knowledge_admin=1 AND f.rating='UNHELPFUL' "
-                "AND f.status IN ('PENDING','RESOLVED','DISMISSED') "
-                "AND c.mode='CUSTOMER_SELF_SERVICE'"
-            )
-            params: dict[str, object] = {"limit": size, "offset": (page - 1) * size}
-            if status is not None:
-                where += " AND f.status=:status"
-                params["status"] = status
-            total = (
-                await db.execute(
-                    text(
-                        "SELECT COUNT(*) FROM ai_feedback f JOIN ai_generation g "
-                        "ON g.id=f.generation_id JOIN ai_conversation c "
-                        f"ON c.id=g.conversation_id WHERE {where} AND c.deleted_at IS NULL"
-                    ),
-                    params,
-                )
-            ).scalar_one()
-            rows = (
-                (
-                    await db.execute(
-                        text(
-                            "SELECT f.id,f.generation_id,f.rating,f.issue_category,f.status,"
-                            "f.row_version,f.created_at FROM ai_feedback f JOIN ai_generation g "
-                            "ON g.id=f.generation_id JOIN ai_conversation c "
-                            "ON c.id=g.conversation_id "
-                            f"WHERE {where} AND c.deleted_at IS NULL "
-                            "ORDER BY f.created_at DESC,f.id LIMIT :limit OFFSET :offset"
-                        ),
-                        params,
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            params = {"limit": size, "offset": (page - 1) * size, "status": status}
+            total = await queries.count_shared(db, params)
+            rows = await queries.page_shared(db, params)
         return PageView(
             records=[self.queue_item(row) for row in rows],
             total=str(total),
@@ -86,42 +55,18 @@ class FeedbackService:
         )
 
     @staticmethod
-    def queue_item(row: object) -> FeedbackQueueItem:
-        """将数据库版本转换为不丢精度的公开十进制字符串。"""
-        return FeedbackQueueItem(
-            id=row["id"],
-            generation_id=row["generation_id"],
-            rating=row["rating"],
-            issue_category=row["issue_category"],
-            status=row["status"],
-            row_version=str(row["row_version"]),
-            created_at=row["created_at"].replace(tzinfo=UTC),
-        )
+    def queue_item(row: RowMapping | Mapping[str, object]) -> FeedbackQueueItem:
+        """在数据库投影边界校验字段，公开版本保留精度并恢复UTC时区。"""
+        values = {name: row[name] for name in FeedbackQueueItem.model_fields}
+        values["row_version"] = str(row["row_version"])
+        result = FeedbackQueueItem.model_validate(values)
+        return result.model_copy(update={"created_at": result.created_at.replace(tzinfo=UTC)})
 
     async def shared_case(self, actor: VerifiedIdentity, identifier: str) -> SharedFeedbackCase:
         """重新核验共享、会话及全部来源后，才返回本轮问题、回答与摘录。"""
         self.require_knowledge_admin(actor)
         async with self.engine.connect() as db:
-            row = (
-                (
-                    await db.execute(
-                        text("""
-                        SELECT f.id,f.generation_id,f.rating,f.issue_category,f.comment,f.status,
-                        f.row_version,f.created_at,g.conversation_id,g.owner_id,g.session_ref,
-                        g.auth_version,g.status AS generation_status,g.question_text,g.answer_text,
-                        c.mode,c.deleted_at
-                        FROM ai_feedback f JOIN ai_generation g ON g.id=f.generation_id
-                        JOIN ai_conversation c ON c.id=g.conversation_id
-                        WHERE f.id=:id AND f.share_with_knowledge_admin=1
-                        AND f.rating='UNHELPFUL' AND f.status IN ('PENDING','RESOLVED','DISMISSED')
-                        AND c.mode='CUSTOMER_SELF_SERVICE' AND c.deleted_at IS NULL
-                        """),
-                        {"id": identifier},
-                    )
-                )
-                .mappings()
-                .first()
-            )
+            row = await queries.shared_case(db, {"id": identifier})
         if row is None:
             raise BusinessError(CommonErrorCode.NOT_FOUND)
         if row["generation_status"] != "SUCCEEDED" or row["answer_text"] is None:
@@ -131,6 +76,12 @@ class FeedbackService:
         async with self.engine.connect() as db:
             run = await generation(db, row["generation_id"])
         sources = await self.conversations.evidence.verify(run)
+        # 来源复核跨网络等待；交付正文前重新检查共享及会话删除，避免撤销期间泄漏。
+        async with self.engine.connect() as db:
+            current = await queries.shared_case(db, {"id": identifier})
+        if current is None or current["generation_id"] != row["generation_id"]:
+            raise BusinessError(CommonErrorCode.NOT_FOUND)
+        row = current
         return SharedFeedbackCase(
             feedback=self.queue_item(row),
             comment=row["comment"],
@@ -149,22 +100,7 @@ class FeedbackService:
         self.require_knowledge_admin(actor)
         await self.shared_case(actor, identifier)
         async with self.engine.begin() as db:
-            row = (
-                (
-                    await db.execute(
-                        text("""
-                        SELECT f.id,f.generation_id,f.rating,f.issue_category,f.status,
-                        f.share_with_knowledge_admin,f.row_version,f.created_at,c.mode,c.deleted_at
-                        FROM ai_feedback f JOIN ai_generation g ON g.id=f.generation_id
-                        JOIN ai_conversation c ON c.id=g.conversation_id
-                        WHERE f.id=:id FOR UPDATE
-                        """),
-                        {"id": identifier},
-                    )
-                )
-                .mappings()
-                .first()
-            )
+            row = await queries.lock_feedback_case(db, {"id": identifier})
             if (
                 row is None
                 or not row["share_with_knowledge_admin"]
@@ -175,12 +111,8 @@ class FeedbackService:
             if row["status"] != "PENDING" or row["row_version"] != int(form.row_version):
                 raise BusinessError(CommonErrorCode.CONFLICT)
             status = "RESOLVED" if form.action == "RESOLVE" else "DISMISSED"
-            await db.execute(
-                text("""
-                UPDATE ai_feedback SET status=:status,handled_by=:actor,handling_note=:note,
-                handled_at=UTC_TIMESTAMP(6),row_version=row_version+1,updated_at=UTC_TIMESTAMP(6)
-                WHERE id=:id AND row_version=:version AND status='PENDING'
-                """),
+            await queries.handle_feedback(
+                db,
                 {
                     "status": status,
                     "actor": actor.actor.owner_id,
@@ -200,15 +132,8 @@ class FeedbackService:
         if run.status != "SUCCEEDED":
             raise BusinessError(CommonErrorCode.CONFLICT)
         async with self.engine.begin() as db:
-            await db.execute(
-                text("SELECT id FROM ai_generation WHERE id=:id FOR UPDATE"), {"id": run_id}
-            )
-            row = (
-                await db.execute(
-                    text("SELECT id,status FROM ai_feedback WHERE generation_id=:id FOR UPDATE"),
-                    {"id": run_id},
-                )
-            ).first()
+            await queries.lock_generation(db, {"id": run_id})
+            row = await queries.lock_generation_feedback(db, {"id": run_id})
             if row and row[1] in {"RESOLVED", "DISMISSED"}:
                 raise BusinessError(CommonErrorCode.CONFLICT)
             status = (
@@ -220,12 +145,8 @@ class FeedbackService:
             )
             identifier = row[0] if row else new_id()
             if row:
-                await db.execute(
-                    text("""
-                UPDATE ai_feedback SET rating=:rating,issue_category=:category,
-                comment=:comment,status=:status,row_version=row_version+1,updated_at=UTC_TIMESTAMP(6)
-                WHERE id=:id
-            """),
+                await queries.update_feedback(
+                    db,
                     {
                         "id": identifier,
                         "rating": form.rating,
@@ -235,12 +156,8 @@ class FeedbackService:
                     },
                 )
             else:
-                await db.execute(
-                    text("""
-                INSERT INTO ai_feedback
-                (id,generation_id,submitted_by,rating,issue_category,comment,share_with_knowledge_admin,status)
-                VALUES (:id,:run,:actor,:rating,:category,:comment,false,:status)
-            """),
+                await queries.insert_feedback(
+                    db,
                     {
                         "id": identifier,
                         "run": run_id,
@@ -262,45 +179,19 @@ class FeedbackService:
         if conversation.mode != "CUSTOMER_SELF_SERVICE" or (form.share and run.sources_hidden):
             raise BusinessError(CommonErrorCode.FORBIDDEN)
         async with self.engine.begin() as db:
-            row = (
-                await db.execute(
-                    text(
-                        "SELECT id,row_version,status,rating FROM ai_feedback "
-                        "WHERE generation_id=:id FOR UPDATE"
-                    ),
-                    {"id": run_id},
-                )
-            ).first()
+            row = await queries.lock_feedback_sharing(db, {"id": run_id})
             if row is None:
                 raise BusinessError(CommonErrorCode.NOT_FOUND)
             if form.share and (row[2] != "PENDING" or row[3] != "UNHELPFUL"):
                 raise BusinessError(CommonErrorCode.CONFLICT)
             if row[1] != int(form.row_version):
                 raise BusinessError(CommonErrorCode.CONFLICT)
-            await db.execute(
-                text("""
-                UPDATE ai_feedback SET share_with_knowledge_admin=:share,
-                row_version=row_version+1,updated_at=UTC_TIMESTAMP(6) WHERE id=:id
-            """),
-                {"id": row[0], "share": form.share},
-            )
+            await queries.change_feedback_sharing(db, {"id": row[0], "share": form.share})
             return await self.view(db, row[0])
 
     async def view(self, db: AsyncConnection, identifier: str) -> FeedbackView:
         """只输出本人评价，不夹带私有会话、Prompt或知识正文。"""
-        row = (
-            (
-                await db.execute(
-                    text("""
-                SELECT id,rating,issue_category,comment,share_with_knowledge_admin,
-                status,row_version FROM ai_feedback WHERE id=:id
-            """),
-                    {"id": identifier},
-                )
-            )
-            .mappings()
-            .one()
-        )
+        row = await queries.feedback_view(db, {"id": identifier})
         return FeedbackView(
             **{
                 **row,

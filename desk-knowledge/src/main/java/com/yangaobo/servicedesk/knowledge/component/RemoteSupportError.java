@@ -8,10 +8,24 @@ import com.yangaobo.servicedesk.common.base.ErrorCode;
  * @author yangaobo
  */
 public enum RemoteSupportError implements ErrorCode {
-    /** 新自助请求没有当前服务资格。 */
+    /**
+     * 新自助请求没有当前服务资格。
+     */
     SERVICE_NOT_COVERED;
-    /** {@inheritDoc} */
-    @Override public int code() { return 3001; }
-    /** {@inheritDoc} */
-    @Override public String message() { return "客户当前未开通有效支持服务"; }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public int code() {
+        return 3001;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public String message() {
+        return "客户当前未开通有效支持服务";
+    }
 }

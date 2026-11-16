@@ -3,6 +3,7 @@ package com.yangaobo.servicedesk.gateway.component.web;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -30,25 +31,34 @@ public class GatewayIngressFilter implements WebFilter {
      * 清理后再交给路由及下游，Cookie仍按浏览器会话合同传递。
      *
      * @param exchange 当前HTTP交换
-     * @param chain 后续响应式过滤链
+     * @param chain    后续响应式过滤链
      * @return 完成或失败信号
      */
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String traceId = UUID.randomUUID().toString().replace("-", "");
         exchange.getAttributes().put(TRACE_ATTRIBUTE, traceId);
-        exchange.getResponse().beforeCommit(() -> {
-            // 下游已有本地请求标识时保持其响应合同；网关自身响应才补充当前标识。
-            if (!exchange.getResponse().getHeaders().containsKey("X-Trace-Id")) {
-                exchange.getResponse().getHeaders().set("X-Trace-Id", traceId);
-            }
-            return Mono.empty();
-        });
-        ServerHttpRequest request = exchange.getRequest().mutate().headers(headers -> {
-            List<String> removed = headers.keySet().stream()
-                    .filter(GatewayIngressFilter::untrustedHeader).toList();
-            removed.forEach(headers::remove);
-        }).build();
+        exchange.getResponse()
+                .beforeCommit(
+                        () -> {
+                            // 下游已有本地请求标识时保持其响应合同；网关自身响应才补充当前标识。
+                            if (!exchange.getResponse().getHeaders().containsKey("X-Trace-Id")) {
+                                exchange.getResponse().getHeaders().set("X-Trace-Id", traceId);
+                            }
+                            return Mono.empty();
+                        });
+        ServerHttpRequest request =
+                exchange.getRequest()
+                        .mutate()
+                        .headers(
+                                headers -> {
+                                    List<String> removed =
+                                            headers.keySet().stream()
+                                                    .filter(GatewayIngressFilter::untrustedHeader)
+                                                    .toList();
+                                    removed.forEach(headers::remove);
+                                })
+                        .build();
         return chain.filter(exchange.mutate().request(request).build());
     }
 
@@ -60,13 +70,22 @@ public class GatewayIngressFilter implements WebFilter {
      */
     private static boolean untrustedHeader(String name) {
         String lower = name.toLowerCase(Locale.ROOT);
-        return lower.startsWith("x-user-") || lower.startsWith("x-actor-")
-                || lower.startsWith("x-internal-") || lower.startsWith("x-b3-")
+        return lower.startsWith("x-user-")
+                || lower.startsWith("x-actor-")
+                || lower.startsWith("x-internal-")
+                || lower.startsWith("x-b3-")
                 || switch (lower) {
-                    case "authorization", "x-organization-id", "x-customer-scopes",
-                            "x-session-ref", "x-auth-version", "x-trace-id", "traceparent",
-                            "tracestate", "baggage", "b3" -> true;
-                    default -> false;
-                };
+            case "authorization",
+                 "x-organization-id",
+                 "x-customer-scopes",
+                 "x-session-ref",
+                 "x-auth-version",
+                 "x-trace-id",
+                 "traceparent",
+                 "tracestate",
+                 "baggage",
+                 "b3" -> true;
+            default -> false;
+        };
     }
 }

@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.TicketEventMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.ticket.model.entity.TicketEventEntity" autoMapping="true">
+    <id column="id" property="id"/>
+    <result column="metadata" property="metadata"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      ticket_id,
+      sequence_number,
+      event_type,
+      onsite_booking_id,
+      actor_type,
+      actor_id,
+      client_action_id,
+      source_draft_id,
+      action_request_hash,
+      visibility,
+      from_status,
+      to_status,
+      content,
+      metadata,
+      created_at
+    FROM sd_ticket_event
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <select id="lastSequence" resultType="int">
+    SELECT COALESCE(MAX(sequence_number), 0)
+    FROM sd_ticket_event
+    WHERE ticket_id = #{ticket}
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    ticket_id,
+    sequence_number,
+    event_type,
+    onsite_booking_id,
+    actor_type,
+    actor_id,
+    client_action_id,
+    source_draft_id,
+    action_request_hash,
+    visibility,
+    from_status,
+    to_status,
+    content,
+    metadata,
+    created_at
+  </sql>
+
+  <sql id="countReadableFromWhere">
+    FROM sd_ticket_event
+    <where>
+      ticket_id = #{ticketId}
+      <if test="customer">
+        AND visibility = 'PUBLIC'
+      </if>
+    </where>
+  </sql>
+
+  <select id="listReadable" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countReadableFromWhere"/>
+    ORDER BY sequence_number
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countReadable" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countReadableFromWhere"/>
+  </select>
+  <select id="readForDiagnosis" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    FROM sd_ticket_event
+    WHERE ticket_id = #{ticketId}
+    <choose>
+      <when test="eventIds != null and eventIds.size() > 0">
+        AND id IN
+        <foreach collection="eventIds" item="id" open="(" close=")" separator=",">
+          #{id}
+        </foreach>
+      </when>
+      <otherwise>
+        AND sequence_number &gt; #{afterSequence}
+      </otherwise>
+    </choose>
+    ORDER BY sequence_number
+    LIMIT #{limit}
+  </select>
+</mapper>

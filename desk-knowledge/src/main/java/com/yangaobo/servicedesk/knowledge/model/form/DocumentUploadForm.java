@@ -1,61 +1,108 @@
 package com.yangaobo.servicedesk.knowledge.model.form;
 
+import com.yangaobo.servicedesk.common.annotation.SchemaEnum;
+import com.yangaobo.servicedesk.common.validator.Identifier;
+import com.yangaobo.servicedesk.knowledge.model.enums.ContentFormatEnum;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+import java.io.Serial;
+import java.io.Serializable;
+import java.time.LocalDate;
+import java.util.List;
+
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 /**
  * 校验后的原件元数据。
  *
  * @author yangaobo
  */
-@lombok.Data
-@lombok.NoArgsConstructor
-public class DocumentUploadForm implements java.io.Serializable {
-    @java.io.Serial private static final long serialVersionUID = 1L;
+@Data
+@NoArgsConstructor
+public class DocumentUploadForm implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L;
 
-    /** 当前上传者的原请求键。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "当前上传者的原请求键")
-    @jakarta.validation.constraints.NotNull @com.yangaobo.servicedesk.common.validator.Identifier
+    /**
+     * 当前上传者的原请求键。
+     */
+    @Schema(description = "当前上传者的原请求键")
+    @NotNull
+    @Identifier
     private String clientUploadId;
 
-    /** 所属系列。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "所属系列")
-    @jakarta.validation.constraints.NotNull @com.yangaobo.servicedesk.common.validator.Identifier
+    /**
+     * 所属系列。
+     */
+    @Schema(description = "所属系列")
+    @NotNull
+    @Identifier
     private String seriesId;
 
-    /** PDF或MARKDOWN。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "PDF或MARKDOWN")
-    @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Pattern(regexp = "PDF|MARKDOWN")
+    /**
+     * PDF或MARKDOWN。
+     */
+    @Schema(description = "PDF或MARKDOWN")
+    @NotNull
+    @SchemaEnum(ContentFormatEnum.class)
+    @Pattern(regexp = "PDF|MARKDOWN")
     private String contentFormat;
 
-    /** 资料标题。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "资料标题")
-    @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255)
+    /**
+     * 资料标题。
+     */
+    @Schema(description = "资料标题")
+    @NotBlank
+    @Size(max = 255)
     private String title;
 
-    /** 人工登记的来源说明链接，不自动抓取。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "人工登记的来源说明链接，不自动抓取")
-    @jakarta.validation.constraints.Size(max = 2000)
+    /**
+     * 人工登记的来源说明链接，不自动抓取。
+     */
+    @Schema(description = "人工登记的来源说明链接，不自动抓取")
+    @Size(max = 2000)
     private String sourceUrl;
 
-    /** 来源与使用依据复核记录，发布必填。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "来源与使用依据复核记录，发布必填")
-    @jakarta.validation.constraints.Size(max = 1000)
+    /**
+     * 来源与使用依据复核记录，发布必填。
+     */
+    @Schema(description = "来源与使用依据复核记录，发布必填")
+    @Size(max = 1000)
     private String sourceReviewNote;
 
-    /** 原件修订标签。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "原件修订标签")
-    @jakarta.validation.constraints.Size(max = 100)
+    /**
+     * 原件修订标签。
+     */
+    @Schema(description = "原件修订标签")
+    @Size(max = 100)
     private String revisionLabel;
 
-    /** 原件发布日期，可空。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "原件发布日期，可空")
-    private java.time.LocalDate issuedOn;
+    /**
+     * 原件发布日期，可空。
+     */
+    @Schema(description = "原件发布日期，可空")
+    private LocalDate issuedOn;
 
-    /** 人可读的适用说明。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "人可读的适用说明")
-    @jakarta.validation.constraints.Size(max = 500)
+    /**
+     * 人可读的适用说明。
+     */
+    @Schema(description = "人可读的适用说明")
+    @Size(max = 500)
     private String applicabilityNote;
 
-    /** 一条内AND，多条间OR。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "一条内AND，多条间OR")
-    @jakarta.validation.Valid @jakarta.validation.constraints.NotEmpty @jakarta.validation.constraints.Size(max = 50)
-    private java.util.List<DocumentRuleForm> rules;
+    /**
+     * 一条内AND，多条间OR。
+     */
+    @Schema(description = "一条内AND，多条间OR")
+    @Valid
+    @NotEmpty
+    @Size(max = 50)
+    private List<DocumentRuleForm> rules;
 }

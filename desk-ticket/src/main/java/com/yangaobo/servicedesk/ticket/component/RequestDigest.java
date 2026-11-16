@@ -5,15 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import lombok.RequiredArgsConstructor;
-
-import org.springframework.stereotype.Component;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.TreeSet;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 /**
  * 动作语义摘要的业务边界。
@@ -25,7 +24,9 @@ import java.util.TreeSet;
 public class RequestDigest {
     private final ObjectMapper objectMapper;
 
-    /** 固定动作、目标及规范化字段；对象键递归排序，数组顺序保留。 */
+    /**
+     * 固定动作、目标及规范化字段；对象键递归排序，数组顺序保留。
+     */
     public String hash(String action, String target, Object form) {
         ObjectNode input = objectMapper.createObjectNode();
         input.put("action", action);
@@ -44,7 +45,9 @@ public class RequestDigest {
         }
     }
 
-    /** 排序只影响摘要，不修改原输入或事件内容。 */
+    /**
+     * 排序只影响摘要，不修改原输入或事件内容。
+     */
     private JsonNode canonical(JsonNode node) {
         if (node.isObject()) {
             ObjectNode sorted = objectMapper.createObjectNode();

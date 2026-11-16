@@ -71,7 +71,8 @@ public final class HttpErrorMapping {
             case 503 -> CommonErrorCode.SERVICE_UNAVAILABLE;
             case 504 -> CommonErrorCode.DEPENDENCY_TIMEOUT;
             default -> status >= 400 && status < 500
-                    ? CommonErrorCode.INVALID_REQUEST : CommonErrorCode.INTERNAL_ERROR;
+                    ? CommonErrorCode.INVALID_REQUEST
+                    : CommonErrorCode.INTERNAL_ERROR;
         };
     }
 }

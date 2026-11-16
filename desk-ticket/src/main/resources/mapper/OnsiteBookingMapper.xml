@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.OnsiteBookingMapper">
+  <select id="lock" resultType="com.yangaobo.servicedesk.ticket.model.entity.OnsiteBookingEntity">
+    SELECT
+      id,
+      ticket_id,
+      slot_id,
+      service_area_code,
+      visit_address,
+      client_request_id,
+      request_hash,
+      status,
+      result_code,
+      finish_result,
+      confirmed_at,
+      ended_at,
+      created_at,
+      updated_at
+    FROM sd_onsite_booking
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    ticket_id,
+    slot_id,
+    service_area_code,
+    visit_address,
+    client_request_id,
+    request_hash,
+    status,
+    result_code,
+    finish_result,
+    confirmed_at,
+    ended_at,
+    created_at,
+    updated_at
+  </sql>
+
+  <sql id="countHistoryFromWhere">
+    FROM sd_onsite_booking
+    <where>
+      ticket_id = #{ticketId}
+    </where>
+  </sql>
+
+  <select id="listHistory" resultType="com.yangaobo.servicedesk.ticket.model.entity.OnsiteBookingEntity">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countHistoryFromWhere"/>
+    ORDER BY created_at DESC, id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countHistory" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countHistoryFromWhere"/>
+  </select>
+</mapper>

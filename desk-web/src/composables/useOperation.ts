@@ -1,7 +1,7 @@
 import { RESULT_CODES } from '../api/resultCodes'
 import { onScopeDispose, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ApiError } from '../api/http'
+import { ApiError, RequestError } from '../api/http'
 import { useAuthStore } from '../stores/authStore'
 
 /** 页面请求拥有取消与错误反馈；旧作用域结果不再更新页面。 @author yangaobo */
@@ -19,7 +19,11 @@ export function useOperation() {
     try {
       await action()
     } catch (failure) {
-      if (controller.signal.aborted) return
+      if (
+        controller.signal.aborted ||
+        (failure instanceof RequestError && failure.kind === 'cancelled')
+      )
+        return
       if (
         failure instanceof ApiError &&
         (failure.code === RESULT_CODES.UNAUTHENTICATED ||
@@ -37,8 +41,8 @@ export function useOperation() {
         return
       }
       error.value =
-        failure instanceof ApiError
-          ? `${failure.message}${failure.traceId ? `（追踪号 ${failure.traceId}）` : ''}`
+        failure instanceof ApiError || failure instanceof RequestError
+          ? `${failure.message}${failure.retryAfterMs !== null ? `，请至少等待${Math.ceil(failure.retryAfterMs / 1000)}秒后重试` : ''}${failure.traceId ? `（追踪号 ${failure.traceId}）` : ''}`
           : failure instanceof Error
             ? failure.message
             : '操作失败，请重试'

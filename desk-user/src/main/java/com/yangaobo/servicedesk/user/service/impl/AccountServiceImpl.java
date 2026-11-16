@@ -1,11 +1,11 @@
 package com.yangaobo.servicedesk.user.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.user.error.OrganizationErrorCode;
 import com.yangaobo.servicedesk.user.mapper.AccountMapper;
 import com.yangaobo.servicedesk.user.mapper.OrganizationMapper;
@@ -23,18 +23,16 @@ import com.yangaobo.servicedesk.user.model.vo.account.AccountVO;
 import com.yangaobo.servicedesk.user.service.IAccountService;
 import com.yangaobo.servicedesk.user.service.IIdentityAdministrationService;
 
-import lombok.RequiredArgsConstructor;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.TreeSet;
-import java.util.UUID;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 账号的业务边界。
@@ -50,36 +48,23 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
     private final IIdentityAdministrationService administration;
     private final PasswordEncoder passwordEncoder;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<AccountVO> listAccounts(IdentityDTO actor, IdentityQueryForm form) {
         administration.requireAdministrator(actor);
-        LambdaQueryWrapper<AccountEntity> query =
-                new LambdaQueryWrapper<AccountEntity>()
-                        .eq(
-                                form.getOrganizationId() != null,
-                                AccountEntity::getOrganizationId,
-                                form.getOrganizationId())
-                        .eq(form.getStatus() != null, AccountEntity::getStatus, form.getStatus());
-        if (form.getKeyword() != null && !form.getKeyword().isBlank())
-            query.likeRight(
-                    AccountEntity::getUsername, form.getKeyword().strip().toLowerCase(Locale.ROOT));
-        long total = baseMapper.selectCount(query);
-        query.orderByAsc(AccountEntity::getId)
-                .last(
-                        "LIMIT "
-                                + form.getPageSize()
-                                + " OFFSET "
-                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
-        PageVO<AccountVO> result = new PageVO<>();
-        result.setRecords(baseMapper.selectList(query).stream().map(this::view).toList());
-        result.setTotal(total);
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        return result;
+        String keyword = form.getKeyword() == null || form.getKeyword().isBlank()
+                ? null : form.getKeyword().strip().toLowerCase(Locale.ROOT);
+        long total = baseMapper.countAccounts(form, keyword);
+        var records = baseMapper.listAccounts(form, keyword, form.getPageSize(), form.offset())
+                .stream().map(this::view).toList();
+        return PageVO.of(records, total, form);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public AccountVO query(IdentityDTO actor, String id) {
         administration.requireAdministrator(actor);
@@ -88,7 +73,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return view(account);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public AccountVO create(IdentityDTO actor, AccountCreateForm form) {
@@ -97,7 +84,7 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         administration.validateRoles(organization.getOrganizationType(), form.getRoles());
         administration.validatePassword(form.getInitialPassword());
         AccountEntity account = new AccountEntity();
-        account.setId(UUID.randomUUID().toString().replace("-", ""));
+        account.setId(IdentifierGenerator.next());
         account.setOrganizationId(organization.getId());
         account.setUsername(form.getUsername().strip().toLowerCase(Locale.ROOT));
         account.setDisplayName(form.getDisplayName().strip());
@@ -124,7 +111,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return result;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public AccountVO updateAccount(IdentityDTO actor, AccountUpdateForm form) {
@@ -137,7 +126,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return finish(actor, account, before, "ACCOUNT_UPDATED", form.getReason());
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public AccountVO setRoles(IdentityDTO actor, AccountRolesForm form) {
@@ -155,7 +146,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return finish(actor, account, before, "ROLES_CHANGED", form.getReason());
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public AccountVO setScopes(IdentityDTO actor, AccountScopesForm form) {
@@ -175,7 +168,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return finish(actor, account, before, "CUSTOMER_SCOPE_CHANGED", form.getReason());
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public AccountVO setStatus(IdentityDTO actor, AccountStatusForm form, boolean enabled) {
@@ -190,7 +185,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
                 form.getReason());
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public void resetPassword(IdentityDTO actor, PasswordResetForm form) {
@@ -202,7 +199,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         finish(actor, account, before, "PASSWORD_RESET", form.getReason());
     }
 
-    /** 统一按服务商组织、目标账号锁序校验版本。 */
+    /**
+     * 统一按服务商组织、目标账号锁序校验版本。
+     */
     private AccountEntity locked(IdentityDTO actor, String id, long version) {
         administration.lockAdministrator(actor);
         AccountEntity account = baseMapper.lock(id);
@@ -212,7 +211,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return account;
     }
 
-    /** 版本、身份撤销及安全审计全部随当前事务提交。 */
+    /**
+     * 版本、身份撤销及安全审计全部随当前事务提交。
+     */
     private AccountVO finish(
             IdentityDTO actor,
             AccountEntity account,
@@ -230,7 +231,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return after;
     }
 
-    /** 新关联组织必须有效。 */
+    /**
+     * 新关联组织必须有效。
+     */
     private OrganizationEntity activeOrganization(String id) {
         OrganizationEntity organization = organizationMapper.selectById(id);
         if (organization == null || !"ACTIVE".equals(organization.getStatus()))
@@ -238,7 +241,9 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, AccountEntity
         return organization;
     }
 
-    /** 显式投影可公开字段，口令永不进入VO或审计。 */
+    /**
+     * 显式投影可公开字段，口令永不进入VO或审计。
+     */
     private AccountVO view(AccountEntity account) {
         AccountVO result = new AccountVO();
         result.setId(account.getId());

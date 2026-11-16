@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.ServiceItemMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.ticket.model.entity.ServiceItemEntity" autoMapping="true">
+    <id column="id" property="id"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      service_code,
+      category,
+      service_name,
+      support_scope,
+      onsite_supported,
+      status,
+      created_by,
+      updated_by,
+      change_reason,
+      created_at,
+      updated_at,
+      row_version
+    FROM it_service_item
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    service_code,
+    category,
+    service_name,
+    support_scope,
+    onsite_supported,
+    status,
+    created_by,
+    updated_by,
+    change_reason,
+    created_at,
+    updated_at,
+    row_version
+  </sql>
+
+  <sql id="countItemsFromWhere">
+    FROM it_service_item
+    <where>
+      <if test="form.category != null">
+        AND category = #{form.category}
+      </if>
+      <if test="form.status != null">
+        AND status = #{form.status}
+      </if>
+    </where>
+  </sql>
+
+  <select id="listItems" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countItemsFromWhere"/>
+    ORDER BY service_code
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countItems" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countItemsFromWhere"/>
+  </select>
+</mapper>

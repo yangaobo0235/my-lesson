@@ -6,9 +6,14 @@ package com.yangaobo.servicedesk.common.constant;
  * @author yangaobo
  */
 public final class IdentifierConst {
-    /** 业务标识格式。 */
+    /**
+     * 业务标识格式。
+     */
     public static final String PATTERN = "^[0-9a-f]{32}$";
 
-    /** 禁止实例化。 */
-    private IdentifierConst() {}
+    /**
+     * 禁止实例化。
+     */
+    private IdentifierConst() {
+    }
 }

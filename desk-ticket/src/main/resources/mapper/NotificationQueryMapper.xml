@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.NotificationQueryMapper">
+  <sql id="readableNotificationFromWhere">
+    FROM sd_notification n
+    JOIN sd_ticket t
+      ON t.id = n.ticket_id
+    JOIN sd_ticket_event e
+      ON e.id = n.event_id
+    WHERE n.recipient_id = #{actor.ownerId}
+    <choose>
+      <when test="customer">
+        AND t.requester_id = #{actor.ownerId}
+        AND t.customer_id = #{actor.organizationId}
+        AND e.visibility = 'PUBLIC'
+      </when>
+      <when test="actor.customerIds.size() > 0">
+        AND t.customer_id IN
+        <foreach collection="actor.customerIds" item="id" open="(" close=")" separator=",">
+          #{id}
+        </foreach>
+      </when>
+      <otherwise>
+        AND 1 = 0
+      </otherwise>
+    </choose>
+  </sql>
+
+  <select id="list" resultType="com.yangaobo.servicedesk.ticket.model.vo.ticket.NotificationVO">
+    SELECT
+      n.id,
+      n.ticket_id,
+      n.event_id,
+      n.created_at,
+      n.read_at,
+      t.title,
+      e.event_type
+    <include refid="readableNotificationFromWhere"/>
+    ORDER BY
+      n.created_at DESC,
+      n.id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="count" resultType="long">
+    SELECT COUNT(*)
+    <include refid="readableNotificationFromWhere"/>
+  </select>
+</mapper>

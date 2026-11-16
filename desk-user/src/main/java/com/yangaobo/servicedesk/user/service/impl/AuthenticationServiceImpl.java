@@ -2,6 +2,7 @@ package com.yangaobo.servicedesk.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.user.component.LoginAttemptLimiter;
@@ -15,16 +16,16 @@ import com.yangaobo.servicedesk.user.model.form.auth.PasswordForm;
 import com.yangaobo.servicedesk.user.security.PasswordPolicy;
 import com.yangaobo.servicedesk.user.service.IAuthenticationService;
 
-import lombok.RequiredArgsConstructor;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 登录与当前会话的业务边界。
@@ -34,16 +35,18 @@ import java.util.Locale;
 @Service
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "desk.identity.enabled", havingValue = "true", matchIfMissing = true)
-public class AuthenticationServiceImpl extends com.baomidou.mybatisplus.spring.service.impl.ServiceImpl<AccountMapper, AccountEntity> implements IAuthenticationService {
+public class AuthenticationServiceImpl extends ServiceImpl<AccountMapper, AccountEntity>
+        implements IAuthenticationService {
     private final OrganizationMapper organizationMapper;
     private final PasswordEncoder passwordEncoder;
     private final LoginAttemptLimiter loginAttemptLimiter;
     // 对不存在的账号也执行固定成本哈希，避免显著时序泄漏。
     private final String dummyHash =
-            new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder()
-                    .encode("unusable-dummy-password-29381");
+            new BCryptPasswordEncoder().encode("unusable-dummy-password-29381");
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public IdentityDTO verify(String ownerId, long authVersion, String sessionRef) {
         AccountEntity account = baseMapper.selectById(ownerId);
@@ -69,7 +72,9 @@ public class AuthenticationServiceImpl extends com.baomidou.mybatisplus.spring.s
         return identity;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public IdentityDTO login(LoginForm form, String remoteAddress) {
         String username = form.getUsername().strip().toLowerCase(Locale.ROOT);
@@ -96,7 +101,9 @@ public class AuthenticationServiceImpl extends com.baomidou.mybatisplus.spring.s
         return identity;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public void changePassword(IdentityDTO actor, PasswordForm form) {

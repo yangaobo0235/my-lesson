@@ -17,14 +17,14 @@ import com.yangaobo.servicedesk.user.security.SessionCsrfTokenRepository;
 import com.yangaobo.servicedesk.user.service.IAuthenticationService;
 import com.yangaobo.servicedesk.user.service.IIdentityVerificationService;
 
-import lombok.RequiredArgsConstructor;
+import java.time.Instant;
+import java.util.Set;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.session.Session;
 import org.springframework.session.jdbc.JdbcIndexedSessionRepository;
 import org.springframework.stereotype.Service;
-
-import java.util.Set;
 
 /**
  * 内部身份核验的业务边界。
@@ -41,7 +41,9 @@ public class IdentityVerificationServiceImpl implements IIdentityVerificationSer
     private final OrganizationMapper organizationMapper;
     private final SessionCsrfTokenRepository csrfTokens;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public IdentityDTO verifyBrowser(VerifyBrowserForm form) {
         String id = null;
@@ -58,12 +60,14 @@ public class IdentityVerificationServiceImpl implements IIdentityVerificationSer
         if (!Set.of("GET", "HEAD", "OPTIONS").contains(form.getMethod())
                 && !csrfTokens.matches(id, form.getCsrfToken()))
             throw new BusinessException(CommonErrorCode.FORBIDDEN);
-        ((Session) session).setLastAccessedTime(java.time.Instant.now());
+        ((Session) session).setLastAccessedTime(Instant.now());
         sessions.save(session);
         return actor;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public IdentityDTO verifySession(VerifySessionForm form) {
         String id = accountMapper.sessionId(form.getSessionRef());
@@ -75,7 +79,9 @@ public class IdentityVerificationServiceImpl implements IIdentityVerificationSer
         return actor;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public EligibilityDTO eligibility(EligibilityForm form) {
         IdentityDTO actor = verifySession(form);
@@ -84,7 +90,7 @@ public class IdentityVerificationServiceImpl implements IIdentityVerificationSer
                         && actor.getOrganizationId().equals(form.getCustomerId());
         boolean staff =
                 (actor.getRoles().contains(RoleEnum.SERVICE_AGENT.getValue())
-                                || actor.getRoles().contains(RoleEnum.TECHNICIAN.getValue()))
+                        || actor.getRoles().contains(RoleEnum.TECHNICIAN.getValue()))
                         && actor.getCustomerIds().contains(form.getCustomerId());
         if (!customer && !staff) throw new BusinessException(CommonErrorCode.FORBIDDEN);
         OrganizationEntity organization = organizationMapper.selectById(form.getCustomerId());
@@ -108,16 +114,18 @@ public class IdentityVerificationServiceImpl implements IIdentityVerificationSer
                             && "ACTIVE".equals(team.getStatus())
                             && !assignee.getMustChangePassword()
                             && accountMapper
-                                    .roles(assignee.getId())
-                                    .contains(RoleEnum.TECHNICIAN.getValue())
+                            .roles(assignee.getId())
+                            .contains(RoleEnum.TECHNICIAN.getValue())
                             && accountMapper
-                                    .scopes(assignee.getId())
-                                    .contains(form.getCustomerId()));
+                            .scopes(assignee.getId())
+                            .contains(form.getCustomerId()));
         }
         return result;
     }
 
-    /** Session仅提供拥有者与版本，其余身份来自数据库。 */
+    /**
+     * Session仅提供拥有者与版本，其余身份来自数据库。
+     */
     private IdentityDTO identity(Session session, String reference) {
         if (session == null
                 || session.isExpired()

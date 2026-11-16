@@ -19,27 +19,43 @@ import com.yangaobo.servicedesk.user.model.vo.account.AccountVO;
  * @author yangaobo
  */
 public interface IAccountService extends IService<AccountEntity> {
-    /** 按当前管理员权限分页读取账号。 */
+    /**
+     * 按当前管理员权限分页读取账号。
+     */
     PageVO<AccountVO> listAccounts(IdentityDTO actor, IdentityQueryForm form);
 
-    /** 查询安全账号详情，不输出口令哈希。 */
+    /**
+     * 查询安全账号详情，不输出口令哈希。
+     */
     AccountVO query(IdentityDTO actor, String id);
 
-    /** 管理员开通账号及角色，首次登录强制改密。 */
+    /**
+     * 管理员开通账号及角色，首次登录强制改密。
+     */
     AccountVO create(IdentityDTO actor, AccountCreateForm form);
 
-    /** 调整姓名或组织，保留历史并撤销旧身份版本。 */
+    /**
+     * 调整姓名或组织，保留历史并撤销旧身份版本。
+     */
     AccountVO updateAccount(IdentityDTO actor, AccountUpdateForm form);
 
-    /** 完整替换角色并处理客户范围撤销。 */
+    /**
+     * 完整替换角色并处理客户范围撤销。
+     */
     AccountVO setRoles(IdentityDTO actor, AccountRolesForm form);
 
-    /** 完整替换服务人员当前客户范围。 */
+    /**
+     * 完整替换服务人员当前客户范围。
+     */
     AccountVO setScopes(IdentityDTO actor, AccountScopesForm form);
 
-    /** 启停账号，所有入口共用最后管理员保护。 */
+    /**
+     * 启停账号，所有入口共用最后管理员保护。
+     */
     AccountVO setStatus(IdentityDTO actor, AccountStatusForm form, boolean enabled);
 
-    /** 重置后要求主动改密，不返回新密码。 */
+    /**
+     * 重置后要求主动改密，不返回新密码。
+     */
     void resetPassword(IdentityDTO actor, PasswordResetForm form);
 }

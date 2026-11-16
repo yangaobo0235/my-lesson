@@ -1,14 +1,16 @@
 package com.yangaobo.servicedesk.api;
 
-import com.yangaobo.servicedesk.api.common.v1.ActorRef;
-import com.yangaobo.servicedesk.api.common.v1.RpcErrorDetail;
-import com.google.protobuf.InvalidProtocolBufferException;
-import java.util.HexFormat;
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.yangaobo.servicedesk.api.common.v1.ActorRef;
+import com.yangaobo.servicedesk.api.common.v1.RpcErrorDetail;
+
+import java.util.HexFormat;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * 用固定线向量验证Java生成物，Python独立验证同一向量。
@@ -25,11 +27,20 @@ class ContractWireTest {
     @Test
     void preservesActorWireContract() throws InvalidProtocolBufferException {
         String session = "12345678-1234-1234-1234-123456789012";
-        String wire = "0a20" + "61".repeat(32) + "1224"
-                + HexFormat.of().formatHex(session.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-                + "188180808080808010";
-        ActorRef actor = ActorRef.newBuilder().setOwnerId("a".repeat(32))
-                .setSessionRef(session).setAuthVersion(9007199254740993L).build();
+        String wire =
+                "0a20"
+                        + "61".repeat(32)
+                        + "1224"
+                        + HexFormat.of()
+                        .formatHex(
+                                session.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        + "188180808080808010";
+        ActorRef actor =
+                ActorRef.newBuilder()
+                        .setOwnerId("a".repeat(32))
+                        .setSessionRef(session)
+                        .setAuthVersion(9007199254740993L)
+                        .build();
         assertEquals(wire, HexFormat.of().formatHex(actor.toByteArray()));
         assertEquals(actor, ActorRef.parseFrom(HexFormat.of().parseHex(wire)));
     }

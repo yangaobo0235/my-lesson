@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.knowledge.mapper.DocumentRuleMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.knowledge.model.entity.DocumentRuleEntity" autoMapping="true">
+    <id column="id" property="id"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      document_id,
+      rule_number,
+      service_item_id,
+      product_model_id,
+      os_name,
+      os_version,
+      software_name,
+      software_version,
+      created_at
+    FROM kb_document_applicability
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <select id="decisionTime" resultType="java.time.LocalDateTime">
+    SELECT UTC_TIMESTAMP(6)
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    document_id,
+    rule_number,
+    service_item_id,
+    product_model_id,
+    os_name,
+    os_version,
+    software_name,
+    software_version,
+    created_at
+  </sql>
+
+  <select id="scanForService" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    FROM kb_document_applicability
+    WHERE service_item_id = #{serviceItemId}
+    ORDER BY document_id, rule_number
+    LIMIT #{limit}
+  </select>
+</mapper>

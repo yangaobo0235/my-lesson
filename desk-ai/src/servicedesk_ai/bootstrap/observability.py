@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -67,7 +68,9 @@ def open_observability(settings: Settings) -> tuple[TracerProvider, logging.Hand
     )
     provider.add_span_processor(
         BatchSpanProcessor(
-            ZipkinExporter(endpoint=config.url + "/api/v2/spans", timeout=config.timeout_seconds),
+            ZipkinExporter(
+                endpoint=config.url + "/api/v2/spans", timeout=math.ceil(config.timeout_seconds)
+            ),
             max_queue_size=512,
             max_export_batch_size=64,
             schedule_delay_millis=5000,

@@ -14,6 +14,7 @@ from desk_contracts.common.v1.common_pb2 import ActorRef, RpcErrorDetail
 from desk_contracts.user.v1.identity_pb2 import VerifiedIdentity, VerifyBrowserSessionRequest
 from desk_contracts.user.v1.identity_pb2_grpc import IdentityServiceStub
 from servicedesk_ai.bootstrap.components import RpcSettings
+from servicedesk_ai.infrastructure.rpc_contract import remaining_seconds as parent_remaining
 
 
 @dataclass
@@ -37,10 +38,17 @@ def translate_failure(error: grpc.aio.AioRpcError) -> IdentityFailure:
         1004: (grpc.StatusCode.FAILED_PRECONDITION, "当前状态或版本已变化"),
         3001: (grpc.StatusCode.FAILED_PRECONDITION, "客户当前未开通有效支持服务"),
         3101: (grpc.StatusCode.FAILED_PRECONDITION, "设备不可发起该新业务"),
+        3102: (grpc.StatusCode.FAILED_PRECONDITION, "型号不可新增关联"),
+        1: (grpc.StatusCode.INTERNAL, "内部依赖发生故障"),
+        1011: (grpc.StatusCode.UNAVAILABLE, "内部依赖暂不可用"),
+        1012: (grpc.StatusCode.INTERNAL, "内部依赖协议不符合约定"),
+        1013: (grpc.StatusCode.DEADLINE_EXCEEDED, "内部依赖响应超时"),
     }
+    has_detail = False
     for key, value in error.trailing_metadata() or ():
         if key != "grpc-status-details-bin" or not isinstance(value, bytes):
             continue
+        has_detail = True
         try:
             status = status_pb2.Status.FromString(value)
             if status.code != error.code().value[0]:
@@ -50,12 +58,23 @@ def translate_failure(error: grpc.aio.AioRpcError) -> IdentityFailure:
                 if packed.Unpack(detail) and detail.code in permitted:
                     transport, message = permitted[detail.code]
                     if error.code() == transport:
-                        return IdentityFailure(detail.code, message, detail.trace_id)
+                        return IdentityFailure(
+                            1011 if detail.code == 1 else detail.code, message, detail.trace_id
+                        )
         except Exception:
             break
+    if has_detail:
+        return IdentityFailure(1012, "内部依赖响应不符合约定")
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
         return IdentityFailure(1013, "身份依赖响应超时")
-    return IdentityFailure(1011, "身份依赖暂不可用")
+    if error.code() in {
+        grpc.StatusCode.UNAVAILABLE,
+        grpc.StatusCode.UNAUTHENTICATED,
+        grpc.StatusCode.PERMISSION_DENIED,
+        grpc.StatusCode.CANCELLED,
+    }:
+        return IdentityFailure(1011, "内部依赖暂不可用")
+    return IdentityFailure(1012, "内部依赖响应不符合约定")
 
 
 class IdentityClient:
@@ -86,7 +105,7 @@ class IdentityClient:
         try:
             return await self._stub.VerifyBrowserSession(
                 request,
-                timeout=min(2.9, remaining_seconds),
+                timeout=min(2.9, parent_remaining(remaining_seconds)),
                 metadata=self._traced_metadata(),
                 wait_for_ready=False,
             )
@@ -102,7 +121,7 @@ class IdentityClient:
         try:
             return await self._stub.VerifySessionRef(
                 actor,
-                timeout=min(2.9, remaining_seconds),
+                timeout=min(2.9, parent_remaining(remaining_seconds)),
                 metadata=self._traced_metadata(),
                 wait_for_ready=False,
             )

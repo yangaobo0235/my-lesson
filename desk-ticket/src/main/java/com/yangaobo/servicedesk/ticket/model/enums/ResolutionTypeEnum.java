@@ -8,34 +8,52 @@ import com.yangaobo.servicedesk.common.base.BaseEnum;
  * @author yangaobo
  */
 public enum ResolutionTypeEnum implements BaseEnum<String> {
-    /** 人工报告恢复。 */
+    /**
+     * 人工报告恢复。
+     */
     RESTORED("RESTORED", "人工报告恢复"),
-    /** 已交付指导。 */
+    /**
+     * 已交付指导。
+     */
     GUIDANCE("GUIDANCE", "已交付指导"),
-    /** 转介其他支持。 */
+    /**
+     * 转介其他支持。
+     */
     REFERRED("REFERRED", "转介其他支持"),
-    /** 历史结果未知。 */
+    /**
+     * 历史结果未知。
+     */
     LEGACY_UNKNOWN("LEGACY_UNKNOWN", "历史结果未知");
 
-    /** 稳定线值。 */
+    /**
+     * 稳定线值。
+     */
     private final String value;
 
-    /** 中文含义。 */
+    /**
+     * 中文含义。
+     */
     private final String desc;
 
-    /** 关联线值和中文含义。 */
+    /**
+     * 关联线值和中文含义。
+     */
     ResolutionTypeEnum(String value, String desc) {
         this.value = value;
         this.desc = desc;
     }
 
-    /** 返回稳定线值。 */
+    /**
+     * 返回稳定线值。
+     */
     @Override
     public String getValue() {
         return value;
     }
 
-    /** 返回中文含义。 */
+    /**
+     * 返回中文含义。
+     */
     @Override
     public String getDesc() {
         return desc;

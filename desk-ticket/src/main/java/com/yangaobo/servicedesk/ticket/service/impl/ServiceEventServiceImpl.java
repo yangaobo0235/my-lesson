@@ -7,6 +7,7 @@ import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.ticket.mapper.ServiceEntitlementMapper;
 import com.yangaobo.servicedesk.ticket.mapper.ServiceEventMapper;
 import com.yangaobo.servicedesk.ticket.model.entity.ServiceEntitlementEntity;
@@ -17,16 +18,14 @@ import com.yangaobo.servicedesk.ticket.service.IServiceEventService;
 import com.yangaobo.servicedesk.ticket.service.SupportAuthorization;
 import com.yangaobo.servicedesk.ticket.service.TicketViews;
 
-import lombok.RequiredArgsConstructor;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.UUID;
 
 /**
  * 项目与资格变更审计的业务边界。
@@ -41,7 +40,9 @@ public class ServiceEventServiceImpl implements IServiceEventService {
     private final ServiceEntitlementMapper entitlementMapper;
     private final ObjectMapper objectMapper;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceEventEntity receipt(IdentityDTO actor, String key, String hash) {
         ServiceEventEntity event =
@@ -56,7 +57,9 @@ public class ServiceEventServiceImpl implements IServiceEventService {
         return event;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void append(
@@ -70,7 +73,7 @@ public class ServiceEventServiceImpl implements IServiceEventService {
             Object after,
             String reason) {
         ServiceEventEntity event = new ServiceEventEntity();
-        event.setId(UUID.randomUUID().toString().replace("-", ""));
+        event.setId(IdentifierGenerator.next());
         event.setServiceItemId(service);
         event.setEntitlementId(entitlement);
         event.setActorId(actor.getOwnerId());
@@ -87,33 +90,22 @@ public class ServiceEventServiceImpl implements IServiceEventService {
         serviceEventMapper.insert(event);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<ServiceEventVO> events(
             IdentityDTO actor, ServiceEventsForm form, boolean entitlement) {
         authorize(actor, entitlement ? null : form.getId(), entitlement ? form.getId() : null);
-        LambdaQueryWrapper<ServiceEventEntity> query = new LambdaQueryWrapper<ServiceEventEntity>();
-        if (entitlement) query.eq(ServiceEventEntity::getEntitlementId, form.getId());
-        else
-            query.eq(ServiceEventEntity::getServiceItemId, form.getId())
-                    .isNull(ServiceEventEntity::getEntitlementId);
-        long total = serviceEventMapper.selectCount(query);
-        query.orderByAsc(ServiceEventEntity::getCreatedAt, ServiceEventEntity::getId)
-                .last(
-                        "LIMIT "
-                                + form.getPageSize()
-                                + " OFFSET "
-                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
-        PageVO<ServiceEventVO> result = new PageVO<>();
-        result.setTotal(total);
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        result.setRecords(
-                serviceEventMapper.selectList(query).stream().map(TicketViews::of).toList());
-        return result;
+        long total = serviceEventMapper.countEvents(form.getId(), entitlement);
+        var records = serviceEventMapper.listEvents(form.getId(), entitlement, form.getPageSize(), form.offset())
+                .stream().map(TicketViews::of).toList();
+        return PageVO.of(records, total, form);
     }
 
-    /** 回执也必须按当前权限读取，撤权后不泄漏旧事件。 */
+    /**
+     * 回执也必须按当前权限读取，撤权后不泄漏旧事件。
+     */
     private void authorize(IdentityDTO actor, String service, String entitlement) {
         if (entitlement == null) SupportAuthorization.administrator(actor);
         else {

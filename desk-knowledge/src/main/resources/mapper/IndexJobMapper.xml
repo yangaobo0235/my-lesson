@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.knowledge.mapper.IndexJobMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.knowledge.model.entity.IndexJobEntity" autoMapping="true">
+    <id column="id" property="id"/>
+    <result column="request_payload" property="requestPayload"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    <result column="trace_context" property="traceContext"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      document_id,
+      attempt_number,
+      requested_by,
+      client_request_id,
+      request_payload,
+      request_hash,
+      submit_state,
+      submit_deadline_at,
+      submit_committed_at,
+      cancel_operation_id,
+      cancel_requested_by,
+      cancel_state,
+      cancel_deadline_at,
+      cancel_committed_at,
+      trace_context,
+      last_error_code,
+      created_at,
+      updated_at
+    FROM kb_index_job
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <select id="decisionTime" resultType="java.time.LocalDateTime">
+    SELECT UTC_TIMESTAMP(6)
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    document_id,
+    attempt_number,
+    requested_by,
+    client_request_id,
+    request_payload,
+    request_hash,
+    submit_state,
+    submit_deadline_at,
+    submit_committed_at,
+    cancel_operation_id,
+    cancel_requested_by,
+    cancel_state,
+    cancel_deadline_at,
+    cancel_committed_at,
+    trace_context,
+    last_error_code,
+    created_at,
+    updated_at
+  </sql>
+
+  <select id="scanPreparingDue" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    FROM kb_index_job
+    WHERE (
+      submit_state = 'PREPARING'
+      AND submit_deadline_at &lt;= #{now}
+    ) OR (
+      cancel_state = 'PREPARING'
+      AND cancel_deadline_at &lt;= #{now}
+    )
+    ORDER BY id
+    LIMIT #{limit}
+  </select>
+</mapper>

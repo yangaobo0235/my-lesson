@@ -31,15 +31,19 @@ dependencies = [
 [dependency-groups]
 dev = [
     "grpcio-tools==1.76.0",
+    "mypy==1.18.2",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.10",
+    "types-grpcio==1.85.0.20261028",
+    "types-protobuf==7.35.1.20260906",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/servicedesk_ai", "src/desk_contracts"]
 
 [tool.ruff]
+cache-dir = "../.local/verification/ruff"
 line-length = 100
 target-version = "py312"
 extend-exclude = ["src/desk_contracts"]
@@ -51,10 +55,25 @@ select = ["E", "F", "I", "UP", "B"]
 known-first-party = ["servicedesk_ai", "desk_contracts"]
 
 [tool.pytest.ini_options]
+cache_dir = "../.local/verification/pytest-cache"
 testpaths = ["tests"]
+addopts = "--basetemp=../.local/verification/pytest"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.uv]
 required-version = ">=0.13.7,<0.14"
 constraint-dependencies = ["starlette==1.6.0"]
+
+[tool.mypy]
+cache_dir = "../.local/verification/mypy"
+python_version = "3.12"
+files = ["src/servicedesk_ai"]
+plugins = ["pydantic.mypy"]
+exclude = ["src/desk_contracts"]
+check_untyped_defs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["google.rpc.*", "grpc_status.*", "rocketmq.*", "pymysql.*", "opentelemetry.exporter.zipkin.*"]
+ignore_missing_imports = true

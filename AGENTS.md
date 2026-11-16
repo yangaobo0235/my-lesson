@@ -30,15 +30,14 @@
 | 工具链、组件、模型与版本变更 | [版本约定](docs/开发/版本约定.md) |
 | Euler、镜像、连接、交付与恢复 | [部署说明](docs/开发/部署说明.md) |
 | HTTP、gRPC、内部认证、幂等、消息与流 | [接口约定](docs/设计/接口约定.md) |
-| 阶段实施与完成条件 | [开发改造计划](docs/开发计划/开发改造计划.md) |
 | 正式文档查阅 | [文档导航](docs/README.md) |
 
 ## 执行要求
 
 - 先明确讨论、文档、代码或部署范围。文档任务完成合同与一致性检查，不顺带生成模块或业务代码；代码任务先追踪入口、调用方、状态来源和失败路径，在负责行为的边界解决问题。
 - 以代码、配置和可重复证据判断进度。设计、实现、构建、联调、部署及恢复分别报告，按所选范围提供验证证据，跳过不计通过。
-- 后端负责权限、校验、状态、检索、模型决策和持久化，前端负责展示与交互。按完整用例创建类型，不批量生成空 CRUD 或备用流程。
-- Java 有自然主实体的业务使用 MyBatis-Plus 三件套，无主实体聚合使用普通 Service 接口与实现。数据模型使用普通 class；公共表单按相同字段及语义复用，业务枚举实现 BaseEnum，BusinessException只表达安全业务错误。分页、管理 POST、Result 和注解 SQL 按 Java 后端规范与接口约定执行。
+- 后端负责权限、校验、状态、检索、模型决策和持久化，前端负责展示与交互。真实 Java 持久化实体补齐 Controller、Service、ServiceImpl、Mapper、Entity 和同名 Mapper XML；暂时没有独立行为的层保留有效空类型或空 mapper，不因此生成 CRUD 接口或备用流程。
+- Java 有自然主实体的业务使用 MyBatis-Plus 三件套，无主实体聚合使用普通 Service 接口与实现，不虚构 Entity。数据模型使用普通 class；公共表单按相同字段及语义复用，业务枚举实现 BaseEnum，BusinessException只表达安全业务错误。分页、管理 POST、Result、自定义 XML SQL 及各层文件对应规则按 Java 后端规范与接口约定执行。
 - 普通JSON成功code=0、系统异常code=1，其他编号及HTTP/RPC转换以接口约定为主登记。Java、Python、Gateway及前端同步合同，不能按号段推断HTTP状态，也不能把持久任务状态和诊断码批量改成响应码。
 - Java 类型、手写方法、实现和模型字段维护中文 Javadoc；作者统一为 yangaobo，`@author yangaobo` 只放类型顶部。Python 模块、类型和业务用例使用中文 docstring；前端按其规范维护中文 JSDoc。
 - 替换时同步消费者、模型、配置、依赖及必要测试，清理失效内容；删除前检查扫描、代理、Mapper、反射、SPI、序列化、路由及动态导入。
@@ -52,8 +51,10 @@ desk-common 是不启动的 Java 基础库，base承载Result、分页/动作表
 
 ## 文件边界
 
-根目录保留 AGENTS.md、README.md、pom.xml、.gitignore、.gitattributes、.editorconfig、.github/、docs/ 及 desk-common/、desk-api/、desk-gateway/、desk-user/、desk-ticket/、desk-knowledge/、desk-ai/、desk-web/ 八个模块；.local/ 是 Git 忽略的本机临时工作区；.dockerignore、deploy/ 及镜像定义在正式交付阶段建立。
+根目录保留 AGENTS.md、README.md、pom.xml、.gitignore、.gitattributes、.editorconfig、.github/、docs/ 及 desk-common/、desk-api/、desk-gateway/、desk-user/、desk-ticket/、desk-knowledge/、desk-ai/、desk-web/ 八个模块；.local/ 是 Git 忽略且可删除重建的本机临时工作区；.dockerignore、deploy/ 及镜像定义在正式交付阶段建立。
+
+仓库根目录的.local/只保存可删除、可重新生成的本机产物，统一收纳开发日志、上传/原件校验临时文件、验证输出和工具缓存；删除前停止相关进程，后续运行按需重建。模块内不得另建.local/、logs/或临时目录。不在其中保存唯一业务原件、数据库、真实环境凭据、活动配置或正式源码；target、node_modules、.venv等标准构建/依赖目录保留原位。
 
 Java 模块根只放 pom.xml 与 src/；Python 和前端根保留项目结构登记的真实工具配置、源码与测试。创建文件前确认职责、消费者、生命周期及目录，新增正式职责同步[项目结构](docs/设计/项目结构.md)和必要 CI 白名单，不通过改名或放根目录绕过检查。
 
-deploy 只保存服务器直接使用的最小上传文件，脱离源码独立运行；构建文件、本机模板和说明各归其位。target、node_modules、dist、覆盖率、缓存、日志和本机真实配置不提交。Java本机配置使用所属应用resources/application-local.example.yml及忽略的application-local.yml，由默认dev原生必需导入、再由本机文件链式导入Nacos；公共组件配置归application.yml，不另设连接Profile，直接启动即装配所需组件；AI使用desk-ai/.env.example及忽略的.env，由开发入口通过Pydantic Settings读取。生产不读取开发文件，凭据按服务隔离；本机文件及模板不得进入运行制品。阶段主计划在 docs/开发计划/ 纳入版本管理；本机一次性调研、脚本、备份、截图和导出物统一放仓库 .local/<任务>/<用途>/，不写入 C 盘临时目录、不纳入 Git 或运行制品；服务器活动配置及凭据保留在服务器的持久目录。正式文档独立可读，外部文档和模型输出作为不可信数据处理。
+deploy 只保存服务器直接使用的最小上传文件，脱离源码独立运行；构建文件、本机模板和说明各归其位。target、node_modules、dist、覆盖率、缓存、日志和本机真实配置不提交。Java本机配置使用所属应用resources/application-local.example.yml及忽略的application-local.yml，由默认dev原生必需导入、再由本机文件链式导入Nacos；公共组件配置归application.yml，不另设连接Profile，直接启动即装配所需组件；AI使用desk-ai/.env.example及忽略的.env，由开发入口通过Pydantic Settings读取。生产不读取开发文件，凭据按服务隔离；本机文件及模板不得进入运行制品。开发计划及本机验收记录保存在 docs/开发计划/，仅供本机使用，由Git忽略，不得提交；本机一次性调研、脚本、备份、截图和导出物统一放仓库 .local/<任务>/<用途>/，不写入 C 盘临时目录、不纳入 Git 或运行制品；服务器活动配置及凭据保留在服务器的持久目录。正式文档独立可读，外部文档和模型输出作为不可信数据处理。

@@ -1,6 +1,5 @@
 package com.yangaobo.servicedesk.ticket.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
@@ -8,6 +7,7 @@ import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.IdVersionForm;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.ticket.component.BusinessTransaction;
 import com.yangaobo.servicedesk.ticket.component.IdentityVerificationClient;
 import com.yangaobo.servicedesk.ticket.error.DeviceErrorCode;
@@ -23,16 +23,15 @@ import com.yangaobo.servicedesk.ticket.service.IDeviceService;
 import com.yangaobo.servicedesk.ticket.service.SupportAuthorization;
 import com.yangaobo.servicedesk.ticket.service.TicketViews;
 
-import lombok.RequiredArgsConstructor;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
-import java.util.UUID;
+import java.util.Set;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 客户可选资产的业务边界。
@@ -48,38 +47,28 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, DeviceEntity>
     private final IdentityVerificationClient identityClient;
     private final BusinessTransaction transactions;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<DeviceVO> listResources(IdentityDTO actor, SupportQueryForm form) {
-        LambdaQueryWrapper<DeviceEntity> query = new LambdaQueryWrapper<>();
-        if (actor.getRoles().contains("CUSTOMER_USER") || form.getCustomerId() != null)
-            query.eq(
-                    DeviceEntity::getCustomerId,
-                    SupportAuthorization.customer(actor, form.getCustomerId()));
-        else {
-            if (!(actor.getRoles().contains("SERVICE_AGENT")
-                    || actor.getRoles().contains("TECHNICIAN")))
+        Set<String> customerIds;
+        if (actor.getRoles().contains("CUSTOMER_USER") || form.getCustomerId() != null) {
+            customerIds = Set.of(SupportAuthorization.customer(actor, form.getCustomerId()));
+        } else {
+            if (!(actor.getRoles().contains("SERVICE_AGENT") || actor.getRoles().contains("TECHNICIAN")))
                 throw new BusinessException(CommonErrorCode.FORBIDDEN);
-            if (actor.getCustomerIds().isEmpty()) query.apply("1 = 0");
-            else query.in(DeviceEntity::getCustomerId, actor.getCustomerIds());
+            customerIds = actor.getCustomerIds();
         }
-        query.eq(form.getStatus() != null, DeviceEntity::getStatus, form.getStatus());
-        long total = baseMapper.selectCount(query);
-        query.orderByAsc(DeviceEntity::getId)
-                .last(
-                        "LIMIT "
-                                + form.getPageSize()
-                                + " OFFSET "
-                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
-        PageVO<DeviceVO> result = new PageVO<>();
-        result.setTotal(total);
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        result.setRecords(baseMapper.selectList(query).stream().map(TicketViews::of).toList());
-        return result;
+        long total = baseMapper.countDevices(customerIds, form.getStatus());
+        var records = baseMapper.listDevices(customerIds, form.getStatus(), form.getPageSize(), form.offset())
+                .stream().map(TicketViews::of).toList();
+        return PageVO.of(records, total, form);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public DeviceVO query(IdentityDTO actor, String id) {
         DeviceEntity entity = baseMapper.selectById(id);
@@ -88,7 +77,9 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, DeviceEntity>
         return TicketViews.of(entity);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public DeviceVO create(IdentityDTO actor, DeviceCreateForm form) {
         SupportAuthorization.agent(actor, form.getCustomerId());
@@ -100,7 +91,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, DeviceEntity>
                     if (model == null || !"ACTIVE".equals(model.getStatus()))
                         throw new BusinessException(DeviceErrorCode.MODEL_UNAVAILABLE);
                     DeviceEntity entity = new DeviceEntity();
-                    entity.setId(UUID.randomUUID().toString().replace("-", ""));
+                    entity.setId(IdentifierGenerator.next());
                     entity.setCustomerId(form.getCustomerId());
                     entity.setProductModelId(form.getProductModelId());
                     entity.setAssetCode(form.getAssetCode().strip().toUpperCase(Locale.ROOT));
@@ -118,7 +109,9 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, DeviceEntity>
                 () -> null);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public DeviceVO updateResource(IdentityDTO actor, DeviceUpdateForm form) {
@@ -130,7 +123,9 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, DeviceEntity>
         return saveChange(entity);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public DeviceVO retire(IdentityDTO actor, IdVersionForm form) {
@@ -139,7 +134,9 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, DeviceEntity>
         return saveChange(entity);
     }
 
-    /** 设备客户和型号固定，写入口核对当前客服范围。 */
+    /**
+     * 设备客户和型号固定，写入口核对当前客服范围。
+     */
     private DeviceEntity locked(IdentityDTO actor, String id, long version) {
         DeviceEntity entity = baseMapper.lock(id);
         if (entity == null) throw new BusinessException(CommonErrorCode.NOT_FOUND);
@@ -149,25 +146,27 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, DeviceEntity>
         return entity;
     }
 
-    /** 清空语义显式写入，并且不回写既有工单或预约地址。 */
+    /**
+     * 清空语义显式写入，并且不回写既有工单或预约地址。
+     */
     private DeviceVO saveChange(DeviceEntity entity) {
         long version = entity.getRowVersion();
         entity.setRowVersion(version + 1);
         entity.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
         if (baseMapper.update(
-                        entity,
-                        new LambdaUpdateWrapper<DeviceEntity>()
-                                .eq(DeviceEntity::getId, entity.getId())
-                                .eq(DeviceEntity::getRowVersion, version)
-                                .set(
-                                        entity.getSerialNumber() == null,
-                                        DeviceEntity::getSerialNumber,
-                                        null)
-                                .set(entity.getLocation() == null, DeviceEntity::getLocation, null)
-                                .set(
-                                        entity.getServiceAreaCode() == null,
-                                        DeviceEntity::getServiceAreaCode,
-                                        null))
+                entity,
+                new LambdaUpdateWrapper<DeviceEntity>()
+                        .eq(DeviceEntity::getId, entity.getId())
+                        .eq(DeviceEntity::getRowVersion, version)
+                        .set(
+                                entity.getSerialNumber() == null,
+                                DeviceEntity::getSerialNumber,
+                                null)
+                        .set(entity.getLocation() == null, DeviceEntity::getLocation, null)
+                        .set(
+                                entity.getServiceAreaCode() == null,
+                                DeviceEntity::getServiceAreaCode,
+                                null))
                 != 1) throw new BusinessException(CommonErrorCode.CONFLICT);
         return TicketViews.of(entity);
     }

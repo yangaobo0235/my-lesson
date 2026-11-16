@@ -12,10 +12,14 @@ import com.yangaobo.servicedesk.ticket.model.vo.support.ServiceEventVO;
  * @author yangaobo
  */
 public interface IServiceEventService {
-    /** 在当前权限内读取同一操作者动作键，异义冲突。 */
+    /**
+     * 在当前权限内读取同一操作者动作键，异义冲突。
+     */
     ServiceEventEntity receipt(IdentityDTO actor, String key, String hash);
 
-    /** 与项目或资格变更同事务追加不可变事件。 */
+    /**
+     * 与项目或资格变更同事务追加不可变事件。
+     */
     void append(
             IdentityDTO actor,
             String service,
@@ -27,6 +31,8 @@ public interface IServiceEventService {
             Object after,
             String reason);
 
-    /** 按有权目标分页读取变更历史。 */
+    /**
+     * 按有权目标分页读取变更历史。
+     */
     PageVO<ServiceEventVO> events(IdentityDTO actor, ServiceEventsForm form, boolean entitlement);
 }

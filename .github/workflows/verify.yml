@@ -1,6 +1,6 @@
 name: Verify
 
-on: [push, pull_request]
+on: [ push, pull_request ]
 
 permissions:
   contents: read
@@ -39,6 +39,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run --locked ruff check --config pyproject.toml . ../.github/scripts
       - run: uv run --locked ruff format --check --config pyproject.toml . ../.github/scripts
+      - run: uv run --locked mypy
       - run: uv run --locked pytest
       - run: uv run --locked python ../.github/scripts/build_ai.py --output "${RUNNER_TEMP}/desk-ai-wheel"
   frontend:

@@ -1,12 +1,12 @@
 package com.yangaobo.servicedesk.ticket.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.ticket.component.BusinessTransaction;
 import com.yangaobo.servicedesk.ticket.component.RequestDigest;
 import com.yangaobo.servicedesk.ticket.mapper.ServiceItemMapper;
@@ -22,16 +22,14 @@ import com.yangaobo.servicedesk.ticket.service.IServiceItemService;
 import com.yangaobo.servicedesk.ticket.service.SupportAuthorization;
 import com.yangaobo.servicedesk.ticket.service.TicketViews;
 
-import lombok.RequiredArgsConstructor;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
-import java.util.UUID;
 import java.util.function.Consumer;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
 
 /**
  * IT服务项目的业务边界。
@@ -47,36 +45,23 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
     private final RequestDigest digest;
     private final BusinessTransaction transactions;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<ServiceItemVO> listItems(IdentityDTO actor, SupportQueryForm form) {
-        if (!actor.getRoles().contains("SERVICE_AGENT") && !actor.getRoles().contains("KNOWLEDGE_ADMIN")) SupportAuthorization.administrator(actor);
-        LambdaQueryWrapper<ServiceItemEntity> query =
-                new LambdaQueryWrapper<ServiceItemEntity>()
-                        .eq(
-                                form.getCategory() != null,
-                                ServiceItemEntity::getCategory,
-                                form.getCategory())
-                        .eq(
-                                form.getStatus() != null,
-                                ServiceItemEntity::getStatus,
-                                form.getStatus());
-        long total = baseMapper.selectCount(query);
-        query.orderByAsc(ServiceItemEntity::getServiceCode)
-                .last(
-                        "LIMIT "
-                                + form.getPageSize()
-                                + " OFFSET "
-                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
-        PageVO<ServiceItemVO> result = new PageVO<>();
-        result.setTotal(total);
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        result.setRecords(baseMapper.selectList(query).stream().map(TicketViews::of).toList());
-        return result;
+        if (!actor.getRoles().contains("SERVICE_AGENT")
+                && !actor.getRoles().contains("KNOWLEDGE_ADMIN"))
+            SupportAuthorization.administrator(actor);
+        long total = baseMapper.countItems(form);
+        var records = baseMapper.listItems(form, form.getPageSize(), form.offset())
+                .stream().map(TicketViews::of).toList();
+        return PageVO.of(records, total, form);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceItemVO query(IdentityDTO actor, String id) {
         if (!actor.getRoles().contains("SERVICE_AGENT")) SupportAuthorization.administrator(actor);
@@ -85,7 +70,9 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
         return TicketViews.of(item);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceItemVO create(IdentityDTO actor, ServiceItemCreateForm form) {
         SupportAuthorization.administrator(actor);
@@ -98,7 +85,7 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
                     ServiceItemVO receipt = receipt(actor, form.getClientActionId(), hash);
                     if (receipt != null) return receipt;
                     ServiceItemEntity item = new ServiceItemEntity();
-                    item.setId(UUID.randomUUID().toString().replace("-", ""));
+                    item.setId(IdentifierGenerator.next());
                     item.setServiceCode(form.getServiceCode());
                     item.setCategory(form.getCategory());
                     item.setServiceName(form.getServiceName());
@@ -128,7 +115,9 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
                 () -> receipt(actor, form.getClientActionId(), hash));
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceItemVO updateItem(IdentityDTO actor, ServiceItemUpdateForm form) {
         form.setServiceName(form.getServiceName().strip());
@@ -150,7 +139,9 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
                 });
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceItemVO disable(IdentityDTO actor, ServiceStatusForm form) {
         return mutate(
@@ -164,7 +155,9 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
                 item -> item.setStatus("DISABLED"));
     }
 
-    /** 串行化当前项目，先回执后版本，事件与变更原子提交。 */
+    /**
+     * 串行化当前项目，先回执后版本，事件与变更原子提交。
+     */
     private ServiceItemVO mutate(
             IdentityDTO actor,
             String id,
@@ -193,10 +186,10 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
                     item.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
                     item.setRowVersion(version + 1);
                     if (baseMapper.update(
-                                    item,
-                                    new LambdaUpdateWrapper<ServiceItemEntity>()
-                                            .eq(ServiceItemEntity::getId, id)
-                                            .eq(ServiceItemEntity::getRowVersion, version))
+                            item,
+                            new LambdaUpdateWrapper<ServiceItemEntity>()
+                                    .eq(ServiceItemEntity::getId, id)
+                                    .eq(ServiceItemEntity::getRowVersion, version))
                             != 1) throw new BusinessException(CommonErrorCode.CONFLICT);
                     ServiceItemVO after = TicketViews.of(item);
                     events.append(actor, id, null, key, hash, type, before, after, reason);
@@ -205,7 +198,9 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
                 () -> receipt(actor, key, hash));
     }
 
-    /** 回执返回当前有权目标，历史事件保留当时值。 */
+    /**
+     * 回执返回当前有权目标，历史事件保留当时值。
+     */
     private ServiceItemVO receipt(IdentityDTO actor, String key, String hash) {
         ServiceEventEntity event = events.receipt(actor, key, hash);
         return event == null ? null : query(actor, event.getServiceItemId());

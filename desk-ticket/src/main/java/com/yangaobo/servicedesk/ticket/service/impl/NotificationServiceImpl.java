@@ -1,6 +1,7 @@
 package com.yangaobo.servicedesk.ticket.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.BasePageForm;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
@@ -18,9 +19,7 @@ import com.yangaobo.servicedesk.ticket.model.vo.ticket.NotificationVO;
 import com.yangaobo.servicedesk.ticket.service.INotificationService;
 import com.yangaobo.servicedesk.ticket.service.SupportAuthorization;
 import com.yangaobo.servicedesk.ticket.service.TicketScope;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,33 +32,28 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "desk.ticket.enabled", havingValue = "true", matchIfMissing = true)
-public class NotificationServiceImpl
-        extends com.baomidou.mybatisplus.spring.service.impl.ServiceImpl<
-                NotificationMapper, NotificationEntity>
+public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, NotificationEntity>
         implements INotificationService {
     private final NotificationQueryMapper queryMapper;
     private final TicketMapper ticketMapper;
     private final TicketEventMapper eventMapper;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<NotificationVO> list(IdentityDTO actor, BasePageForm form) {
-        TicketScope.query(actor);
+        TicketScope.requireReader(actor);
         boolean customer = actor.getRoles().contains("CUSTOMER_USER");
-        PageVO<NotificationVO> result = new PageVO<>();
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        result.setTotal(queryMapper.count(actor, customer));
-        result.setRecords(
-                queryMapper.list(
-                        actor,
-                        customer,
-                        form.getPageSize(),
-                        (long) (form.getPageNum() - 1) * form.getPageSize()));
-        return result;
+
+        long pageTotal = queryMapper.count(actor, customer);
+        var records = queryMapper.list(actor, customer, form.getPageSize(), form.offset());
+        return PageVO.of(records, pageTotal, form);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public void read(IdentityDTO actor, String id) {
@@ -71,7 +65,7 @@ public class NotificationServiceImpl
         if (ticket == null
                 || !SupportAuthorization.canRead(actor, ticket)
                 || actor.getRoles().contains("CUSTOMER_USER")
-                        && !VisibilityEnum.PUBLIC.getValue().equals(event.getVisibility()))
+                && !VisibilityEnum.PUBLIC.getValue().equals(event.getVisibility()))
             throw new BusinessException(CommonErrorCode.NOT_FOUND);
         baseMapper.update(
                 null,

@@ -2,6 +2,9 @@ package com.yangaobo.servicedesk.knowledge.component.web;
 
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.ErrorCode;
+import com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError;
+import com.yangaobo.servicedesk.knowledge.component.RemoteSupportError;
+import com.yangaobo.servicedesk.knowledge.error.DocumentErrorCode;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -25,10 +28,11 @@ public final class HttpErrorMapping {
      */
     public static ErrorCode registered(ErrorCode error) {
         return error instanceof CommonErrorCode
-                || error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError
-                || error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteSupportError
-                || error instanceof com.yangaobo.servicedesk.knowledge.model.enums.DocumentErrorCode
-                ? error : CommonErrorCode.INTERNAL_ERROR;
+                || error instanceof RemoteIdentityError
+                || error instanceof RemoteSupportError
+                || error instanceof DocumentErrorCode
+                ? error
+                : CommonErrorCode.INTERNAL_ERROR;
     }
 
     /**
@@ -38,13 +42,14 @@ public final class HttpErrorMapping {
      * @return 明确的HTTP状态
      */
     public static HttpStatus statusOf(ErrorCode error) {
-        if (error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError identity)
-            return identity == com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError.PASSWORD_CHANGE_REQUIRED
-                    ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED;
-        if (error instanceof com.yangaobo.servicedesk.knowledge.component.RemoteSupportError) return HttpStatus.CONFLICT;
-        if (error instanceof com.yangaobo.servicedesk.knowledge.model.enums.DocumentErrorCode document)
+        if (error instanceof RemoteIdentityError identity)
+            return identity == RemoteIdentityError.PASSWORD_CHANGE_REQUIRED
+                    ? HttpStatus.FORBIDDEN
+                    : HttpStatus.UNAUTHORIZED;
+        if (error instanceof RemoteSupportError) return HttpStatus.CONFLICT;
+        if (error instanceof DocumentErrorCode document)
             return switch (document) {
-                case UPLOAD_IN_PROGRESS -> HttpStatus.CONFLICT;
+                case UPLOAD_IN_PROGRESS, PUBLICATION_NOT_READY -> HttpStatus.CONFLICT;
                 case INVALID_PDF_TYPE -> HttpStatus.UNSUPPORTED_MEDIA_TYPE;
                 case EMPTY_PDF -> HttpStatus.BAD_REQUEST;
             };
@@ -85,7 +90,8 @@ public final class HttpErrorMapping {
             case 503 -> CommonErrorCode.SERVICE_UNAVAILABLE;
             case 504 -> CommonErrorCode.DEPENDENCY_TIMEOUT;
             default -> status >= 400 && status < 500
-                    ? CommonErrorCode.INVALID_REQUEST : CommonErrorCode.INTERNAL_ERROR;
+                    ? CommonErrorCode.INVALID_REQUEST
+                    : CommonErrorCode.INTERNAL_ERROR;
         };
     }
 }

@@ -1,12 +1,12 @@
 package com.yangaobo.servicedesk.ticket.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.ticket.component.BusinessTransaction;
 import com.yangaobo.servicedesk.ticket.component.IdentityVerificationClient;
 import com.yangaobo.servicedesk.ticket.component.RequestDigest;
@@ -28,17 +28,19 @@ import com.yangaobo.servicedesk.ticket.service.IServiceEventService;
 import com.yangaobo.servicedesk.ticket.service.SupportAuthorization;
 import com.yangaobo.servicedesk.ticket.service.TicketViews;
 
-import lombok.RequiredArgsConstructor;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.UUID;
-import java.util.function.Consumer;
 
 /**
  * 客户服务资格的业务边界。
@@ -57,33 +59,26 @@ public class ServiceEntitlementServiceImpl
     private final BusinessTransaction transactions;
     private final IdentityVerificationClient identityClient;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<ServiceEntitlementVO> listEntitlements(IdentityDTO actor, SupportQueryForm form) {
         SupportAuthorization.role(actor, "SERVICE_AGENT");
-        LambdaQueryWrapper<ServiceEntitlementEntity> query = new LambdaQueryWrapper<>();
+        Set<String> customerIds = actor.getCustomerIds();
         if (form.getCustomerId() != null) {
             SupportAuthorization.agent(actor, form.getCustomerId());
-            query.eq(ServiceEntitlementEntity::getCustomerId, form.getCustomerId());
-        } else if (actor.getCustomerIds().isEmpty()) query.apply("1 = 0");
-        else query.in(ServiceEntitlementEntity::getCustomerId, actor.getCustomerIds());
-        query.eq(form.getStatus() != null, ServiceEntitlementEntity::getStatus, form.getStatus());
-        long total = baseMapper.selectCount(query);
-        query.orderByAsc(ServiceEntitlementEntity::getId)
-                .last(
-                        "LIMIT "
-                                + form.getPageSize()
-                                + " OFFSET "
-                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
-        PageVO<ServiceEntitlementVO> result = new PageVO<>();
-        result.setTotal(total);
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        result.setRecords(baseMapper.selectList(query).stream().map(TicketViews::of).toList());
-        return result;
+            customerIds = Set.of(form.getCustomerId());
+        }
+        long total = baseMapper.countEntitlements(customerIds, form.getStatus());
+        var records = baseMapper.listEntitlements(customerIds, form.getStatus(), form.getPageSize(), form.offset())
+                .stream().map(TicketViews::of).toList();
+        return PageVO.of(records, total, form);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceEntitlementVO query(IdentityDTO actor, String id) {
         ServiceEntitlementEntity row = baseMapper.selectById(id);
@@ -92,7 +87,9 @@ public class ServiceEntitlementServiceImpl
         return TicketViews.of(row);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceEntitlementVO grant(IdentityDTO actor, EntitlementGrantForm form) {
         SupportAuthorization.agent(actor, form.getCustomerId());
@@ -109,7 +106,7 @@ public class ServiceEntitlementServiceImpl
                     ServiceItemEntity item = itemMapper.lock(form.getServiceItemId());
                     active(item);
                     ServiceEntitlementEntity row = new ServiceEntitlementEntity();
-                    row.setId(UUID.randomUUID().toString().replace("-", ""));
+                    row.setId(IdentifierGenerator.next());
                     row.setCustomerId(form.getCustomerId());
                     row.setServiceItemId(item.getId());
                     row.setStartsOn(form.getStartsOn());
@@ -138,7 +135,9 @@ public class ServiceEntitlementServiceImpl
                 () -> receipt(actor, form.getClientActionId(), hash));
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceEntitlementVO updateEntitlement(IdentityDTO actor, EntitlementUpdateForm form) {
         dates(form.getStartsOn(), form.getEndsOn());
@@ -156,7 +155,9 @@ public class ServiceEntitlementServiceImpl
                 });
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public ServiceEntitlementVO setSuspended(
             IdentityDTO actor, ServiceStatusForm form, boolean suspended) {
@@ -171,7 +172,9 @@ public class ServiceEntitlementServiceImpl
                 row -> row.setStatus(suspended ? "SUSPENDED" : "ACTIVE"));
     }
 
-    /** 每个资格变更沿项目→资格锁序，回执优先于新资格及版本。 */
+    /**
+     * 每个资格变更沿项目→资格锁序，回执优先于新资格及版本。
+     */
     private ServiceEntitlementVO mutate(
             IdentityDTO actor,
             String id,
@@ -206,10 +209,10 @@ public class ServiceEntitlementServiceImpl
                     row.setUpdatedAt(baseMapper.decisionTime());
                     row.setRowVersion(version + 1);
                     if (baseMapper.update(
-                                    row,
-                                    new LambdaUpdateWrapper<ServiceEntitlementEntity>()
-                                            .eq(ServiceEntitlementEntity::getId, id)
-                                            .eq(ServiceEntitlementEntity::getRowVersion, version))
+                            row,
+                            new LambdaUpdateWrapper<ServiceEntitlementEntity>()
+                                    .eq(ServiceEntitlementEntity::getId, id)
+                                    .eq(ServiceEntitlementEntity::getRowVersion, version))
                             != 1) throw new BusinessException(CommonErrorCode.CONFLICT);
                     ServiceEntitlementVO result = TicketViews.of(row);
                     events.append(actor, item.getId(), id, key, hash, type, before, result, reason);
@@ -218,7 +221,9 @@ public class ServiceEntitlementServiceImpl
                 () -> receipt(actor, key, hash));
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public ServiceAdmission admit(String customerId, String serviceItemId) {
@@ -242,45 +247,29 @@ public class ServiceEntitlementServiceImpl
         return admission;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<EntitledServiceVO> available(IdentityDTO actor, SupportQueryForm form) {
         String customer = SupportAuthorization.customer(actor, form.getCustomerId());
         LocalDate today = baseMapper.decisionTime().plusHours(8).toLocalDate();
-        LambdaQueryWrapper<ServiceEntitlementEntity> query =
-                new LambdaQueryWrapper<ServiceEntitlementEntity>()
-                        .eq(ServiceEntitlementEntity::getCustomerId, customer)
-                        .eq(ServiceEntitlementEntity::getStatus, "ACTIVE")
-                        .le(ServiceEntitlementEntity::getStartsOn, today)
-                        .ge(ServiceEntitlementEntity::getEndsOn, today)
-                        .inSql(
-                                ServiceEntitlementEntity::getServiceItemId,
-                                "SELECT id FROM it_service_item WHERE status = 'ACTIVE'");
-        long total = baseMapper.selectCount(query);
-        query.orderByAsc(ServiceEntitlementEntity::getServiceItemId)
-                .last(
-                        "LIMIT "
-                                + form.getPageSize()
-                                + " OFFSET "
-                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
-        java.util.List<ServiceEntitlementEntity> rows = baseMapper.selectList(query);
-        java.util.Map<String, ServiceItemEntity> items =
+        long total = baseMapper.countAvailable(customer, today);
+        List<ServiceEntitlementEntity> rows = baseMapper.listAvailable(customer, today, form.getPageSize(), form.offset());
+        Map<String, ServiceItemEntity> items =
                 rows.isEmpty()
-                        ? java.util.Map.of()
+                        ? Map.of()
                         : itemMapper
-                                .selectByIds(
-                                        rows.stream()
-                                                .map(ServiceEntitlementEntity::getServiceItemId)
-                                                .toList())
-                                .stream()
-                                .collect(
-                                        java.util.stream.Collectors.toMap(
-                                                ServiceItemEntity::getId, item -> item));
-        PageVO<EntitledServiceVO> result = new PageVO<>();
-        result.setTotal(total);
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        result.setRecords(
+                        .selectByIds(
+                                rows.stream()
+                                        .map(ServiceEntitlementEntity::getServiceItemId)
+                                        .toList())
+                        .stream()
+                        .collect(Collectors.toMap(ServiceItemEntity::getId, item -> item));
+
+        long pageTotal = total;
+
+        var records =
                 rows.stream()
                         .map(
                                 row -> {
@@ -290,23 +279,29 @@ public class ServiceEntitlementServiceImpl
                                     view.setEndsOn(row.getEndsOn());
                                     return view;
                                 })
-                        .toList());
-        return result;
+                        .toList();
+        return PageVO.of(records, pageTotal, form);
     }
 
-    /** 已提交请求不重新核验新日期或新状态。 */
+    /**
+     * 已提交请求不重新核验新日期或新状态。
+     */
     private ServiceEntitlementVO receipt(IdentityDTO actor, String key, String hash) {
         ServiceEventEntity event = events.receipt(actor, key, hash);
         return event == null ? null : query(actor, event.getEntitlementId());
     }
 
-    /** 日期必须是一段连续有效区间。 */
+    /**
+     * 日期必须是一段连续有效区间。
+     */
     private void dates(LocalDate start, LocalDate end) {
         if (start == null || end == null || start.isAfter(end))
             throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
     }
 
-    /** 新业务仅允许启用项目。 */
+    /**
+     * 新业务仅允许启用项目。
+     */
     private void active(ServiceItemEntity item) {
         if (item == null || !"ACTIVE".equals(item.getStatus()))
             throw new BusinessException(SupportErrorCode.SERVICE_NOT_COVERED);

@@ -1,31 +1,33 @@
 package com.yangaobo.servicedesk.user;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.ErrorCode;
 import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 通过真实HTTP验证所属MVC应用的协议边界，不安装业务探针到生产源码。
@@ -62,7 +64,9 @@ class HttpBoundaryTest {
         assertEquals("/created", response.headers().firstValue("Location").orElseThrow());
         assertEquals(0, result.get("code").intValue());
         assertEquals("payload", result.get("data").textValue());
-        assertEquals(response.headers().firstValue("X-Trace-Id").orElseThrow(), result.get("traceId").textValue());
+        assertEquals(
+                response.headers().firstValue("X-Trace-Id").orElseThrow(),
+                result.get("traceId").textValue());
     }
 
     /**
@@ -122,15 +126,20 @@ class HttpBoundaryTest {
      * 使用有界真实HTTP访问随机端口。
      *
      * @param method 请求方法
-     * @param path 测试路径
+     * @param path   测试路径
      * @return 原始HTTP响应
-     * @throws IOException 请求失败
+     * @throws IOException          请求失败
      * @throws InterruptedException 等待中断
      */
-    private HttpResponse<String> request(String method, String path) throws IOException, InterruptedException {
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
-            HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
-                    .timeout(Duration.ofSeconds(10)).method(method, HttpRequest.BodyPublishers.noBody()).build();
+    private HttpResponse<String> request(String method, String path)
+            throws IOException, InterruptedException {
+        try (HttpClient client =
+                     HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            HttpRequest request =
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                            .timeout(Duration.ofSeconds(10))
+                            .method(method, HttpRequest.BodyPublishers.noBody())
+                            .build();
             return client.send(request, HttpResponse.BodyHandlers.ofString());
         }
     }
@@ -181,19 +190,20 @@ class HttpBoundaryTest {
          */
         @GetMapping("/unknown-code")
         public Result<Void> unknownCode() {
-            throw new BusinessException(new ErrorCode() {
-                /** {@inheritDoc} */
-                @Override
-                public int code() {
-                    return 9999;
-                }
+            throw new BusinessException(
+                    new ErrorCode() {
+                        /** {@inheritDoc} */
+                        @Override
+                        public int code() {
+                            return 9999;
+                        }
 
-                /** {@inheritDoc} */
-                @Override
-                public String message() {
-                    return "secret-value";
-                }
-            });
+                        /** {@inheritDoc} */
+                        @Override
+                        public String message() {
+                            return "secret-value";
+                        }
+                    });
         }
     }
 }

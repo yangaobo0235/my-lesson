@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.TicketOverviewMapper">
+  <select id="overview" resultType="com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketOverviewVO">
+    SELECT
+      COALESCE(SUM(status = 'SUBMITTED'), 0) submitted,
+      COALESCE(SUM(status = 'PROCESSING'), 0) processing,
+      COALESCE(SUM(status = 'WAITING_CUSTOMER'), 0) waiting_customer,
+      COALESCE(SUM(status = 'RESOLVED'), 0) resolved,
+      COALESCE(SUM(
+        status = 'SUBMITTED'
+          AND acceptance_due_at &lt; UTC_TIMESTAMP(6)
+      ), 0) overdue,
+      COALESCE(SUM(
+        service_item_id IS NULL
+          AND status IN ('SUBMITTED', 'PROCESSING', 'WAITING_CUSTOMER')
+      ), 0) triage,
+      COALESCE(SUM(closure_reason = 'CUSTOMER_CONFIRMED'), 0) customer_confirmed,
+      COALESCE(SUM(closure_reason = 'CONFIRMATION_TIMEOUT'), 0) confirmation_timeout
+    FROM sd_ticket
+    WHERE
+    <choose>
+      <when test="customer">
+        requester_id = #{actor.ownerId}
+          AND customer_id = #{actor.organizationId}
+      </when>
+      <when test="actor.customerIds.size() > 0">
+        customer_id IN
+        <foreach collection="actor.customerIds" item="id" open="(" close=")" separator=",">
+          #{id}
+        </foreach>
+      </when>
+      <otherwise>
+        1 = 0
+      </otherwise>
+    </choose>
+  </select>
+</mapper>

@@ -8,30 +8,44 @@ import com.yangaobo.servicedesk.common.base.ErrorCode;
  * @author yangaobo
  */
 public enum DeviceErrorCode implements ErrorCode {
-    /** 设备不可新增关联。 */
+    /**
+     * 设备不可新增关联。
+     */
     DEVICE_INELIGIBLE(3101, "设备不可新增关联"),
-    /** 型号不可新增关联。 */
+    /**
+     * 型号不可新增关联。
+     */
     MODEL_UNAVAILABLE(3102, "型号不可新增关联");
 
-    /** 稳定错误码。 */
+    /**
+     * 稳定错误码。
+     */
     private final int code;
 
-    /** 安全提示。 */
+    /**
+     * 安全提示。
+     */
     private final String message;
 
-    /** 固定错误合同。 */
+    /**
+     * 固定错误合同。
+     */
     DeviceErrorCode(int code, String message) {
         this.code = code;
         this.message = message;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public int code() {
         return code;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public String message() {
         return message;

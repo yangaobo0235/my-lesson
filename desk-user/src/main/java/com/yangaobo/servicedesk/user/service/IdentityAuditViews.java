@@ -1,8 +1,11 @@
 package com.yangaobo.servicedesk.user.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.yangaobo.servicedesk.user.model.vo.account.IdentityAuditDetailsVO;
 import com.yangaobo.servicedesk.user.model.vo.account.IdentityAuditStateVO;
+
+import java.util.stream.StreamSupport;
 
 /**
  * 从已保存审计逐字段投影浏览器合同，不直接返回数据库JSON。
@@ -10,10 +13,15 @@ import com.yangaobo.servicedesk.user.model.vo.account.IdentityAuditStateVO;
  * @author yangaobo
  */
 public final class IdentityAuditViews {
-    /** 无状态转换器不实例化。 */
-    private IdentityAuditViews() {}
+    /**
+     * 无状态转换器不实例化。
+     */
+    private IdentityAuditViews() {
+    }
 
-    /** 保留创建前空状态及明确变更原因。 */
+    /**
+     * 保留创建前空状态及明确变更原因。
+     */
     public static IdentityAuditDetailsVO details(JsonNode node) {
         IdentityAuditDetailsVO result = new IdentityAuditDetailsVO();
         result.setBefore(state(node.get("before")));
@@ -22,7 +30,9 @@ public final class IdentityAuditViews {
         return result;
     }
 
-    /** 仅公开当前合同列出的历史字段，兼容已有快照大小写。 */
+    /**
+     * 仅公开当前合同列出的历史字段，兼容已有快照大小写。
+     */
     private static IdentityAuditStateVO state(JsonNode node) {
         if (node == null || node.isNull()) return null;
         IdentityAuditStateVO result = new IdentityAuditStateVO();
@@ -50,25 +60,26 @@ public final class IdentityAuditViews {
                         : field(node, "mustChangePassword", "must_change_password").booleanValue());
         result.setRoles(
                 field(node, "roles", "roles").isArray()
-                        ? java.util.stream.StreamSupport.stream(
-                                        field(node, "roles", "roles").spliterator(), false)
-                                .map(JsonNode::asText)
-                                .toList()
+                        ? StreamSupport.stream(field(node, "roles", "roles").spliterator(), false)
+                        .map(JsonNode::asText)
+                        .toList()
                         : null);
         result.setCustomerIds(
                 field(node, "customerIds", "customer_ids").isArray()
-                        ? java.util.stream.StreamSupport.stream(
-                                        field(node, "customerIds", "customer_ids").spliterator(),
-                                        false)
-                                .map(JsonNode::asText)
-                                .toList()
+                        ? StreamSupport.stream(
+                                field(node, "customerIds", "customer_ids").spliterator(),
+                                false)
+                        .map(JsonNode::asText)
+                        .toList()
                         : null);
         return result;
     }
 
-    /** 只在已知历史字段名间转换，不递归输出未知属性。 */
+    /**
+     * 只在已知历史字段名间转换，不递归输出未知属性。
+     */
     private static JsonNode field(JsonNode node, String camel, String snake) {
         JsonNode value = node.has(camel) ? node.get(camel) : node.get(snake);
-        return value == null ? com.fasterxml.jackson.databind.node.NullNode.instance : value;
+        return value == null ? NullNode.instance : value;
     }
 }

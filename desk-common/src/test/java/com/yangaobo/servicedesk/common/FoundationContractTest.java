@@ -1,14 +1,14 @@
 package com.yangaobo.servicedesk.common;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.common.env.SystemEnvironment;
 import com.yangaobo.servicedesk.common.env.SystemEnvironmentEnum;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * 验证跨应用基础合同及环境歧义拒绝，不连接外部资源。
@@ -39,11 +39,39 @@ class FoundationContractTest {
      */
     @Test
     void rejectsMissingAndConflictingBaseEnvironments() {
-        assertEquals(SystemEnvironmentEnum.DEV,
+        assertEquals(
+                SystemEnvironmentEnum.DEV,
                 SystemEnvironment.fromProfiles("dev", "feature").getBaseEnvironment());
-        assertEquals(SystemEnvironmentEnum.PROD,
+        assertEquals(
+                SystemEnvironmentEnum.PROD,
                 SystemEnvironment.fromProfiles("prod").getBaseEnvironment());
-        assertThrows(IllegalArgumentException.class, () -> SystemEnvironment.fromProfiles("feature"));
-        assertThrows(IllegalArgumentException.class, () -> SystemEnvironment.fromProfiles("dev", "prod"));
+        assertThrows(
+                IllegalArgumentException.class, () -> SystemEnvironment.fromProfiles("feature"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SystemEnvironment.fromProfiles("dev", "prod"));
+    }
+
+    /**
+     * 超过原隐含页数限制仍有效，乘法不溢出且分页字段完整。
+     */
+    @org.junit.jupiter.api.Test
+    void pageFactoryAndOffsetPreservePublicContract() {
+        var form = new com.yangaobo.servicedesk.common.base.BasePageForm();
+        form.setPageNum(Integer.MAX_VALUE);
+        form.setPageSize(100);
+        org.junit.jupiter.api.Assertions.assertEquals(214748364600L, form.offset());
+        var page =
+                com.yangaobo.servicedesk.common.base.PageVO.of(java.util.List.of("row"), 1, form);
+        org.junit.jupiter.api.Assertions.assertEquals(form.getPageNum(), page.getPageNum());
+        org.junit.jupiter.api.Assertions.assertEquals(100, page.getPageSize());
+        org.junit.jupiter.api.Assertions.assertEquals(1L, page.getTotal());
+        form.setPageSize(101);
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.yangaobo.servicedesk.common.exception.BusinessException.class, form::offset);
+        form.setPageSize(10);
+        form.setPageNum(null);
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.yangaobo.servicedesk.common.exception.BusinessException.class, form::offset);
     }
 }

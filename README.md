@@ -44,13 +44,13 @@ Nacos管Java注册与配置，Feign/LoadBalancer承担Java内部通信。Redis�
 
 ## 3. 工程约定
 
-Java使用Controller/RPC适配、Service、Mapper和独立Model，主实体业务采用三件套，聚合用例使用普通Service；手写数据模型统一普通class、Serializable和明确字段合同，Protobuf生成类型遵循生成器合同。自定义SQL使用注解与文本块，不新增Mapper XML。
+Java使用Controller/RPC适配、Service、Mapper和独立Model，主实体业务采用三件套，聚合用例使用普通Service；手写数据模型统一普通class、Serializable和明确字段合同，Protobuf生成类型遵循生成器合同。每个真实持久化实体保留各层对应文件，允许没有独立行为的空层；自定义SQL统一放同名Mapper XML，简单通用操作继续使用BaseMapper。
 
 普通 JSON 使用 `Result<T>`，成功 code=0、系统异常 code=1，其余错误按业务域登记在[接口约定](docs/设计/接口约定.md#12-错误码与边界转换)，HTTP状态保留真实语义。管理接口采用 POST 动作，公开业务 ID 为32位小写十六进制字符串，分页默认1/10、上限100。后端逐次校验当前权限和资源状态，幂等与结果未知按原请求身份核对。
 
 公共能力按真实消费者进入common/base等职责包；Entity与业务枚举归所有者服务，内部HTTP及跨语言合同归api。JSON、环境、异常和OpenAPI运行装配归各应用，分别适配MVC、WebFlux与Python；不让公共库引入应用启动行为。
 
-本文档体系定义最终交付系统，不划分功能版本；开发阶段仅安排实现顺序，最终范围、接口和失败路径以正式设计为准。实施与验收按[开发改造计划](docs/开发计划/开发改造计划.md)组织，规范和设计中列举的类型按真实用例落地，不能机械生成无消费者代码。
+本文档体系定义最终交付系统，不划分功能版本；开发阶段仅安排实现顺序，最终范围、接口和失败路径以正式设计为准。实施与验收按[开发规范](docs/开发/开发规范.md#6-验证和交付)执行，开发计划及本机验收记录保存在Git忽略的`docs/开发计划/`，不得提交，规范和设计中列举的类型按真实用例落地，不能机械生成无消费者代码。
 
 前述设计定义最终目标，当前可执行范围与验证见第5节；业务及组件接入进度随具体改造任务提供，不沿用参考项目的测试数量或验收结论。
 
@@ -67,28 +67,19 @@ Java使用Controller/RPC适配、Service、Mapper和独立Model，主实体业�
 | HTTP、gRPC、内部认证、幂等、MQ和SSE | [接口约定](docs/设计/接口约定.md) |
 | Java / Python / Vue 写法 | [Java后端规范](docs/开发/Java后端规范.md) · [Python后端规范](docs/开发/Python后端规范.md) · [前端规范](docs/开发/前端规范.md) |
 
+本机临时产物统一放仓库根目录`.local/`，停止相关进程后可删除并按需重建；模块内不另建`.local/`、`logs/`。Java在IDEA的Working directory设为`$PROJECT_DIR$`，AI命令在`desk-ai`执行；真实配置、业务原件及数据库不放入临时目录。
+
 默认本机入口为 Gateway26101、user26102、ticket26103、knowledge26104、AI26105、Web26199。前端同源调用 /api/v1，内部接口不通过浏览器入口发布。具体启动、配置与验证合同由部署说明和各端规范统一维护。
 
 开发环境通过IDEA的MySQL root数据源创建四个空库，三个Java服务启动执行Flyway，AI API启动执行Alembic；已有手工表先按[数据库初始化与迁移](docs/sql/README.md)比对并显式接管，不重复执行初始DDL。Java三服务的application-local.yml和AI的.env使用root用户名，各自填写MySQL root密码；开发迁移复用该账号，密码不纳入版本管理。
 
-## 5. 当前骨架与本地检查
+## 5. 当前实现与本地检查
 
-当前已完成办公IT支持目标的工程骨架与数据库结构准备：31张自有表、435个字段；ticket/knowledge的增量迁移、AI的Alembic 0003，以及15个管理资源的网关白名单已同步。V1/0001和手工SQL保留不可变旧基线，新版本在全部旧业务表为空时升级；非空旧库在任何DDL前拒绝执行，必须另做显式数据映射。步骤和恢复边界见[数据库初始化与迁移](docs/sql/README.md#6-办公it支持目标的增量迁移)。表结构就绪不表示业务接口已经实现。
+当前已实现身份与客户范围、服务项目及开通资格、可选设备、人工工单、预约、知识修订/发布、索引receiver/worker、双侧私有排障、来源复核、人工草稿采用和共享反馈处置。Vue工作台使用真实接口；人工支持链可独立于知识、解析与模型运行。各服务通过原生Flyway/Alembic维护独立库，非空旧基线在DDL前拒绝升级，显式接管及映射见[数据库初始化与迁移](docs/sql/README.md)。
 
-| 范围 | 已实现 |
-| --- | --- |
-| Maven | 六模块聚合；common/api普通JAR，四个应用独立Boot JAR；JDK/Maven约束及本机配置打包排除 |
-| 数据库迁移 | user的Flyway V1、ticket的V1→V2、knowledge的V1→V3、AI的0001→0003；启动迁移、非空基线保护、校验和与失败就绪边界；保留初始快照 |
-| common | Result、公共错误与BusinessException、BaseEnum及无Spring环境快照，已接入真实应用边界 |
-| api | ActorRef/RpcErrorDetail唯一.proto、Java生成与JAR打包、Python生成与wheel打包、固定线向量检查 |
-| Java应用 | dev/prod配置、MVC/Reactive独立错误处理、请求关联标识、原生健康；MVC开发OpenAPI3.0及生产关闭 |
-| Gateway | 公开资源及15个管理资源白名单、原路径转发、外来身份/追踪头清理、下游地址启动校验 |
-| AI | 类型化组件配置、ASGI资源生命周期、索引receiver/worker、百炼类型化Chat/工具建议/Embedding合同、实际用量及向量校验、JSON日志/Zipkin、HTTP错误和健康，生成合同可脱离源码导入 |
-| 组件配置 | Java各应用本机YAML、AI独立dotenv及原生启动；Java默认组件装配、MySQL/Lettuce、OSS/Redisson、XXL执行器、条件事务MQ生产者、Nacos/Feign/Zipkin及Gateway Sentinel冷启动基线 |
-| Web | 公共布局、主页、404、路由、样式入口及严格类型检查 |
-| CI | 文件/依赖边界、公共错误编号对齐、生成目录忽略、真实JAR及wheel检查，Java/Python/前端检查，独占MySQL原生迁移与业务约束检查 |
+公共Result、错误接口、分页、标识和字段级序列化已有真实消费者；common无业务Entity和运行装配，api维护内部HTTP及跨语言合同。应用本地安装JSON、错误、安全和OpenAPI；RPC明确状态、追踪和父级预算，索引及付费运行依数据库执行权收敛。全量手写Python类型、跨语言错误所有权及前端协议回归均进入CI；Java格式通过本机IDEA原生格式器和共享XML检查，Maven verify执行构建与测试。
 
-P1–P3已落地组织/账号与范围管理、JDBC Session/CSRF/改密、内部HTTP与双向TLS身份RPC、服务目录/资格/审计、可选资产、直接提单、人工处理/确认、通知/概况及XXL期限扫描；P4–P6已落地现场、知识、索引receiver/worker、客户/技术私有排障及人工草稿采用；P7补齐知识管理员共享反馈队列、来源复核和版本化处置；P8已有固定隔离证据。Vue页面使用真实接口，人工链不依赖知识、解析或AI。实现、验证及未验收边界见[P0–P3实施与验收](docs/开发计划/P0-P3实施与验收.md)、[P4–P6实施与验收](docs/开发计划/P4-P6实施与验收.md)和[P7–P8本地交付与验收](docs/开发计划/P7-P8本地交付与验收.md)。
+SQL归属与分层要求见[Java后端规范](docs/开发/Java后端规范.md)，文件对应见[项目结构](docs/设计/项目结构.md)。实现与验证以当前代码、配置及可重复检查为准，历史本机记录不代替当前版本回归。独占MySQL/Redis入口能够复现迁移、约束、人工链及AI执行权检查。
 
 先核对mvn -version使用JDK21、uv为0.13.7同系、Node/npm符合版本约定；终端java与Maven的JDK可能不同。以下检查不连接共享业务库，也不要求启动中间件。
 
@@ -96,6 +87,8 @@ P1–P3已落地组织/账号与范围管理、JDBC Session/CSRF/改密、内部
 
 ```shell
 python .github/scripts/check_structure.py
+# IDEA 原生 Java 格式；加 --check 只检查，也可用 DESK_IDEA_HOME 指定安装目录
+python .github/scripts/format_java.py --idea-home "<IDEA安装目录>"
 mvn -B -ntp clean verify
 python .github/scripts/check_java_artifacts.py
 ```
@@ -108,6 +101,7 @@ uv run --locked --no-sync python ../.github/scripts/generate_contracts.py
 uv sync --locked
 uv run --locked ruff check --config pyproject.toml . ../.github/scripts
 uv run --locked ruff format --check --config pyproject.toml . ../.github/scripts
+uv run --locked mypy
 uv run --locked pytest
 ```
 
@@ -123,8 +117,8 @@ java -jar desk-user/target/desk-user-0.1.0-SNAPSHOT.jar
 
 AI将[.env.example](desk-ai/.env.example)复制为desk-ai/.env，直接填写DESK_AI_*嵌套字段，在desk-ai目录运行 `uv run --locked python -m servicedesk_ai`；入口由Pydantic Settings原生加载，进程变量优先。生产通过进程环境提供DESK_AI_ENVIRONMENT=prod及所需参数，不读取开发.env。IDEA/Python无需根目录配置转换或专用启动脚本。
 
-具体填写、Nacos配置、Topic及空间准备见[本机组件连接](docs/开发/部署说明.md#51-本机配置与连接)。[数据库初始化文档](docs/sql/README.md)保留原24表基线的手工SQL快照；新环境建空库后执行完整迁移链，已有手工结构先显式接管。当前完整迁移为user V1、ticket V2、knowledge V3和AI 0003，共31张自有表435字段。MQ事务回查、receiver/worker及领域mTLS RPC已接入；启动顺序及解析对账见部署说明。
+具体填写、Nacos配置、Topic及空间准备见[本机组件连接](docs/开发/部署说明.md#51-本机配置与连接)。[数据库初始化文档](docs/sql/README.md)保留原24表基线的手工SQL快照；新环境建空库后执行完整迁移链，已有手工结构先显式接管。当前完整迁移版本与字段以数据库初始化文档及数据库设计为准。MQ事务回查、receiver/worker及领域mTLS RPC已接入；启动顺序及解析对账见部署说明。
 
 在desk-web目录执行npm ci、npm run typecheck、npm run lint、npm run format:check、npm run test、npm run build；npm run dev启动26199并将/api代理至26101。未交付业务返回明确错误，不以页面占位或健康UP表示业务可用。
 
-2026-11-14已实现P1–P8的本地开发范围，并取得现场容量/履约、真实OSS→MQ→AI→MinerU/Markdown→双索引→发布、客户/技术私有排障、人工草稿采用、共享反馈来源复核及固定故障分支的分项证据。Nacos动态规则、实际Gateway Reactive生命周期、XXL注册/触发/回调及Zipkin跨语言/持久worker接续通过。没有打印机及Microsoft 365环境，相关设备实测明确未验证；生产级MQ/ELK完整故障矩阵、非空旧库迁移、镜像交付和联合恢复留待实际部署。未部署业务应用，未改共享业务数据。具体结果和限制见[P0–P3记录](docs/开发计划/P0-P3实施与验收.md)、[P4–P6记录](docs/开发计划/P4-P6实施与验收.md)及[P7–P8本地交付与验收](docs/开发计划/P7-P8本地交付与验收.md)。
+本地测试和历史分项联调不等于生产验收。打印机/Microsoft 365设备实测、生产MQ/ELK完整故障矩阵、非空旧库的实际数据映射、镜像交付和联合恢复仍需专用真实环境，按部署说明及验收记录执行；不得把健康UP、SDK接入或离线盘点当作业务及恢复通过。本次规范修复未部署业务应用、未修改共享业务数据。

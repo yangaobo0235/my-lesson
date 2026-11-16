@@ -8,28 +8,40 @@ import com.yangaobo.servicedesk.common.base.ErrorCode;
  * @author yangaobo
  */
 public enum SupportErrorCode implements ErrorCode {
-    /** 客户当前未开通有效支持服务。 */
+    /**
+     * 客户当前未开通有效支持服务。
+     */
     SERVICE_NOT_COVERED(3001, "客户当前未开通有效支持服务");
 
-    /** 稳定错误码。 */
+    /**
+     * 稳定错误码。
+     */
     private final int code;
 
-    /** 安全提示。 */
+    /**
+     * 安全提示。
+     */
     private final String message;
 
-    /** 固定错误合同。 */
+    /**
+     * 固定错误合同。
+     */
     SupportErrorCode(int code, String message) {
         this.code = code;
         this.message = message;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public int code() {
         return code;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public String message() {
         return message;

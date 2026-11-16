@@ -1,11 +1,11 @@
 package com.yangaobo.servicedesk.gateway;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.yangaobo.servicedesk.gateway.config.EnvironmentConfig;
 import com.yangaobo.servicedesk.gateway.config.InfrastructureConfigurationValidator;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 验证启动配置失败关闭，拒绝含凭据或路径前缀的下游地址。
@@ -19,7 +19,8 @@ class GatewayConfigurationTest {
      */
     @Test
     void acceptsExplicitServiceOrigins() {
-        runner("https://knowledge.internal:26104").run(context -> assertThat(context).hasNotFailed());
+        runner("https://knowledge.internal:26104")
+                .run(context -> assertThat(context).hasNotFailed());
         runner("lb://desk-knowledge").run(context -> assertThat(context).hasNotFailed());
     }
 
@@ -28,15 +29,27 @@ class GatewayConfigurationTest {
      */
     @Test
     void rejectsCredentialAndPathBearingOrigins() {
-        for (String target : new String[]{"http://user:secret-value@host", "http://host/prefix", "file:///tmp",
-                "lb://desk-user", "lb://desk-knowledge/private"}) {
-            runner(target).run(context -> {
-                assertThat(context).hasFailed();
-                assertThat(context.getStartupFailure()).hasStackTraceContaining("desk.downstream.knowledge");
-                assertThat(context.getStartupFailure()).hasStackTraceContaining("dev环境");
-                assertThat(context.getStartupFailure()).hasStackTraceContaining("HTTP(S)");
-                assertThat(context.getStartupFailure().toString()).doesNotContain("secret-value");
-            });
+        for (String target :
+                new String[]{
+                        "http://user:secret-value@host",
+                        "http://host/prefix",
+                        "file:///tmp",
+                        "lb://desk-user",
+                        "lb://desk-knowledge/private"
+                }) {
+            runner(target)
+                    .run(
+                            context -> {
+                                assertThat(context).hasFailed();
+                                assertThat(context.getStartupFailure())
+                                        .hasStackTraceContaining("desk.downstream.knowledge");
+                                assertThat(context.getStartupFailure())
+                                        .hasStackTraceContaining("dev环境");
+                                assertThat(context.getStartupFailure())
+                                        .hasStackTraceContaining("HTTP(S)");
+                                assertThat(context.getStartupFailure().toString())
+                                        .doesNotContain("secret-value");
+                            });
         }
     }
 
@@ -49,8 +62,10 @@ class GatewayConfigurationTest {
     private ApplicationContextRunner runner(String knowledge) {
         return new ApplicationContextRunner()
                 .withInitializer(context -> context.getEnvironment().setActiveProfiles("dev"))
-                .withUserConfiguration(EnvironmentConfig.class, InfrastructureConfigurationValidator.class)
-                .withPropertyValues("desk.downstream.user=http://user:26102",
+                .withUserConfiguration(
+                        EnvironmentConfig.class, InfrastructureConfigurationValidator.class)
+                .withPropertyValues(
+                        "desk.downstream.user=http://user:26102",
                         "desk.downstream.ticket=http://ticket:26103",
                         "desk.downstream.knowledge=" + knowledge,
                         "desk.downstream.ai=http://ai:26105");

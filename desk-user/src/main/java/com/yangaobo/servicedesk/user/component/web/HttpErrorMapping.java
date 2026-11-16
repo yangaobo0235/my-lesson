@@ -2,10 +2,10 @@ package com.yangaobo.servicedesk.user.component.web;
 
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.ErrorCode;
-import org.springframework.http.HttpStatus;
-import com.yangaobo.servicedesk.user.error.AuthenticationErrorCode;
 import com.yangaobo.servicedesk.user.error.AccountErrorCode;
+import com.yangaobo.servicedesk.user.error.AuthenticationErrorCode;
 import com.yangaobo.servicedesk.user.error.OrganizationErrorCode;
+import org.springframework.http.HttpStatus;
 
 /**
  * 在所属应用显式转换公共错误与HTTP状态，不按编号推断状态。
@@ -27,8 +27,12 @@ public final class HttpErrorMapping {
      * @return 可公开展示的已登记错误
      */
     public static ErrorCode registered(ErrorCode error) {
-        return error instanceof CommonErrorCode || error instanceof AuthenticationErrorCode || error instanceof AccountErrorCode
-                || error instanceof OrganizationErrorCode ? error : CommonErrorCode.INTERNAL_ERROR;
+        return error instanceof CommonErrorCode
+                || error instanceof AuthenticationErrorCode
+                || error instanceof AccountErrorCode
+                || error instanceof OrganizationErrorCode
+                ? error
+                : CommonErrorCode.INTERNAL_ERROR;
     }
 
     /**
@@ -46,7 +50,8 @@ public final class HttpErrorMapping {
                 case TOO_MANY_ATTEMPTS -> HttpStatus.TOO_MANY_REQUESTS;
             };
         }
-        if (error instanceof AccountErrorCode || error instanceof OrganizationErrorCode) return HttpStatus.CONFLICT;
+        if (error instanceof AccountErrorCode || error instanceof OrganizationErrorCode)
+            return HttpStatus.CONFLICT;
         return switch ((CommonErrorCode) registered(error)) {
             case INVALID_REQUEST -> HttpStatus.BAD_REQUEST;
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
@@ -84,7 +89,8 @@ public final class HttpErrorMapping {
             case 503 -> CommonErrorCode.SERVICE_UNAVAILABLE;
             case 504 -> CommonErrorCode.DEPENDENCY_TIMEOUT;
             default -> status >= 400 && status < 500
-                    ? CommonErrorCode.INVALID_REQUEST : CommonErrorCode.INTERNAL_ERROR;
+                    ? CommonErrorCode.INVALID_REQUEST
+                    : CommonErrorCode.INTERNAL_ERROR;
         };
     }
 }

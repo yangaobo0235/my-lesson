@@ -6,11 +6,8 @@ import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.knowledge.component.IdentityVerificationClient;
 import com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError;
-
 import jakarta.servlet.http.HttpServletRequest;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +23,9 @@ public class CurrentActor {
     private final HttpServletRequest request;
     private final IdentityVerificationClient identityClient;
 
-    /** 每次浏览器请求重新核验身份，忽略任何客户端身份声明头。 */
+    /**
+     * 每次浏览器请求重新核验身份，忽略任何客户端身份声明头。
+     */
     public IdentityDTO requireIdentity() {
         VerifyBrowserForm form = new VerifyBrowserForm();
         String cookie = request.getHeader("Cookie");

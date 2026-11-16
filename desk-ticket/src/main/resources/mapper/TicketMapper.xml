@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.TicketMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.ticket.model.entity.TicketEntity" autoMapping="true">
+    <id column="id" property="id"/>
+    <result column="service_scope_snapshot" property="serviceScopeSnapshot"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    <result column="device_snapshot" property="deviceSnapshot"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    <result column="support_context" property="supportContext"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    <result column="handover_snapshot" property="handoverSnapshot"
+      javaType="com.fasterxml.jackson.databind.JsonNode"
+      typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      ticket_no,
+      customer_id,
+      requester_id,
+      client_request_id,
+      request_hash,
+      source_draft_id,
+      service_item_id,
+      entitlement_id,
+      service_scope_snapshot,
+      device_id,
+      device_snapshot,
+      support_context,
+      handover_snapshot,
+      service_area_code,
+      service_location,
+      title,
+      symptom,
+      attempted_actions,
+      priority,
+      status,
+      assignee_id,
+      first_accepted_at,
+      acceptance_due_at,
+      acceptance_overdue_recorded_at,
+      resolution_type,
+      resolved_at,
+      confirmation_due_at,
+      onsite_eligible,
+      closure_reason,
+      closed_at,
+      cancelled_at,
+      created_at,
+      updated_at,
+      row_version
+    FROM sd_ticket
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <select id="decisionTime" resultType="java.time.LocalDateTime">
+    SELECT UTC_TIMESTAMP(6)
+  </select>
+
+  <select id="activeBookings" resultType="long">
+    SELECT COUNT(*)
+    FROM sd_onsite_booking
+    WHERE ticket_id = #{ticket}
+      AND status = 'CONFIRMED'
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    ticket_no,
+    customer_id,
+    requester_id,
+    client_request_id,
+    request_hash,
+    source_draft_id,
+    service_item_id,
+    entitlement_id,
+    service_scope_snapshot,
+    device_id,
+    device_snapshot,
+    support_context,
+    handover_snapshot,
+    service_area_code,
+    service_location,
+    title,
+    symptom,
+    attempted_actions,
+    priority,
+    status,
+    assignee_id,
+    first_accepted_at,
+    acceptance_due_at,
+    acceptance_overdue_recorded_at,
+    resolution_type,
+    resolved_at,
+    confirmation_due_at,
+    onsite_eligible,
+    closure_reason,
+    closed_at,
+    cancelled_at,
+    created_at,
+    updated_at,
+    row_version
+  </sql>
+
+  <sql id="countTicketsFromWhere">
+    FROM sd_ticket
+    <where>
+      <choose>
+        <when test="customer">
+          requester_id = #{actor.ownerId}
+          AND customer_id = #{actor.organizationId}
+        </when>
+        <when test="actor.customerIds.size() > 0">
+          customer_id IN
+          <foreach collection="actor.customerIds" item="id" open="(" close=")" separator=",">
+            #{id}
+          </foreach>
+        </when>
+        <otherwise>
+          1 = 0
+        </otherwise>
+      </choose>
+      <if test="form.status != null">
+        AND status = #{form.status}
+      </if>
+      <if test="form.triage == true">
+        AND service_item_id IS NULL
+      </if>
+      <if test="form.assignedToMe == true">
+        AND assignee_id = #{actor.ownerId}
+      </if>
+      <if test="overdueAt != null">
+        AND status = 'SUBMITTED'
+        AND acceptance_due_at &lt; #{overdueAt}
+      </if>
+    </where>
+  </sql>
+
+  <select id="listTickets" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countTicketsFromWhere"/>
+    ORDER BY updated_at DESC, id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countTickets" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countTicketsFromWhere"/>
+  </select>
+  <select id="scanDue" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    FROM sd_ticket
+    WHERE (
+      status = 'SUBMITTED'
+      AND acceptance_overdue_recorded_at IS NULL
+      AND acceptance_due_at &lt; #{now}
+    ) OR (
+      status = 'RESOLVED'
+      AND confirmation_due_at &lt;= #{now}
+    )
+    ORDER BY id
+    LIMIT #{limit}
+  </select>
+</mapper>

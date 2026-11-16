@@ -7,10 +7,16 @@ import com.yangaobo.servicedesk.api.ticket.form.SupportAccessForm;
 import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.ticket.security.DomainServiceCredentials;
 import com.yangaobo.servicedesk.ticket.service.ISupportAccessService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+
+import java.util.List;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -19,30 +25,51 @@ import org.springframework.web.bind.annotation.RestController;
  * @author yangaobo
  */
 @RestController
-@lombok.RequiredArgsConstructor
-@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "desk.ticket.enabled", havingValue = "true", matchIfMissing = true)
+@RequiredArgsConstructor
+@ConditionalOnProperty(name = "desk.ticket.enabled", havingValue = "true", matchIfMissing = true)
 public class SupportAccessController {
     private final DomainServiceCredentials credentials;
     private final ISupportAccessService supportAccessService;
-    /** 服务认证后仍重核原用户及资源范围。 */
+
+    /**
+     * 服务认证后仍重核原用户及资源范围。
+     */
     @PostMapping("/internal/v1/support/check-access")
-    public Result<SupportContextDTO> check(@RequestHeader("Authorization") String authorization,@Valid @RequestBody SupportAccessForm form, jakarta.servlet.http.HttpServletResponse response) {
+    public Result<SupportContextDTO> check(
+            @RequestHeader("Authorization") String authorization,
+            @Valid @RequestBody SupportAccessForm form,
+            HttpServletResponse response) {
         credentials.requireKnowledge(authorization);
         response.setHeader("X-Desk-Support-Verified", "1");
-        SupportContextDTO data=supportAccessService.check(form);return Result.success(data);
+        SupportContextDTO data = supportAccessService.check(form);
+        return Result.success(data);
     }
-    /** 有界目录新增关联资格，不返回工单正文。 */
+
+    /**
+     * 有界目录新增关联资格，不返回工单正文。
+     */
     @PostMapping("/internal/v1/service-items/query")
-    public Result<java.util.List<CatalogEntryDTO>> services(@RequestHeader("Authorization") String authorization,@Valid @RequestBody CatalogQueryForm form, jakarta.servlet.http.HttpServletResponse response) {
+    public Result<List<CatalogEntryDTO>> services(
+            @RequestHeader("Authorization") String authorization,
+            @Valid @RequestBody CatalogQueryForm form,
+            HttpServletResponse response) {
         credentials.requireKnowledge(authorization);
         response.setHeader("X-Desk-Support-Verified", "1");
-        java.util.List<CatalogEntryDTO> data=supportAccessService.catalog(form,false);return Result.success(data);
+        List<CatalogEntryDTO> data = supportAccessService.catalog(form, false);
+        return Result.success(data);
     }
-    /** 有界型号核验，不跨库读取设备。 */
+
+    /**
+     * 有界型号核验，不跨库读取设备。
+     */
     @PostMapping("/internal/v1/product-models/query")
-    public Result<java.util.List<CatalogEntryDTO>> models(@RequestHeader("Authorization") String authorization,@Valid @RequestBody CatalogQueryForm form, jakarta.servlet.http.HttpServletResponse response) {
+    public Result<List<CatalogEntryDTO>> models(
+            @RequestHeader("Authorization") String authorization,
+            @Valid @RequestBody CatalogQueryForm form,
+            HttpServletResponse response) {
         credentials.requireKnowledge(authorization);
         response.setHeader("X-Desk-Support-Verified", "1");
-        java.util.List<CatalogEntryDTO> data=supportAccessService.catalog(form,true);return Result.success(data);
+        List<CatalogEntryDTO> data = supportAccessService.catalog(form, true);
+        return Result.success(data);
     }
 }

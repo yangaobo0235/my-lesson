@@ -105,6 +105,11 @@ async def test_documentation_is_native_in_dev_and_closed_in_prod(client: httpx.A
     assert development.status_code == 200
     assert development.json()["openapi"].startswith("3.")
     assert "code" not in development.json()
+    stream = development.json()["paths"]["/api/v1/ai/generations/{identifier}/stream"]["post"][
+        "responses"
+    ]["200"]
+    assert set(stream["content"]) == {"text/event-stream"}
+    assert "X-Accel-Buffering" in stream["headers"]
     transport = httpx.ASGITransport(
         app=create_app(Settings(infrastructure_enabled=False, environment="prod"))
     )

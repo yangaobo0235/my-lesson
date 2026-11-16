@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.ProductModelMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.ticket.model.entity.ProductModelEntity" autoMapping="true">
+    <id column="id" property="id"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      category,
+      brand,
+      model_name,
+      supported_systems,
+      status,
+      created_by,
+      created_at,
+      updated_at,
+      row_version
+    FROM it_product_model
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    category,
+    brand,
+    model_name,
+    supported_systems,
+    status,
+    created_by,
+    created_at,
+    updated_at,
+    row_version
+  </sql>
+
+  <sql id="countModelsFromWhere">
+    FROM it_product_model
+    <where>
+      <if test="form.category != null">
+        AND category = #{form.category}
+      </if>
+      <if test="form.status != null">
+        AND status = #{form.status}
+      </if>
+    </where>
+  </sql>
+
+  <select id="listModels" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countModelsFromWhere"/>
+    ORDER BY id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countModels" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countModelsFromWhere"/>
+  </select>
+</mapper>

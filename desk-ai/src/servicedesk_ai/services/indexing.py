@@ -8,14 +8,15 @@ import logging
 import grpc
 import httpx
 from opentelemetry.trace import NoOpTracer, SpanKind, Tracer
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from servicedesk_ai.infrastructure.domain_rpc import DomainRpc
 from servicedesk_ai.infrastructure.index_replicas import IndexReplicas
 from servicedesk_ai.infrastructure.mineru import MineruClient, parse_artifact
+from servicedesk_ai.infrastructure.rpc_contract import request_budget
 from servicedesk_ai.infrastructure.tracing import parent, snapshot
+from servicedesk_ai.repositories import index_execution as queries
 from servicedesk_ai.repositories import index_jobs as jobs
 from servicedesk_ai.schemas.indexing import IndexCommand, ParsedChunk
 from servicedesk_ai.services.parsing import parse_markdown
@@ -43,11 +44,7 @@ class IndexService:
         """任务未见只报告NOT_FOUND，不推断Broker是否在途。"""
         async with self.engine.connect() as db:
             job = await jobs.get_job(db, job_id)
-            count = (
-                await db.execute(
-                    text("SELECT COUNT(*) FROM ai_chunk WHERE index_job_id=:id"), {"id": job_id}
-                )
-            ).scalar_one()
+            count = await queries.chunk_count(db, {"id": job_id})
             return job, count
 
 
@@ -92,7 +89,8 @@ class IndexWorker:
     async def run_claimed(self, job: jobs.IndexJob) -> bool:
         """当前领取执行的网络等待与结果CAS共享同一有界任务作用域。"""
         heartbeat = asyncio.create_task(self.heartbeat(job))
-        execution = asyncio.create_task(self.execute(job))
+        with request_budget(job.processing_config.total_seconds):
+            execution = asyncio.create_task(self.execute(job))
         try:
             done, _ = await asyncio.wait(
                 {heartbeat, execution}, return_when=asyncio.FIRST_COMPLETED
@@ -137,14 +135,7 @@ class IndexWorker:
                     await jobs.save_manifest(db, job, chunks, pages)
             async with self.engine.begin() as db:
                 await jobs.owned(db, job)
-                await db.execute(
-                    text(
-                        "UPDATE ai_index_job SET "
-                        "stage='INDEXING',updated_at=UTC_TIMESTAMP(6) WHERE "
-                        "id=:id"
-                    ),
-                    {"id": job.id},
-                )
+                await queries.mark_indexing(db, {"id": job.id})
             await self.replicas.prepare()
             await self.replicas.write_and_verify(job.id, job.document_id, chunks)
             async with self.engine.begin() as db:
@@ -155,18 +146,16 @@ class IndexWorker:
         async with self.engine.begin() as db:
             await jobs.owned(db, job)
             current = await jobs.get_job(db, job.id)
-            if current.parser_state in {"SUBMITTING", "UNKNOWN"}:
-                await db.execute(
-                    text("UPDATE ai_index_job SET parser_state='UNKNOWN' WHERE id=:id"),
-                    {"id": job.id},
-                )
-                raise ValueError("原解析创建结果未知，需原身份对账")
+            if current is None:
+                raise RuntimeError("索引任务已不存在")
+            unknown = current.parser_state in {"SUBMITTING", "UNKNOWN"}
+            if unknown:
+                await queries.mark_parser_unknown(db, {"id": job.id})
             create = current.parser_state == "NOT_SUBMITTED"
             if create:
-                await db.execute(
-                    text("UPDATE ai_index_job SET parser_state='SUBMITTING' WHERE id=:id"),
-                    {"id": job.id},
-                )
+                await queries.mark_parser_submitting(db, {"id": job.id})
+        if unknown:
+            raise ValueError("原解析创建结果未知，需原身份对账")
         task_id, file_id = current.parser_task_id, current.parser_file_id
         if create:
             try:
@@ -175,23 +164,12 @@ class IndexWorker:
                 )
             except Exception:
                 async with self.engine.begin() as db:
-                    await db.execute(
-                        text("""
-                UPDATE ai_index_job SET parser_state='UNKNOWN' WHERE id=:id
-                AND parser_state='SUBMITTING' AND parser_task_id IS NULL
-            """),
-                        {"id": job.id},
-                    )
+                    await queries.mark_unconfirmed_parser_unknown(db, {"id": job.id})
                 raise
             async with self.engine.begin() as db:
                 # 即使刚被取消，也保存原远端身份用于回收，不改变本地终态。
-                await db.execute(
-                    text("""
-                UPDATE ai_index_job SET parser_state='ACTIVE',parser_task_id=:task,
-                parser_file_id=:file WHERE id=:id AND parser_state='SUBMITTING' AND
-                parser_task_id IS NULL
-            """),
-                    {"id": job.id, "task": task_id, "file": file_id},
+                await queries.save_parser_identity(
+                    db, {"id": job.id, "task": task_id, "file": file_id}
                 )
         if not task_id or not file_id:
             raise ValueError("解析身份缺失")
@@ -210,12 +188,11 @@ class IndexWorker:
                 continue
             async with self.engine.begin() as db:
                 current = await jobs.get_job(db, job.id, lock=True)
+                if current is None:
+                    raise RuntimeError("索引任务已不存在")
                 cancelled = current.last_command == "CANCEL"
                 if state in {"completed", "failed", "canceled"}:
-                    await db.execute(
-                        text("UPDATE ai_index_job SET parser_state='SETTLED' WHERE id=:id"),
-                        {"id": job.id},
-                    )
+                    await queries.settle_parser(db, {"id": job.id})
             if cancelled:
                 if state not in {"completed", "failed", "canceled"}:
                     await self.mineru.cancel(task_id)
@@ -251,19 +228,7 @@ class IndexWorker:
     async def reconcile_parsers(self) -> None:
         """独立回收终态原任务；不领取执行权，不改变本地结果或重新创建。"""
         async with self.engine.connect() as db:
-            rows = (
-                (
-                    await db.execute(
-                        text("""
-                    SELECT id,parser_task_id,parser_file_id FROM ai_index_job
-                    WHERE status IN ('FAILED','CANCELLED') AND parser_state='ACTIVE'
-                    ORDER BY updated_at,id LIMIT 20
-                    """)
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            rows = await queries.unsettled_parsers(db)
         for row in rows:
             try:
                 async with asyncio.timeout(10):
@@ -274,13 +239,8 @@ class IndexWorker:
                         await self.mineru.cancel(row["parser_task_id"])
                         continue
                     async with self.engine.begin() as db:
-                        await db.execute(
-                            text("""
-                            UPDATE ai_index_job SET parser_state='SETTLED',
-                            updated_at=UTC_TIMESTAMP(6) WHERE id=:id
-                            AND status IN ('FAILED','CANCELLED') AND parser_state='ACTIVE'
-                            AND parser_task_id=:task AND parser_file_id=:file
-                            """),
+                        await queries.settle_original_parser(
+                            db,
                             {
                                 "id": row["id"],
                                 "task": row["parser_task_id"],

@@ -5,24 +5,24 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.user.error.AccountErrorCode;
 import com.yangaobo.servicedesk.user.error.AuthenticationErrorCode;
 import com.yangaobo.servicedesk.user.mapper.AccountMapper;
 import com.yangaobo.servicedesk.user.mapper.AdminEventMapper;
 import com.yangaobo.servicedesk.user.mapper.OrganizationMapper;
 import com.yangaobo.servicedesk.user.model.enums.RoleEnum;
+import com.yangaobo.servicedesk.user.security.PasswordPolicy;
 import com.yangaobo.servicedesk.user.service.IAuthenticationService;
 import com.yangaobo.servicedesk.user.service.IIdentityAdministrationService;
 
-import lombok.RequiredArgsConstructor;
+import java.util.Set;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Set;
-import java.util.UUID;
 
 /**
  * 身份管理授权与审计的业务边界。
@@ -39,7 +39,9 @@ public class IdentityAdministrationServiceImpl implements IIdentityAdministratio
     private final IAuthenticationService authenticationService;
     private final ObjectMapper objectMapper;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void lockAdministrator(IdentityDTO actor) {
@@ -48,7 +50,9 @@ public class IdentityAdministrationServiceImpl implements IIdentityAdministratio
         requireAdministrator(actor);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void requireAdministrator(IdentityDTO actor) {
         IdentityDTO current =
@@ -60,14 +64,18 @@ public class IdentityAdministrationServiceImpl implements IIdentityAdministratio
             throw new BusinessException(CommonErrorCode.FORBIDDEN);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void ensureAdministrator() {
         if (accountMapper.activeAdministrators() == 0)
             throw new BusinessException(AccountErrorCode.LAST_ADMINISTRATOR);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void audit(
@@ -84,7 +92,7 @@ public class IdentityAdministrationServiceImpl implements IIdentityAdministratio
         details.set("after", objectMapper.valueToTree(after));
         details.put("reason", reason);
         adminEventMapper.append(
-                UUID.randomUUID().toString().replace("-", ""),
+                IdentifierGenerator.next(),
                 actor == null ? "BOOTSTRAP" : "USER",
                 actor,
                 user,
@@ -93,7 +101,9 @@ public class IdentityAdministrationServiceImpl implements IIdentityAdministratio
                 details.toString());
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void validateRoles(String organizationType, Set<String> roles) {
         Set<String> staff =
@@ -109,9 +119,11 @@ public class IdentityAdministrationServiceImpl implements IIdentityAdministratio
         if (!valid) throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void validatePassword(String password) {
-        com.yangaobo.servicedesk.user.security.PasswordPolicy.validate(password);
+        PasswordPolicy.validate(password);
     }
 }

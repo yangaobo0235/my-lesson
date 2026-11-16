@@ -5,12 +5,14 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
-
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.time.LocalDateTime;
+
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 不可变工单事件的持久化映射。
@@ -22,16 +24,23 @@ import java.io.Serializable;
 @TableName(value = "sd_ticket_event", autoResultMap = true)
 public class TicketEventEntity implements Serializable {
 
-    @Serial private static final long serialVersionUID = 1L;
+    @Serial
+    private static final long serialVersionUID = 1L;
 
-    /** 主键，由所属后端生成。 */
+    /**
+     * 主键，由所属后端生成。
+     */
     @TableId(value = "id", type = IdType.INPUT)
     private String id;
 
-    /** 本地 FK → sd_ticket。 */
+    /**
+     * 本地 FK → sd_ticket。
+     */
     private String ticketId;
 
-    /** 工单内正序，锁工单分配。 */
+    /**
+     * 工单内正序，锁工单分配。
+     */
     private Integer sequenceNumber;
 
     /**
@@ -42,40 +51,64 @@ public class TicketEventEntity implements Serializable {
      */
     private String eventType;
 
-    /** 上门确认、已确认预约取消或履约事件的本地复合 FK(onsite_booking_id,ticket_id) → sd_onsite_booking(id,ticket_id)。 */
+    /**
+     * 上门确认、已确认预约取消或履约事件的本地复合 FK(onsite_booking_id,ticket_id) → sd_onsite_booking(id,ticket_id)。
+     */
     private String onsiteBookingId;
 
-    /** USER / SYSTEM。 */
+    /**
+     * USER / SYSTEM。
+     */
     private String actorType;
 
-    /** USER 必填外部账号；SYSTEM 为空。 */
+    /**
+     * USER 必填外部账号；SYSTEM 为空。
+     */
     private String actorId;
 
-    /** 人工动作重试键，CREATED由工单创建键负责，SYSTEM为空。 */
+    /**
+     * 人工动作重试键，CREATED由工单创建键负责，SYSTEM为空。
+     */
     private String clientActionId;
 
-    /** 外部ai_action_draft逻辑ID，非空唯一，仅人工记录/解决采用草稿时填写。 */
+    /**
+     * 外部ai_action_draft逻辑ID，非空唯一，仅人工记录/解决采用草稿时填写。
+     */
     private String sourceDraftId;
 
-    /** 人工动作类型、期望版本及语义输入摘要，与 client_action_id 同空同有。 */
+    /**
+     * 人工动作类型、期望版本及语义输入摘要，与 client_action_id 同空同有。
+     */
     private String actionRequestHash;
 
-    /** PUBLIC / INTERNAL。 */
+    /**
+     * PUBLIC / INTERNAL。
+     */
     private String visibility;
 
-    /** CREATED 为空，其他为动作前状态。 */
+    /**
+     * CREATED 为空，其他为动作前状态。
+     */
     private String fromStatus;
 
-    /** 动作后状态；普通备注前后相同。 */
+    /**
+     * 动作后状态；普通备注前后相同。
+     */
     private String toStatus;
 
-    /** 公开说明或内部备注，最多5000字符。 */
+    /**
+     * 公开说明或内部备注，最多5000字符。
+     */
     private String content;
 
-    /** schema_version、前后处理人/优先级、分类/环境变化及处理/结单原因等受控字段。 */
+    /**
+     * schema_version、前后处理人/优先级、分类/环境变化及处理/结单原因等受控字段。
+     */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private com.fasterxml.jackson.databind.JsonNode metadata;
+    private JsonNode metadata;
 
-    /** 记录创建时间。 */
-    private java.time.LocalDateTime createdAt;
+    /**
+     * 记录创建时间。
+     */
+    private LocalDateTime createdAt;
 }

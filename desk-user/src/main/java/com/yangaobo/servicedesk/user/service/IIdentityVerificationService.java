@@ -12,12 +12,18 @@ import com.yangaobo.servicedesk.api.user.form.VerifySessionForm;
  * @author yangaobo
  */
 public interface IIdentityVerificationService {
-    /** 从原Cookie解析所属会话，写请求复用同一CSRF规则。 */
+    /**
+     * 从原Cookie解析所属会话，写请求复用同一CSRF规则。
+     */
     IdentityDTO verifyBrowser(VerifyBrowserForm form);
 
-    /** 由不可登录引用重核账号、原版本及有效会话。 */
+    /**
+     * 由不可登录引用重核账号、原版本及有效会话。
+     */
     IdentityDTO verifySession(VerifySessionForm form);
 
-    /** 只向当前范围操作者返回必要关联资格。 */
+    /**
+     * 只向当前范围操作者返回必要关联资格。
+     */
     EligibilityDTO eligibility(EligibilityForm form);
 }

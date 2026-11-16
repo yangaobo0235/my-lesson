@@ -1,8 +1,8 @@
 package com.yangaobo.servicedesk.ticket.exception;
 
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
-import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.common.base.ErrorCode;
+import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.ticket.component.web.HttpErrorMapping;
 import com.yangaobo.servicedesk.ticket.component.web.RequestTraceFilter;
@@ -10,6 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.dao.ConcurrencyFailureException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.ErrorResponse;
@@ -33,7 +35,7 @@ public class ApiExceptionHandler {
      * 将业务、框架及未知错误转换为统一结果，不回显外部异常消息。
      *
      * @param exception 当前失败
-     * @param request 原始请求
+     * @param request   原始请求
      * @return 真实HTTP状态及无数据错误
      */
     @ExceptionHandler(Exception.class)
@@ -44,15 +46,18 @@ public class ApiExceptionHandler {
             return ResponseEntity.status(HttpErrorMapping.statusOf(error))
                     .body(Result.failure(error, traceId));
         }
-        if (exception instanceof org.springframework.dao.DuplicateKeyException) {
-            return ResponseEntity.status(409).body(Result.failure(CommonErrorCode.DUPLICATE_VALUE, traceId));
+        if (exception instanceof DuplicateKeyException) {
+            return ResponseEntity.status(409)
+                    .body(Result.failure(CommonErrorCode.DUPLICATE_VALUE, traceId));
         }
-        if (exception instanceof org.springframework.dao.ConcurrencyFailureException) {
-            return ResponseEntity.status(409).body(Result.failure(CommonErrorCode.CONFLICT, traceId));
+        if (exception instanceof ConcurrencyFailureException) {
+            return ResponseEntity.status(409)
+                    .body(Result.failure(CommonErrorCode.CONFLICT, traceId));
         }
         if (exception instanceof ErrorResponse framework) {
             int status = framework.getStatusCode().value();
-            return ResponseEntity.status(status).headers(framework.getHeaders())
+            return ResponseEntity.status(status)
+                    .headers(framework.getHeaders())
                     .body(Result.failure(HttpErrorMapping.fromStatus(status), traceId));
         }
         if (exception instanceof HttpMessageNotReadableException

@@ -35,6 +35,17 @@ def main() -> None:
                     if expected not in files:
                         raise RuntimeError(f"api JAR未包含生成合同：{model}")
             if name in {"desk-user", "desk-ticket", "desk-knowledge"}:
+                expected_mappers = {
+                    f"BOOT-INF/classes/mapper/{path.name}"
+                    for path in (ROOT / name / "src/main/resources/mapper").glob("*.xml")
+                }
+                packaged_mappers = {
+                    path
+                    for path in files
+                    if path.startswith("BOOT-INF/classes/mapper/") and path.endswith(".xml")
+                }
+                if expected_mappers != packaged_mappers or not expected_mappers:
+                    raise RuntimeError(f"Mapper XML制品不完整或含失效资源：{name}")
                 if "BOOT-INF/classes/db/migration/V1__initial_schema.sql" not in files:
                     raise RuntimeError(f"应用制品未包含数据库初始迁移：{name}")
             if name in {"desk-ticket", "desk-knowledge"}:

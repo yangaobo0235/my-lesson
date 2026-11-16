@@ -100,7 +100,7 @@ def parse_artifact(
         or [page.page_idx for page in document.pages] != list(range(pages))
     ):
         raise ValueError("物理页超过预算")
-    chunks = []
+    chunks: list[ParsedChunk] = []
     section = None
     blocks = [
         (physical_page, block) for physical_page in document.pages for block in physical_page.blocks

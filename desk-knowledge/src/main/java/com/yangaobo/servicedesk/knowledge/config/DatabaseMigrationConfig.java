@@ -16,11 +16,13 @@ public class DatabaseMigrationConfig {
 
     /**
      * 在DDL边界复用配置验证，避免错误的数据库地址先产生迁移副作用。
+     *
      * @param configurationValidator 本应用的配置验证器
      * @return 验证后执行原生Flyway迁移的启动策略
      */
     @Bean
-    public FlywayMigrationStrategy validatedDatabaseMigration(ComponentConfigurationValidator configurationValidator) {
+    public FlywayMigrationStrategy validatedDatabaseMigration(
+            ComponentConfigurationValidator configurationValidator) {
         return flyway -> {
             configurationValidator.afterPropertiesSet();
             flyway.migrate();

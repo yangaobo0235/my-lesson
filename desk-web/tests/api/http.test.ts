@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, request } from '../../src/api/http'
+import { ApiError, RequestError, request } from '../../src/api/http'
 import { decimal, identifier } from '../../src/api/validation'
 
 /** 验证传输边界，成功状态不能掩盖业务失败或格式错误。 @author yangaobo */
@@ -31,7 +31,10 @@ describe('HTTP 与数值合同', () => {
 
   it('HTTP 失败不能因 code=0 被当成成功', async () => {
     respond(0, 503)
-    await expect(request('tickets', decimal)).rejects.toBeInstanceOf(ApiError)
+    await expect(request('tickets', decimal)).rejects.toMatchObject({
+      kind: 'protocol',
+      status: 503,
+    })
   })
 
   it('成功响应也必须有追踪号', async () => {
@@ -72,5 +75,77 @@ describe('HTTP 与数值合同', () => {
     expect(() => decimal(42)).toThrow()
     expect(() => decimal('1.2')).toThrow()
     expect(() => identifier('wrong-id')).toThrow()
+  })
+
+  it('网关HTML失败保留状态、追踪号和等待头，不暴露HTML', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<html>internal address</html>', {
+          status: 503,
+          headers: { 'X-Trace-Id': 'gateway-trace', 'Retry-After': '12' },
+        }),
+      ),
+    )
+    await expect(request('tickets', decimal)).rejects.toMatchObject({
+      kind: 'protocol',
+      status: 503,
+      traceId: 'gateway-trace',
+      retryAfterMs: 12000,
+    })
+  })
+
+  it('业务流控保留等待时间且不自动重试', async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 1010,
+          message: '稍后重试',
+          data: null,
+          traceId: 'trace',
+        }),
+        {
+          status: 429,
+          headers: { 'Retry-After': '3' },
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetch)
+    await expect(request('tickets', decimal)).rejects.toMatchObject({
+      code: 1010,
+      retryAfterMs: 3000,
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('网络故障形成安全传输错误', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new TypeError('internal network details')),
+    )
+    await expect(request('tickets', decimal)).rejects.toMatchObject({
+      kind: 'network',
+    })
+  })
+
+  it('主动取消与超时分别表达', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('aborted')))
+    const cancelled = AbortSignal.abort()
+    await expect(
+      request('tickets', decimal, { signal: cancelled }),
+    ).rejects.toMatchObject({ kind: 'cancelled' })
+    const timedOut = AbortSignal.abort(
+      new DOMException('timeout', 'TimeoutError'),
+    )
+    await expect(
+      request('tickets', decimal, { signal: timedOut }),
+    ).rejects.toMatchObject({ kind: 'timeout' })
+  })
+
+  it('成功载荷不符合合同返回协议错误', async () => {
+    respond(0)
+    await expect(request('tickets', identifier)).rejects.toBeInstanceOf(
+      RequestError,
+    )
   })
 })

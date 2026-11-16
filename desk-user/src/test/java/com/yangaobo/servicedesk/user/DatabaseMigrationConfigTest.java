@@ -1,14 +1,14 @@
 package com.yangaobo.servicedesk.user;
 
-import com.yangaobo.servicedesk.user.config.ComponentConfigurationValidator;
-import com.yangaobo.servicedesk.user.config.DatabaseMigrationConfig;
-import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+
+import com.yangaobo.servicedesk.user.config.ComponentConfigurationValidator;
+import com.yangaobo.servicedesk.user.config.DatabaseMigrationConfig;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Test;
 
 /**
  * 验证数据库归属错误在任何结构迁移副作用之前拒绝。
@@ -17,7 +17,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
  */
 class DatabaseMigrationConfigTest {
 
-    /** 数据库配置无效时不得调用Flyway创建历史或修改表结构。 */
+    /**
+     * 数据库配置无效时不得调用Flyway创建历史或修改表结构。
+     */
     @Test
     void invalidDatabaseConfigurationPreventsMigration() {
         ComponentConfigurationValidator validator = mock(ComponentConfigurationValidator.class);

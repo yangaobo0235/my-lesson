@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.user.mapper.OrganizationMapper">
+  <select id="lockProvider" resultType="com.yangaobo.servicedesk.user.model.entity.OrganizationEntity">
+    SELECT
+      id,
+      organization_code,
+      organization_name,
+      organization_type,
+      status,
+      created_at,
+      updated_at,
+      row_version
+    FROM sys_organization
+    WHERE organization_type = 'SERVICE_PROVIDER'
+    FOR UPDATE
+  </select>
+
+  <select id="lock" resultType="com.yangaobo.servicedesk.user.model.entity.OrganizationEntity">
+    SELECT
+      id,
+      organization_code,
+      organization_name,
+      organization_type,
+      status,
+      created_at,
+      updated_at,
+      row_version
+    FROM sys_organization
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    organization_code,
+    organization_name,
+    organization_type,
+    status,
+    created_at,
+    updated_at,
+    row_version
+  </sql>
+
+  <sql id="countOrganizationsFromWhere">
+    FROM sys_organization
+    <where>
+      <if test="form.status != null">
+        AND status = #{form.status}
+      </if>
+      <if test="keyword != null">
+        AND organization_name LIKE CONCAT(#{keyword}, '%')
+      </if>
+    </where>
+  </sql>
+
+  <select id="listOrganizations" resultType="com.yangaobo.servicedesk.user.model.entity.OrganizationEntity">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countOrganizationsFromWhere"/>
+    ORDER BY id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countOrganizations" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countOrganizationsFromWhere"/>
+  </select>
+</mapper>

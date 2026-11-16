@@ -11,6 +11,8 @@ import com.yangaobo.servicedesk.user.model.vo.account.AuditEventVO;
  * @author yangaobo
  */
 public interface IAdminAuditService {
-    /** 管理员按单一目标查询安全审计。 */
+    /**
+     * 管理员按单一目标查询安全审计。
+     */
     PageVO<AuditEventVO> list(IdentityDTO actor, AuditQueryForm form);
 }

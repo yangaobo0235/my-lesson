@@ -1,5 +1,6 @@
 package com.yangaobo.servicedesk.user.service.impl;
 
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.user.config.BootstrapProperties;
 import com.yangaobo.servicedesk.user.mapper.AccountMapper;
 import com.yangaobo.servicedesk.user.mapper.OrganizationMapper;
@@ -10,17 +11,15 @@ import com.yangaobo.servicedesk.user.security.PasswordPolicy;
 import com.yangaobo.servicedesk.user.service.IBootstrapService;
 import com.yangaobo.servicedesk.user.service.IIdentityAdministrationService;
 
-import lombok.RequiredArgsConstructor;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Locale;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.Locale;
-import java.util.UUID;
 
 /**
  * 受控首名管理员初始化的业务边界。
@@ -36,7 +35,9 @@ public class BootstrapServiceImpl implements IBootstrapService {
     private final IIdentityAdministrationService administration;
     private final PasswordEncoder passwordEncoder;
 
-    /** {@inheritDoc} 唯一服务商约束处理并发首次初始化，失败整笔回滚。 */
+    /**
+     * {@inheritDoc} 唯一服务商约束处理并发首次初始化，失败整笔回滚。
+     */
     @Override
     @Transactional
     public boolean initialize(BootstrapProperties properties) {
@@ -58,7 +59,7 @@ public class BootstrapServiceImpl implements IBootstrapService {
             throw new IllegalArgumentException("初始化名称或账号不满足合同");
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         OrganizationEntity organization = new OrganizationEntity();
-        organization.setId(UUID.randomUUID().toString().replace("-", ""));
+        organization.setId(IdentifierGenerator.next());
         organization.setOrganizationCode(code);
         organization.setOrganizationName(properties.getOrganizationName().strip());
         organization.setOrganizationType("SERVICE_PROVIDER");
@@ -68,7 +69,7 @@ public class BootstrapServiceImpl implements IBootstrapService {
         organization.setRowVersion(0L);
         organizationMapper.insert(organization);
         AccountEntity account = new AccountEntity();
-        account.setId(UUID.randomUUID().toString().replace("-", ""));
+        account.setId(IdentifierGenerator.next());
         account.setOrganizationId(organization.getId());
         account.setUsername(username);
         account.setDisplayName("系统管理员");

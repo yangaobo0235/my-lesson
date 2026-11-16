@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 import grpc
 from opentelemetry.trace import NoOpTracer, SpanKind, Tracer
 from pydantic import ValidationError
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from desk_contracts.knowledge.v1.source_pb2 import KnowledgeSource
@@ -28,8 +27,10 @@ from servicedesk_ai.infrastructure.models import (
     ModelResponse,
     ModelTool,
 )
+from servicedesk_ai.infrastructure.rpc_contract import request_budget
 from servicedesk_ai.infrastructure.tracing import parent
 from servicedesk_ai.repositories import diagnosis as store
+from servicedesk_ai.repositories import generation_execution as queries
 from servicedesk_ai.schemas.diagnosis import (
     DiagnosisResult,
     ReadKnowledge,
@@ -124,7 +125,7 @@ class GenerationWorker:
     async def heartbeat(self, run: store.Generation) -> None:
         """续约失效立即结束当前执行等待，迟到输出由数据库再次拒绝。"""
         while True:
-            await asyncio.sleep(int(run.pipeline_config["renewal_seconds"]))
+            await asyncio.sleep(int(run.pipeline_config.renewal_seconds))
             async with self.engine.begin() as db:
                 if not await store.renew(db, run):
                     raise ExecutionStopped("EXECUTION_RIGHT_LOST")
@@ -211,9 +212,14 @@ class GenerationWorker:
     async def execute(self, run: store.Generation) -> None:
         """总预算覆盖排队、模型、工具及提交前复核，不逐次重置。"""
         elapsed = (datetime.now(UTC) - run.created_at.replace(tzinfo=UTC)).total_seconds()
-        remaining = int(run.pipeline_config["total_seconds"]) - elapsed
+        remaining = int(run.pipeline_config.total_seconds) - elapsed
         if remaining <= 0:
             raise ExecutionStopped("EXECUTION_BUDGET_EXCEEDED")
+        with request_budget(remaining):
+            await self.execute_with_budget(run, remaining)
+
+    async def execute_with_budget(self, run: store.Generation, remaining: float) -> None:
+        """模型、工具与全部RPC子调用受同一父截止时间约束。"""
         async with asyncio.timeout(remaining):
             identity = await self.rpc.identity.verify_ref(actor_ref(run))
             async with self.engine.connect() as db:
@@ -236,8 +242,8 @@ class GenerationWorker:
             ):
                 await self.stop_for_hazard(run)
                 return
-            environment = run.context_snapshot["environment"]
-            if run.context_snapshot.get("service_item_id") is None:
+            environment = run.context_snapshot.environment.model_dump()
+            if run.context_snapshot.service_item_id is None:
                 result = DiagnosisResult(
                     answer_type="CLARIFICATION",
                     text="请先由客服确认工单支持项目和问题环境，再继续有范围的知识排障。",
@@ -305,9 +311,9 @@ class GenerationWorker:
             tool_count = 0
             total_tokens = 0
             reserved_tokens = 0
-            for call_number in range(1, int(run.pipeline_config["max_model_calls"]) + 1):
+            for call_number in range(1, int(run.pipeline_config.max_model_calls) + 1):
                 await self.evidence.verify(run)
-                evidence = await self.evidence.list(run.id)
+                evidence = await self.evidence.list_items(run.id)
                 body = json.dumps(
                     [self.evidence_message(item) for item in evidence], ensure_ascii=False
                 )
@@ -322,10 +328,10 @@ class GenerationWorker:
                     messages=tuple(current), tools=tuple(tools), result_schema=result_schema()
                 )
                 upper = len(model_request.model_dump_json().encode())
-                if upper > int(run.pipeline_config["max_input_tokens"]):
+                if upper > int(run.pipeline_config.max_input_tokens):
                     raise ExecutionStopped("CONTEXT_BUDGET_EXCEEDED")
                 reserved_tokens += upper + self.settings.model.max_output_tokens
-                if reserved_tokens > int(run.pipeline_config["total_tokens"]):
+                if reserved_tokens > int(run.pipeline_config.total_tokens):
                     raise ExecutionStopped("TOKEN_BUDGET_EXCEEDED")
                 call_id = await self.start_call(run, call_number, evidence)
                 try:
@@ -335,13 +341,7 @@ class GenerationWorker:
                     raise
                 except Exception:
                     async with self.engine.begin() as db:
-                        await db.execute(
-                            text("""
-                UPDATE ai_model_call SET status='UNKNOWN',error_code='MODEL_RESULT_UNKNOWN',
-                finished_at=UTC_TIMESTAMP(6) WHERE id=:id AND status='STARTED'
-            """),
-                            {"id": call_id},
-                        )
+                        await queries.mark_model_result_unknown(db, {"id": call_id})
                     raise
                 await self.end_call(run, call_id, response)
                 if (
@@ -350,7 +350,7 @@ class GenerationWorker:
                     and response.usage.output_tokens is not None
                 ):
                     total_tokens += response.usage.input_tokens + response.usage.output_tokens
-                    if total_tokens > int(run.pipeline_config["total_tokens"]):
+                    if total_tokens > int(run.pipeline_config.total_tokens):
                         raise ExecutionStopped("TOKEN_BUDGET_EXCEEDED")
                 elif response.message.tool_calls:
                     # 缺少计量可交付本次最终结果，但不能继续发起下一次付费请求。
@@ -358,7 +358,7 @@ class GenerationWorker:
                 messages.append(response.message)
                 if not response.message.tool_calls:
                     result = DiagnosisResult.model_validate_json(response.message.content or "")
-                    available = {item.number for item in await self.evidence.list(run.id)}
+                    available = {item.number for item in await self.evidence.list_items(run.id)}
                     if any(number not in available for number in result.citation_numbers) or len(
                         result.citation_numbers
                     ) != len(set(result.citation_numbers)):
@@ -369,10 +369,10 @@ class GenerationWorker:
                     return
                 for call in response.message.tool_calls:
                     tool_count += 1
-                    if tool_count > int(run.pipeline_config["max_tool_calls"]):
+                    if tool_count > int(run.pipeline_config.max_tool_calls):
                         raise ExecutionStopped("TOOL_BUDGET_EXCEEDED")
-                    async with asyncio.timeout(int(run.pipeline_config["tool_timeout_seconds"])):
-                        result = await self.tool(
+                    async with asyncio.timeout(int(run.pipeline_config.tool_timeout_seconds)):
+                        tool_result = await self.tool(
                             run,
                             call_id,
                             tool_count,
@@ -386,7 +386,7 @@ class GenerationWorker:
                         ModelMessage(
                             role="tool",
                             tool_call_id=call.id,
-                            content=json.dumps(result, ensure_ascii=False),
+                            content=json.dumps(tool_result, ensure_ascii=False),
                         )
                     )
             raise ExecutionStopped("MODEL_CALL_BUDGET_EXCEEDED")
@@ -421,31 +421,14 @@ class GenerationWorker:
     async def input_facts(self, run: store.Generation) -> list[dict[str, object]]:
         """当前有效事实依次登记实际来源，旧环境已完成项明确待复核。"""
         async with self.engine.connect() as db:
-            rows = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT
-                f.id,f.state_version,f.fact_kind,f.statement,f.source_type,f.source_locator
-                FROM ai_diagnostic_fact f WHERE f.conversation_id=:id AND
-                f.operation='ASSERT'
-                AND NOT EXISTS (SELECT 1 FROM ai_diagnostic_fact s WHERE
-                s.supersedes_fact_id=f.id)
-                ORDER BY f.state_version,f.id LIMIT 31
-            """),
-                        {"id": run.conversation_id},
-                    )
-                )
-                .mappings()
-                .all()
-            )
-        if len(rows) > int(run.pipeline_config["facts_per_round"]):
+            rows = await queries.input_facts(db, {"id": run.conversation_id})
+        if len(rows) > int(run.pipeline_config.facts_per_round):
             raise ExecutionStopped("FACT_BUDGET_EXCEEDED")
         result = []
         async with self.engine.begin() as db:
             for row in rows:
                 previous = json.loads(row["source_locator"]).get("environment", {})
-                current = run.context_snapshot["environment"]
+                current = run.context_snapshot.environment.model_dump()
                 historical = any(
                     previous.get(key) not in (None, "UNKNOWN", "")
                     and value not in (None, "UNKNOWN", "")
@@ -488,7 +471,7 @@ class GenerationWorker:
             await self.rpc.ticket.VerifyTicketContext(
                 VerifyTicketRequest(
                     actor=actor_ref(run),
-                    ticket_id=run.context_snapshot["ticket_id"],
+                    ticket_id=run.context_snapshot.ticket_id,
                     ticket_version=run.ticket_version,
                 ),
                 **self.rpc.options(),
@@ -503,13 +486,8 @@ class GenerationWorker:
         identifier = store.new_id()
         async with self.engine.begin() as db:
             await store.owned(db, run)
-            await db.execute(
-                text("""
-                INSERT INTO ai_model_call
-                (id,generation_id,call_number,purpose,status,provider,requested_model,input_manifest,started_at)
-                VALUES
-                (:id,:run,:number,'DECISION','STARTED','BAILIAN',:model,:manifest,UTC_TIMESTAMP(6))
-            """),
+            await queries.insert_model_call(
+                db,
                 {
                     "id": identifier,
                     "run": run.id,
@@ -526,13 +504,7 @@ class GenerationWorker:
                 },
             )
             for item in evidence:
-                await db.execute(
-                    text("""
-                UPDATE ai_source_usage SET first_model_call_number=:number
-                WHERE id=:id AND first_model_call_number IS NULL
-            """),
-                    {"id": item.id, "number": number},
-                )
+                await queries.mark_first_model_use(db, {"id": item.id, "number": number})
         return identifier
 
     async def end_call(
@@ -542,12 +514,8 @@ class GenerationWorker:
         async with self.engine.begin() as db:
             await store.owned(db, run)
             usage = response.usage
-            await db.execute(
-                text("""
-                UPDATE ai_model_call SET status='SUCCEEDED',response_model=:model,
-                input_tokens=:input,output_tokens=:output,cached_input_tokens=:cached,finished_at=UTC_TIMESTAMP(6)
-                WHERE id=:id AND status='STARTED'
-            """),
+            await queries.complete_model_call(
+                db,
                 {
                     "id": identifier,
                     "model": response.model,
@@ -564,13 +532,8 @@ class GenerationWorker:
         async with self.engine.begin() as db:
             await store.owned(db, run)
             usage = error.usage
-            await db.execute(
-                text("""
-                UPDATE ai_model_call SET status='FAILED',error_code='INVALID_MODEL_RESULT',
-                response_model=:model,input_tokens=:input,output_tokens=:output,
-                cached_input_tokens=:cached,finished_at=UTC_TIMESTAMP(6)
-                WHERE id=:id AND generation_id=:run AND status='STARTED'
-            """),
+            await queries.fail_model_call(
+                db,
                 {
                     "id": identifier,
                     "run": run.id,
@@ -593,23 +556,21 @@ class GenerationWorker:
         mode: str,
     ) -> list[dict[str, object]]:
         """受控只读工具先登记，再核验权限和参数，结果写入也比较执行权。"""
-        schemas = {
-            "search_knowledge": SearchKnowledge,
-            "read_knowledge": ReadKnowledge,
-            "read_ticket_events": ReadTicketEvents,
-        }
-        if name not in schemas or (name == "read_ticket_events" and mode != "TECHNICIAN_ASSIST"):
+        if name == "search_knowledge":
+            parsed: SearchKnowledge | ReadKnowledge | ReadTicketEvents = (
+                SearchKnowledge.model_validate(arguments)
+            )
+        elif name == "read_knowledge":
+            parsed = ReadKnowledge.model_validate(arguments)
+        elif name == "read_ticket_events" and mode == "TECHNICIAN_ASSIST":
+            parsed = ReadTicketEvents.model_validate(arguments)
+        else:
             raise ExecutionStopped("TOOL_NOT_ALLOWED")
-        parsed = schemas[name].model_validate(arguments)
         identifier = store.new_id()
         async with self.engine.begin() as db:
             await store.owned(db, run)
-            await db.execute(
-                text("""
-                INSERT INTO ai_tool_call
-                (id,generation_id,tool_number,model_call_id,tool_name,arguments,result_refs,started_at)
-                VALUES (:id,:run,:number,:call,:name,:args,:refs,UTC_TIMESTAMP(6))
-            """),
+            await queries.insert_tool_call(
+                db,
                 {
                     "id": identifier,
                     "run": run.id,
@@ -622,9 +583,9 @@ class GenerationWorker:
             )
         try:
             await self.evidence.verify(run)
-            result = []
-            if name == "search_knowledge":
-                sources = (await self.rpc.sources(source_query(run))).sources
+            result: list[Evidence] = []
+            if isinstance(parsed, SearchKnowledge):
+                sources = list((await self.rpc.sources(source_query(run))).sources)
                 if parsed.source_type:
                     sources = [
                         source for source in sources if source.source_type == parsed.source_type
@@ -634,15 +595,15 @@ class GenerationWorker:
                 )
                 candidates.update(ids)
                 result = await self.evidence.knowledge(run, ids, list(sources))
-            elif name == "read_knowledge":
+            elif isinstance(parsed, ReadKnowledge):
                 if any(chunk not in candidates for chunk in parsed.chunk_ids):
                     raise ExecutionStopped("UNKNOWN_CANDIDATE")
-                sources = (await self.rpc.sources(source_query(run))).sources
+                sources = list((await self.rpc.sources(source_query(run))).sources)
                 result = await self.evidence.knowledge(run, parsed.chunk_ids, list(sources))
             else:
                 request = TicketEventsRequest(
                     actor=actor_ref(run),
-                    ticket_id=run.context_snapshot["ticket_id"],
+                    ticket_id=run.context_snapshot.ticket_id,
                     limit=parsed.limit,
                     event_ids=parsed.event_ids,
                 )
@@ -670,11 +631,8 @@ class GenerationWorker:
                         )
             async with self.engine.begin() as db:
                 await store.owned(db, run)
-                await db.execute(
-                    text("""
-                UPDATE ai_tool_call SET status='SUCCEEDED',result_summary=:summary,
-                result_refs=:refs,finished_at=UTC_TIMESTAMP(6) WHERE id=:id
-            """),
+                await queries.complete_tool_call(
+                    db,
                     {
                         "id": identifier,
                         "summary": f"已核对{len(result)}项有权来源，工具没有执行任何修复",
@@ -686,13 +644,7 @@ class GenerationWorker:
             return [self.evidence_message(item) for item in result]
         except Exception:
             async with self.engine.begin() as db:
-                await db.execute(
-                    text("""
-                UPDATE ai_tool_call SET status='FAILED',error_code='TOOL_FAILED',
-                finished_at=UTC_TIMESTAMP(6) WHERE id=:id AND status='STARTED'
-            """),
-                    {"id": identifier},
-                )
+                await queries.fail_tool_call(db, {"id": identifier})
             raise
 
     async def finish(
@@ -719,17 +671,12 @@ class GenerationWorker:
                 locator = {
                     "schema_version": 1,
                     "producer": "MODEL" if call_id else "RULE",
-                    "environment": run.context_snapshot["environment"],
+                    "environment": run.context_snapshot.environment.model_dump(),
                 }
                 if call_id:
                     locator["model_call_id"] = call_id
-                await db.execute(
-                    text("""
-                INSERT INTO ai_diagnostic_fact
-                (id,conversation_id,state_version,fact_kind,statement,source_type,source_generation_id,source_locator)
-                VALUES
-                (:id,:conversation,:version,:kind,:statement,'ASSISTANT_PROPOSAL',:run,:locator)
-            """),
+                await queries.insert_generated_fact(
+                    db,
                     {
                         "id": store.new_id(),
                         "conversation": run.conversation_id,
@@ -743,12 +690,8 @@ class GenerationWorker:
             selected = {item.number: item for item in evidence}
             for number in result.citation_numbers:
                 item = selected[number]
-                await db.execute(
-                    text("""
-                INSERT INTO ai_citation
-                (id,generation_id,source_usage_id,citation_number,title_snapshot,locator_snapshot,evidence_excerpt)
-                VALUES (:id,:run,:source,:number,:title,:locator,:excerpt)
-            """),
+                await queries.insert_citation(
+                    db,
                     {
                         "id": store.new_id(),
                         "run": run.id,
@@ -759,26 +702,11 @@ class GenerationWorker:
                         "excerpt": item.excerpt,
                     },
                 )
-            calls = (
-                await db.execute(
-                    text(
-                        "SELECT input_tokens,output_tokens FROM ai_model_call "
-                        "WHERE generation_id=:id"
-                    ),
-                    {"id": run.id},
-                )
-            ).all()
+            calls = await queries.call_usage(db, {"id": run.id})
             inputs = None if any(row[0] is None for row in calls) else sum(row[0] for row in calls)
             outputs = None if any(row[1] is None for row in calls) else sum(row[1] for row in calls)
-            await db.execute(
-                text("""
-                UPDATE ai_generation SET
-                status='SUCCEEDED',answer_type=:type,answer_text=:answer,
-                structured_result=:structured,output_state_version=:version,answer_model=:model,input_tokens=:input,
-                output_tokens=:output,finished_at=UTC_TIMESTAMP(6),claim_token=NULL,claim_until=NULL,
-                latency_ms=TIMESTAMPDIFF(MICROSECOND,created_at,UTC_TIMESTAMP(6)) DIV
-                1000,updated_at=UTC_TIMESTAMP(6) WHERE id=:id
-            """),
+            await queries.complete_generation(
+                db,
                 {
                     "id": run.id,
                     "type": result.answer_type,
@@ -790,11 +718,4 @@ class GenerationWorker:
                     "output": outputs,
                 },
             )
-            await db.execute(
-                text(
-                    "UPDATE ai_conversation SET "
-                    "state_version=:version,updated_at=UTC_TIMESTAMP(6) "
-                    "WHERE id=:id"
-                ),
-                {"id": run.conversation_id, "version": version},
-            )
+            await queries.advance_state(db, {"id": run.conversation_id, "version": version})

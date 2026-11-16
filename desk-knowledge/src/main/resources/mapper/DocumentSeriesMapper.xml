@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.knowledge.mapper.DocumentSeriesMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.knowledge.model.entity.DocumentSeriesEntity" autoMapping="true">
+    <id column="id" property="id"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      source_type,
+      source_namespace,
+      source_code,
+      source_organization,
+      language_code,
+      audience,
+      created_by,
+      created_at
+    FROM kb_document_series
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <select id="decisionTime" resultType="java.time.LocalDateTime">
+    SELECT UTC_TIMESTAMP(6)
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    source_type,
+    source_namespace,
+    source_code,
+    source_organization,
+    language_code,
+    audience,
+    created_by,
+    created_at
+  </sql>
+
+  <sql id="countSeriesFromWhere">
+    FROM kb_document_series
+  </sql>
+
+  <select id="listSeries" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countSeriesFromWhere"/>
+    ORDER BY created_at DESC, id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countSeries" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countSeriesFromWhere"/>
+  </select>
+</mapper>

@@ -15,11 +15,9 @@ import com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketEventVO;
 import com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketVO;
 import com.yangaobo.servicedesk.ticket.security.CurrentActor;
 import com.yangaobo.servicedesk.ticket.service.ITicketService;
-
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,8 +39,10 @@ public class TicketActionController {
     private final ITicketService ticketService;
     private final CurrentActor currentActor;
 
-    /** 执行工单context，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单context，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单context，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单context，当前权限、原键及版本由业务层校验。")
     @PostMapping("/context")
     public Result<TicketVO> context(
             @PathVariable String id, @Valid @RequestBody TicketContextForm form) {
@@ -50,8 +50,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单accept，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单accept，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单accept，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单accept，当前权限、原键及版本由业务层校验。")
     @PostMapping("/accept")
     public Result<TicketActionReceiptVO> accept(
             @PathVariable String id, @Valid @RequestBody TicketActionForm form) {
@@ -59,8 +61,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单assign，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单assign，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单assign，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单assign，当前权限、原键及版本由业务层校验。")
     @PostMapping("/assign")
     public Result<TicketActionReceiptVO> assign(
             @PathVariable String id, @Valid @RequestBody TicketAssignmentForm form) {
@@ -69,8 +73,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单reassign，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单reassign，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单reassign，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单reassign，当前权限、原键及版本由业务层校验。")
     @PostMapping("/reassign")
     public Result<TicketActionReceiptVO> reassign(
             @PathVariable String id, @Valid @RequestBody TicketAssignmentForm form) {
@@ -79,8 +85,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单priority，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单priority，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单priority，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单priority，当前权限、原键及版本由业务层校验。")
     @PostMapping("/priority")
     public Result<TicketActionReceiptVO> priority(
             @PathVariable String id, @Valid @RequestBody TicketPriorityForm form) {
@@ -89,18 +97,22 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单request-information，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单request-information，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单request-information，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单request-information，当前权限、原键及版本由业务层校验。")
     @PostMapping("/request-information")
-    public Result<TicketActionReceiptVO> request_information(
+    public Result<TicketActionReceiptVO> requestInformation(
             @PathVariable String id, @Valid @RequestBody TicketContentForm form) {
         TicketActionReceiptVO data =
                 ticketService.requestInformation(currentActor.requireIdentity(), id, form);
         return Result.success(data);
     }
 
-    /** 执行工单supplements，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单supplements，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单supplements，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单supplements，当前权限、原键及版本由业务层校验。")
     @PostMapping("/supplements")
     public Result<TicketActionReceiptVO> supplements(
             @PathVariable String id, @Valid @RequestBody TicketContentForm form) {
@@ -109,8 +121,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单comments，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单comments，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单comments，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单comments，当前权限、原键及版本由业务层校验。")
     @PostMapping("/comments")
     public Result<TicketActionReceiptVO> comments(
             @PathVariable String id, @Valid @RequestBody TicketCommentForm form) {
@@ -119,8 +133,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单resolve，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单resolve，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单resolve，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单resolve，当前权限、原键及版本由业务层校验。")
     @PostMapping("/resolve")
     public Result<TicketActionReceiptVO> resolve(
             @PathVariable String id, @Valid @RequestBody TicketResolveForm form) {
@@ -129,8 +145,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单confirm，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单confirm，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单confirm，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单confirm，当前权限、原键及版本由业务层校验。")
     @PostMapping("/confirm")
     public Result<TicketActionReceiptVO> confirm(
             @PathVariable String id, @Valid @RequestBody TicketActionForm form) {
@@ -139,8 +157,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单unresolved，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单unresolved，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单unresolved，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单unresolved，当前权限、原键及版本由业务层校验。")
     @PostMapping("/unresolved")
     public Result<TicketActionReceiptVO> unresolved(
             @PathVariable String id, @Valid @RequestBody TicketContentForm form) {
@@ -149,8 +169,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 执行工单cancel，当前权限、原键及版本由业务层校验。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行工单cancel，当前权限、原键及版本由业务层校验。")
+    /**
+     * 执行工单cancel，当前权限、原键及版本由业务层校验。
+     */
+    @Operation(summary = "执行工单cancel，当前权限、原键及版本由业务层校验。")
     @PostMapping("/cancel")
     public Result<TicketActionReceiptVO> cancel(
             @PathVariable String id, @Valid @RequestBody TicketContentForm form) {
@@ -158,8 +180,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 查询原动作回执，网络未知时不创建新动作键。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "查询原动作回执，网络未知时不创建新动作键。")
+    /**
+     * 查询原动作回执，网络未知时不创建新动作键。
+     */
+    @Operation(summary = "查询原动作回执，网络未知时不创建新动作键。")
     @GetMapping("/actions/{key}")
     public Result<TicketActionReceiptVO> receipt(
             @PathVariable String id, @PathVariable String key) {
@@ -168,8 +192,10 @@ public class TicketActionController {
         return Result.success(data);
     }
 
-    /** 分页读取当前可见时间线。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "分页读取当前可见时间线。")
+    /**
+     * 分页读取当前可见时间线。
+     */
+    @Operation(summary = "分页读取当前可见时间线。")
     @GetMapping("/events")
     public Result<PageVO<TicketEventVO>> events(@PathVariable String id, @Valid BasePageForm form) {
         PageVO<TicketEventVO> data = ticketService.events(currentActor.requireIdentity(), id, form);

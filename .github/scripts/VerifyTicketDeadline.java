@@ -8,7 +8,6 @@ import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketActionForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContentForm;
 import com.yangaobo.servicedesk.ticket.service.ITicketDeadlineService;
 import com.yangaobo.servicedesk.ticket.service.ITicketService;
-
 import org.springframework.boot.SpringApplication;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -24,7 +23,9 @@ import java.util.concurrent.Executors;
  * @author yangaobo
  */
 class VerifyTicketDeadline {
-    /** 仅在显式隔离环境中启动独立应用上下文并执行竞争验收。 */
+    /**
+     * 仅在显式隔离环境中启动独立应用上下文并执行竞争验收。
+     */
     public static void main(String[] arguments) throws Exception {
         if (!"true".equals(System.getenv("DESK_VERIFY_ISOLATED"))) {
             throw new IllegalStateException("期限验收只允许独占环境");
@@ -66,9 +67,9 @@ class VerifyTicketDeadline {
             require(count(database, closed.getId(), "CLOSED") == 1, "关闭事件唯一");
             require(
                     database.queryForObject(
-                                    "SELECT COUNT(*) FROM sd_notification WHERE ticket_id = ?",
-                                    Long.class,
-                                    closed.getId())
+                            "SELECT COUNT(*) FROM sd_notification WHERE ticket_id = ?",
+                            Long.class,
+                            closed.getId())
                             == 2,
                     "通知与关闭同事务");
 
@@ -113,7 +114,7 @@ class VerifyTicketDeadline {
                             "退回和关闭互斥");
                     require(
                             count(database, candidate.getId(), "CLOSED")
-                                            + count(database, candidate.getId(), "UNRESOLVED")
+                                    + count(database, candidate.getId(), "UNRESOLVED")
                                     == 1,
                             "竞争事件唯一");
                     if (returnedFirst)
@@ -127,7 +128,9 @@ class VerifyTicketDeadline {
         }
     }
 
-    /** 构造只属于此次隔离数据库的时间边界工单，不改共享数据。 */
+    /**
+     * 构造只属于此次隔离数据库的时间边界工单，不改共享数据。
+     */
     private static TicketEntity fixture(TicketMapper mapper, ObjectMapper json, boolean resolved) {
         LocalDateTime now = mapper.decisionTime();
         TicketEntity ticket = new TicketEntity();
@@ -160,7 +163,9 @@ class VerifyTicketDeadline {
         return ticket;
     }
 
-    /** 身份已验证的领域输入，仅用于期限服务竞争。 */
+    /**
+     * 身份已验证的领域输入，仅用于期限服务竞争。
+     */
     private static IdentityDTO actor(TicketEntity ticket, boolean technician) {
         IdentityDTO actor = new IdentityDTO();
         actor.setMustChangePassword(false);
@@ -172,7 +177,9 @@ class VerifyTicketDeadline {
         return actor;
     }
 
-    /** 从数据库验证已提交事实，不用进程返回值代替事件检查。 */
+    /**
+     * 从数据库验证已提交事实，不用进程返回值代替事件检查。
+     */
     private static long count(JdbcTemplate database, String ticket, String event) {
         return database.queryForObject(
                 "SELECT COUNT(*) FROM sd_ticket_event WHERE ticket_id = ? AND event_type = ?",
@@ -181,12 +188,16 @@ class VerifyTicketDeadline {
                 event);
     }
 
-    /** 不依赖-ea启动参数，任何失败均令验收进程失败。 */
+    /**
+     * 不依赖-ea启动参数，任何失败均令验收进程失败。
+     */
     private static void require(boolean condition, String contract) {
         if (!condition) throw new AssertionError(contract);
     }
 
-    /** 此验收创建的所有标识均使用独立随机值。 */
+    /**
+     * 此验收创建的所有标识均使用独立随机值。
+     */
     private static String id() {
         return UUID.randomUUID().toString().replace("-", "");
     }

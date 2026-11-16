@@ -27,6 +27,8 @@
 
 公共用例、仓储、端口及关键规则完整声明参数与返回类型；可推导局部值不重复标注。使用 Python3.12 支持的 list[T]、dict[K,V]、T | None。Ruff 管理导入与格式，TYPE_CHECKING 不掩盖循环依赖。
 
+在 desk-ai 执行 `uv run --locked ruff format --config pyproject.toml . ../.github/scripts` 写入格式，加 `--check` 只检查。IDE 使用 Ruff 格式集成时选择项目环境及 pyproject.toml；未接入 Ruff 的 Python 原生快捷键格式不能视为项目格式检查。
+
 | 数据职责 | 类型选择 |
 | --- | --- |
 | HTTP、工具参数、供应商输出 | Pydantic，边界运行时校验 |
@@ -118,6 +120,6 @@ RPC成功直接返回类型化message，失败使用gRPC Status及google.rpc.Sta
 
 API文档在FastAPI装配时按环境显式设置openapi_url/docs_url，dev允许私网GET /openapi.json与/docs，prod两者关闭，/redoc不额外启用；Gateway不公开代理这些路径。使用框架实际OpenAPI版本，不为模仿Java仅改声明版本伪造3.0。文档来自Pydantic字段、有限枚举、JSON Result及真实201/202/文件/SSE媒体类型；RPC以.proto维护，MQ以版本化JSON合同维护。文档开关不改变资源授权、CSRF或方法白名单。
 
-在desk-ai执行uv sync --locked、uv run --locked ruff check .、uv run --locked ruff format --check .、uv run --locked pytest。独立类型检查器接入后再增加真实脚本，不写不存在的检查命令。验证响应码与Java/Gateway公共合同、未知错误安全回退、文档开关和null/数值/枚举映射；构建生成代码排除手写规范检查，但验证其包导入及线兼容。
+在desk-ai执行uv sync --locked、uv run --locked ruff check --config pyproject.toml . ../.github/scripts、uv run --locked ruff format --check --config pyproject.toml . ../.github/scripts、uv run --locked mypy、uv run --locked pytest。mypy检查全部手写src/servicedesk_ai，启用Pydantic插件及未标注函数体检查；生成合同由其构建校验，不以批量Any/cast、ignore_errors或跳过业务包消除类型问题。持久配置和上下文在读取边界校验为GenerationPipeline/GenerationContext，数据库行使用真实投影类型。验证响应码与Java/Gateway公共合同、未知错误安全回退、文档开关和null/数值/枚举映射；构建生成代码排除手写规范检查，但验证其包导入及线兼容。
 
 测试覆盖协议、运行时校验、授权、幂等、执行权、取消、资源与恢复。替身仅替换外部依赖，不能用 mock 证明 MySQL 锁、索引或解析正确。测试装配按需放 tests/support，不让测试文件互相导入，不依赖私密环境或共享业务库；真实中文PDF、Markdown定位、反馈分支、事实更正、技术私有会话、逐次调用未知、模型、双索引和snapshot分项验收，证据随实施任务提供。

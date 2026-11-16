@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.zip.CRC32;
+
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 
@@ -14,10 +15,16 @@ import org.flywaydb.core.api.migration.Context;
  */
 public class V2__office_it_support extends BaseJavaMigration {
 
-    /** 需要在任何DDL之前核验的全部旧业务表。 */
-    private static final String[] BASELINE_TABLES = "kb_document_series kb_document kb_document_product_model kb_document_event kb_index_job".split(" ");
+    /**
+     * 需要在任何DDL之前核验的全部旧业务表。
+     */
+    private static final String[] BASELINE_TABLES =
+            "kb_document_series kb_document kb_document_product_model kb_document_event kb_index_job"
+                    .split(" ");
 
-    /** 受版本管理的明确增量DDL资源。 */
+    /**
+     * 受版本管理的明确增量DDL资源。
+     */
     private static final String RESOURCE = "/db/upgrade/V2__office_it_support.sql";
 
     /**
@@ -57,7 +64,7 @@ public class V2__office_it_support extends BaseJavaMigration {
         }
         for (String table : BASELINE_TABLES) {
             try (var statement = connection.createStatement();
-                    var rows = statement.executeQuery("SELECT 1 FROM `" + table + "` LIMIT 1")) {
+                 var rows = statement.executeQuery("SELECT 1 FROM `" + table + "` LIMIT 1")) {
                 if (rows.next()) {
                     throw new SQLException("旧业务表非空，须先完成显式数据映射，未执行结构升级：" + table);
                 }

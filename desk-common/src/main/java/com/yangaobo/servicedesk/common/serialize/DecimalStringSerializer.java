@@ -12,7 +12,9 @@ import java.io.IOException;
  * @author yangaobo
  */
 public final class DecimalStringSerializer extends JsonSerializer<Long> {
-    /** 将非负版本及计数输出为十进制字符串，避免浏览器精度丢失。 */
+    /**
+     * 将非负版本及计数输出为十进制字符串，避免浏览器精度丢失。
+     */
     @Override
     public void serialize(Long value, JsonGenerator generator, SerializerProvider provider)
             throws IOException {

@@ -100,11 +100,13 @@ def load_settings(*, validate_infrastructure: bool = True) -> Settings:
     直接构造Settings不读取文件，便于测试及显式资源装配保持隔离。
     """
     environment = os.environ.get("DESK_AI_ENVIRONMENT", "dev")
-    settings = Settings(
-        _env_file=".env" if environment == "dev" else None,
-        _env_file_encoding="utf-8",
-        **({} if validate_infrastructure else {"infrastructure_enabled": False}),
-    )
+    env_file = ".env" if environment == "dev" else None
+    if validate_infrastructure:
+        settings = Settings(_env_file=env_file, _env_file_encoding="utf-8")
+    else:
+        settings = Settings(
+            _env_file=env_file, _env_file_encoding="utf-8", infrastructure_enabled=False
+        )
     if settings.environment != environment:
         raise ValueError("基础环境须由进程环境选择，不能通过开发.env切换生产")
     return settings

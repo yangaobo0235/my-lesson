@@ -5,9 +5,7 @@ import com.yangaobo.servicedesk.ticket.mapper.TicketOverviewMapper;
 import com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketOverviewVO;
 import com.yangaobo.servicedesk.ticket.service.ITicketOverviewService;
 import com.yangaobo.servicedesk.ticket.service.TicketScope;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -22,10 +20,12 @@ import org.springframework.stereotype.Service;
 public class TicketOverviewServiceImpl implements ITicketOverviewService {
     private final TicketOverviewMapper overviewMapper;
 
-    /** {@inheritDoc} 概况权限不授予任何工单正文。 */
+    /**
+     * {@inheritDoc} 概况权限不授予任何工单正文。
+     */
     @Override
     public TicketOverviewVO overview(IdentityDTO actor) {
-        TicketScope.query(actor);
+        TicketScope.requireReader(actor);
         return overviewMapper.overview(actor, actor.getRoles().contains("CUSTOMER_USER"));
     }
 }

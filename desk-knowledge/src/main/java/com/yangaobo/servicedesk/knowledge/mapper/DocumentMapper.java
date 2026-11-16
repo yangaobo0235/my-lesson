@@ -2,8 +2,10 @@ package com.yangaobo.servicedesk.knowledge.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.yangaobo.servicedesk.knowledge.model.entity.DocumentEntity;
-import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.ResultMap;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.apache.ibatis.annotations.Param;
 
 /**
@@ -12,11 +14,49 @@ import org.apache.ibatis.annotations.Param;
  * @author yangaobo
  */
 public interface DocumentMapper extends BaseMapper<DocumentEntity> {
-    /** 固定行锁在业务短事务内使用，外部调用不得持锁。 */
-    @Select("SELECT id, series_id, client_upload_id, upload_request_hash, revision_number, title, content_format, original_file_name, storage_bucket, storage_key, storage_version_id, file_size_bytes, file_sha256, source_url, source_review_note, revision_label, issued_on, applicability_note, publication_status, current_job_id, replaces_document_id, published_at, published_by, deleted_at, created_by, created_at, updated_at, row_version FROM kb_document WHERE id = #{id} FOR UPDATE")
-    @ResultMap("mybatis-plus_DocumentEntity")
+    /**
+     * 固定行锁在业务短事务内使用，外部调用不得持锁。
+     */
     DocumentEntity lock(@Param("id") String id);
-    /** 取得全部行锁之后单独查询UTC决策时间。 */
-    @Select("SELECT UTC_TIMESTAMP(6)")
-    java.time.LocalDateTime decisionTime();
+
+    /**
+     * 取得全部行锁之后单独查询UTC决策时间。
+     */
+    LocalDateTime decisionTime();
+
+    /**
+     * 读取管理员修订目录，列表与统计复用相同条件。
+     *
+     * @param seriesId 可选系列筛选
+     * @param limit    已校验的页大小或扫描上限
+     * @param offset   已校验的非负分页偏移
+     * @return 按稳定顺序返回的有界结果
+     */
+    List<DocumentEntity> listDocuments(@Param("seriesId") String seriesId, @Param("limit") int limit, @Param("offset") long offset);
+
+    /**
+     * 读取管理员修订目录的总数。
+     *
+     * @param seriesId 可选系列筛选
+     * @return 符合相同范围的总数
+     */
+    long countDocuments(@Param("seriesId") String seriesId);
+
+    /**
+     * 读取当前已授权的修订，列表与统计复用相同条件。
+     *
+     * @param ids    当前已授权修订集合；空集合不返回数据
+     * @param limit  已校验的页大小或扫描上限
+     * @param offset 已校验的非负分页偏移
+     * @return 按稳定顺序返回的有界结果
+     */
+    List<DocumentEntity> listAuthorized(@Param("ids") List<String> ids, @Param("limit") int limit, @Param("offset") long offset);
+
+    /**
+     * 读取当前已授权的修订的总数。
+     *
+     * @param ids 当前已授权修订集合；空集合不返回数据
+     * @return 符合相同范围的总数
+     */
+    long countAuthorized(@Param("ids") List<String> ids);
 }

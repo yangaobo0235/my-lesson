@@ -9,6 +9,8 @@ import com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketOverviewVO;
  * @author yangaobo
  */
 public interface ITicketOverviewService {
-    /** 按当前身份范围在数据库侧聚合，关闭原因分别统计。 */
+    /**
+     * 按当前身份范围在数据库侧聚合，关闭原因分别统计。
+     */
     TicketOverviewVO overview(IdentityDTO actor);
 }

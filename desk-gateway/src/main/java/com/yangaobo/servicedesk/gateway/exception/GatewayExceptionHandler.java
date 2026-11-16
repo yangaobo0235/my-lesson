@@ -8,10 +8,12 @@ import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.gateway.component.web.GatewayIngressFilter;
 import com.yangaobo.servicedesk.gateway.component.web.HttpErrorMapping;
 import io.netty.channel.ConnectTimeoutException;
+
 import java.net.ConnectException;
 import java.net.UnknownHostException;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.reactive.error.ErrorWebExceptionHandler;
@@ -53,7 +55,7 @@ public class GatewayExceptionHandler implements ErrorWebExceptionHandler {
     /**
      * 保留已提交响应；未提交时按已知故障选择状态与安全Result。
      *
-     * @param exchange 当前HTTP交换
+     * @param exchange  当前HTTP交换
      * @param exception 当前失败
      * @return 有界响应写入或原始失败信号
      */
@@ -80,10 +82,13 @@ public class GatewayExceptionHandler implements ErrorWebExceptionHandler {
             error = CommonErrorCode.SERVICE_UNAVAILABLE;
             status = 503;
         }
-        String traceId = exchange.getAttributeOrDefault(GatewayIngressFilter.TRACE_ATTRIBUTE,
-                UUID.randomUUID().toString().replace("-", ""));
+        String traceId =
+                exchange.getAttributeOrDefault(
+                        GatewayIngressFilter.TRACE_ATTRIBUTE,
+                        UUID.randomUUID().toString().replace("-", ""));
         if (status == 500) {
-            LOGGER.error("网关处理异常 traceId={} exceptionType={}", traceId, exception.getClass().getName());
+            LOGGER.error(
+                    "网关处理异常 traceId={} exceptionType={}", traceId, exception.getClass().getName());
         }
         byte[] body;
         try {
@@ -94,14 +99,15 @@ public class GatewayExceptionHandler implements ErrorWebExceptionHandler {
         exchange.getResponse().setRawStatusCode(status);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
         exchange.getResponse().getHeaders().set("X-Trace-Id", traceId);
-        return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(body)));
+        return exchange.getResponse()
+                .writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(body)));
     }
 
     /**
      * 只在有界异常链上识别网络失败，不解析异常文本。
      *
      * @param exception 原始失败
-     * @param type 目标故障类型
+     * @param type      目标故障类型
      * @return 是否匹配
      */
     private static boolean hasCause(Throwable exception, Class<? extends Throwable> type) {

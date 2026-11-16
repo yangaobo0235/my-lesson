@@ -33,20 +33,24 @@ public enum SystemEnvironmentEnum implements BaseEnum<String> {
      * 固定环境值与说明。
      *
      * @param value 配置线值
-     * @param desc 中文说明
+     * @param desc  中文说明
      */
     SystemEnvironmentEnum(String value, String desc) {
         this.value = value;
         this.desc = desc;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public String getValue() {
         return value;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public String getDesc() {
         return desc;

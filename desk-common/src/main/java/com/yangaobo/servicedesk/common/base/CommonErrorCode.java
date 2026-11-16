@@ -90,7 +90,7 @@ public enum CommonErrorCode implements ErrorCode {
     /**
      * 固定公共错误合同。
      *
-     * @param code 错误编号
+     * @param code    错误编号
      * @param message 安全中文提示
      */
     CommonErrorCode(int code, String message) {
@@ -98,13 +98,17 @@ public enum CommonErrorCode implements ErrorCode {
         this.message = message;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public int code() {
         return code;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public String message() {
         return message;

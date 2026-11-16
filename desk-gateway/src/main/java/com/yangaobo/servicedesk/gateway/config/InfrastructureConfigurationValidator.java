@@ -1,7 +1,9 @@
 package com.yangaobo.servicedesk.gateway.config;
 
 import com.yangaobo.servicedesk.common.env.SystemEnvironment;
+
 import java.net.URI;
+
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
@@ -28,9 +30,10 @@ public class InfrastructureConfigurationValidator implements InitializingBean {
      * 注入统一环境及所属配置，不重复解析Profile。
      *
      * @param systemEnvironment 已验证的基础环境
-     * @param environment 当前属性来源
+     * @param environment       当前属性来源
      */
-    public InfrastructureConfigurationValidator(SystemEnvironment systemEnvironment, Environment environment) {
+    public InfrastructureConfigurationValidator(
+            SystemEnvironment systemEnvironment, Environment environment) {
         this.systemEnvironment = systemEnvironment;
         this.environment = environment;
     }
@@ -48,13 +51,19 @@ public class InfrastructureConfigurationValidator implements InitializingBean {
             } catch (IllegalArgumentException exception) {
                 throw new IllegalStateException(errorMessage(key));
             }
-            boolean discoveredJavaService = !"ai".equals(service)
-                    && ("lb://desk-" + service).equals(target.toString());
-            if (!discoveredJavaService && (!("http".equals(target.getScheme()) || "https".equals(target.getScheme()))
-                    || target.getHost() == null || target.getUserInfo() != null
-                    || target.getQuery() != null || target.getFragment() != null
-                    || (target.getPath() != null && !target.getPath().isEmpty() && !"/".equals(target.getPath()))
-                    || target.getPort() == 0 || target.getPort() > 65535)) {
+            boolean discoveredJavaService =
+                    !"ai".equals(service) && ("lb://desk-" + service).equals(target.toString());
+            if (!discoveredJavaService
+                    && (!("http".equals(target.getScheme()) || "https".equals(target.getScheme()))
+                    || target.getHost() == null
+                    || target.getUserInfo() != null
+                    || target.getQuery() != null
+                    || target.getFragment() != null
+                    || (target.getPath() != null
+                    && !target.getPath().isEmpty()
+                    && !"/".equals(target.getPath()))
+                    || target.getPort() == 0
+                    || target.getPort() > 65535)) {
                 throw new IllegalStateException(errorMessage(key));
             }
         }
@@ -67,7 +76,9 @@ public class InfrastructureConfigurationValidator implements InitializingBean {
      * @return 环境及字段说明
      */
     private String errorMessage(String key) {
-        return systemEnvironment.getBaseEnvironment().getValue() + "环境的" + key
+        return systemEnvironment.getBaseEnvironment().getValue()
+                + "环境的"
+                + key
                 + "必须是无凭据、查询串及路径前缀的HTTP(S)服务地址或所属Java服务的精确lb地址";
     }
 }

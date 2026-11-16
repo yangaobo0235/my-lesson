@@ -5,6 +5,7 @@ import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.knowledge.component.web.HttpErrorMapping;
 import com.yangaobo.servicedesk.knowledge.component.web.RequestTraceFilter;
+import com.yangaobo.servicedesk.knowledge.error.DocumentErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +33,7 @@ public class ApiExceptionHandler {
      * 将业务、框架及未知错误转换为统一结果，不回显外部异常消息。
      *
      * @param exception 当前失败
-     * @param request 原始请求
+     * @param request   原始请求
      * @return 真实HTTP状态及无数据错误
      */
     @ExceptionHandler(Exception.class)
@@ -41,13 +42,13 @@ public class ApiExceptionHandler {
         if (exception instanceof BusinessException business) {
             var error = HttpErrorMapping.registered(business.getErrorCode());
             var response = ResponseEntity.status(HttpErrorMapping.statusOf(error));
-            if (error == com.yangaobo.servicedesk.knowledge.model.enums.DocumentErrorCode.UPLOAD_IN_PROGRESS)
-                response.header("Retry-After", "2");
+            if (error == DocumentErrorCode.UPLOAD_IN_PROGRESS) response.header("Retry-After", "2");
             return response.body(Result.failure(error, traceId));
         }
         if (exception instanceof ErrorResponse framework) {
             int status = framework.getStatusCode().value();
-            return ResponseEntity.status(status).headers(framework.getHeaders())
+            return ResponseEntity.status(status)
+                    .headers(framework.getHeaders())
                     .body(Result.failure(HttpErrorMapping.fromStatus(status), traceId));
         }
         if (exception instanceof HttpMessageNotReadableException

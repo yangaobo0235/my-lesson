@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.ServiceEntitlementMapper">
+  <resultMap id="entityMap" type="com.yangaobo.servicedesk.ticket.model.entity.ServiceEntitlementEntity" autoMapping="true">
+    <id column="id" property="id"/>
+  </resultMap>
+
+  <select id="lock" resultMap="entityMap">
+    SELECT
+      id,
+      customer_id,
+      service_item_id,
+      starts_on,
+      ends_on,
+      status,
+      granted_by,
+      updated_by,
+      change_reason,
+      created_at,
+      updated_at,
+      row_version
+    FROM it_service_entitlement
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <select id="lockCustomer" resultType="com.yangaobo.servicedesk.ticket.model.entity.ServiceEntitlementEntity">
+    SELECT
+      id,
+      customer_id,
+      service_item_id,
+      starts_on,
+      ends_on,
+      status,
+      granted_by,
+      updated_by,
+      change_reason,
+      created_at,
+      updated_at,
+      row_version
+    FROM it_service_entitlement
+    WHERE customer_id = #{customer}
+      AND service_item_id = #{service}
+    FOR UPDATE
+  </select>
+
+  <select id="admissionCandidate" resultType="java.lang.String">
+    SELECT e.service_item_id
+    FROM it_service_entitlement e
+    JOIN it_service_item s
+      ON s.id = e.service_item_id
+      AND s.status = 'ACTIVE'
+    WHERE e.customer_id = #{customer}
+      AND e.status = 'ACTIVE'
+      AND DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR) BETWEEN e.starts_on AND e.ends_on
+    ORDER BY e.service_item_id
+    LIMIT 1
+  </select>
+
+  <select id="decisionTime" resultType="java.time.LocalDateTime">
+    SELECT UTC_TIMESTAMP(6)
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    customer_id,
+    service_item_id,
+    starts_on,
+    ends_on,
+    status,
+    granted_by,
+    updated_by,
+    change_reason,
+    created_at,
+    updated_at,
+    row_version
+  </sql>
+
+  <sql id="countEntitlementsFromWhere">
+    FROM it_service_entitlement
+    <where>
+      <choose>
+        <when test="customerIds != null and customerIds.size() > 0">
+          customer_id IN
+          <foreach collection="customerIds" item="customerId" open="(" close=")" separator=",">
+            #{customerId}
+          </foreach>
+        </when>
+        <otherwise>
+          1 = 0
+        </otherwise>
+      </choose>
+      <if test="status != null">
+        AND status = #{status}
+      </if>
+    </where>
+  </sql>
+
+  <select id="listEntitlements" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countEntitlementsFromWhere"/>
+    ORDER BY id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countEntitlements" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countEntitlementsFromWhere"/>
+  </select>
+  <sql id="countAvailableFromWhere">
+    FROM it_service_entitlement
+    <where>
+      customer_id = #{customer}
+      AND status = 'ACTIVE'
+      AND starts_on &lt;= #{today}
+      AND ends_on &gt;= #{today}
+      AND service_item_id IN (
+        SELECT id FROM it_service_item WHERE status = 'ACTIVE'
+      )
+    </where>
+  </sql>
+
+  <select id="listAvailable" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countAvailableFromWhere"/>
+    ORDER BY service_item_id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countAvailable" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countAvailableFromWhere"/>
+  </select>
+</mapper>

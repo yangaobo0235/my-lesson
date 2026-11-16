@@ -1,6 +1,7 @@
 .idea/
 .vscode/
 /.local/
+/docs/开发计划/
 *.iml
 target/
 node_modules/

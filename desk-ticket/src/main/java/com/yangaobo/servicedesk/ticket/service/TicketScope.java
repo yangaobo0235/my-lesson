@@ -1,31 +1,30 @@
 package com.yangaobo.servicedesk.ticket.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
-import com.yangaobo.servicedesk.ticket.model.entity.TicketEntity;
 
 /**
- * 工单数据库授权范围的业务边界。
+ * 工单读取角色的服务边界；客户范围由各查询的XML条件继续限定。
  *
  * @author yangaobo
  */
 public final class TicketScope {
-    /** 禁止实例化。 */
-    private TicketScope() {}
+    /**
+     * 禁止实例化。
+     */
+    private TicketScope() {
+    }
 
-    /** SQL侧限制客户本人或当前服务人员范围。 */
-    public static LambdaQueryWrapper<TicketEntity> query(IdentityDTO actor) {
-        LambdaQueryWrapper<TicketEntity> query = new LambdaQueryWrapper<>();
-        if (actor.getRoles().contains("CUSTOMER_USER"))
-            return query.eq(TicketEntity::getRequesterId, actor.getOwnerId())
-                    .eq(TicketEntity::getCustomerId, actor.getOrganizationId());
-        if (!(actor.getRoles().contains("SERVICE_AGENT")
+    /**
+     * 验证客户或服务团队读取角色，不将角色核验当作资源授权。
+     *
+     * @param actor 已验证的当前身份
+     */
+    public static void requireReader(IdentityDTO actor) {
+        if (!(actor.getRoles().contains("CUSTOMER_USER")
+                || actor.getRoles().contains("SERVICE_AGENT")
                 || actor.getRoles().contains("TECHNICIAN")))
             throw new BusinessException(CommonErrorCode.FORBIDDEN);
-        return actor.getCustomerIds().isEmpty()
-                ? query.apply("1 = 0")
-                : query.in(TicketEntity::getCustomerId, actor.getCustomerIds());
     }
 }

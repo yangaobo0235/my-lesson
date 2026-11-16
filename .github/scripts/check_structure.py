@@ -1,6 +1,5 @@
 """检查纳入版本管理的文件边界、Java依赖及网关资源白名单。"""
 
-import ast
 import re
 import subprocess
 import xml.etree.ElementTree as ET
@@ -52,9 +51,28 @@ def main() -> None:
     output = subprocess.check_output(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT
     )
-    files = sorted(set(name for name in output.decode("utf-8").split("\0") if name))
+    files = sorted(
+        {name for name in output.decode("utf-8").split("\0") if name and (ROOT / name).is_file()}
+    )
     errors: list[str] = []
+    for directory in [ROOT, *(ROOT / name for name in JAVA_MODULES | {"desk-ai", "desk-web"})]:
+        for name in (
+            ".local",
+            "logs",
+            "log",
+            "tmp",
+            "temp",
+            ".ruff_cache",
+            ".pytest_cache",
+            ".mypy_cache",
+        ):
+            if directory == ROOT and name == ".local":
+                continue
+            if (directory / name).exists():
+                errors.append(f"本机产物必须归仓库根.local：{(directory / name).relative_to(ROOT)}")
     for name in files:
+        if name.startswith("docs/开发计划/"):
+            errors.append(f"本机开发计划不得纳入Git：{name}")
         parts = Path(name).parts
         top = parts[0]
         if (len(parts) == 1 and top not in ROOT_FILES) or (
@@ -128,30 +146,15 @@ def main() -> None:
     registered = set(re.findall(r"/api/v1/admin/([a-z-]+)/\*\*", routes))
     if expected != registered or "/api/v1/admin/**" in routes:
         errors.append("网关管理资源白名单与接口约定不一致")
-    declared_errors = {
-        name: int(code)
-        for code, name in re.findall(r"^\| (\d+) \| CommonErrorCode\.(\w+) \|", contract, re.M)
-    }
-    java_errors = (
-        ROOT / "desk-common/src/main/java/com/yangaobo/servicedesk/common/base/CommonErrorCode.java"
-    ).read_text(encoding="utf-8")
-    java_codes = {
-        name: int(code) for name, code in re.findall(r"^    (\w+)\((\d+),", java_errors, re.M)
-    }
-    python_errors = ast.parse(
-        (ROOT / "desk-ai/src/servicedesk_ai/errors/common.py").read_text(encoding="utf-8")
-    )
-    python_codes: dict[str, int] = {}
-    for node in python_errors.body:
-        if isinstance(node, ast.ClassDef) and node.name == "CommonErrorCode":
-            for item in node.body:
-                if isinstance(item, ast.Assign) and isinstance(item.value, ast.Tuple):
-                    target = item.targets[0]
-                    value = item.value.elts[0]
-                    if isinstance(target, ast.Name) and isinstance(value, ast.Constant):
-                        python_codes[target.id] = value.value
-    if declared_errors != java_codes or declared_errors != python_codes:
-        errors.append("Java/Python公共错误码与接口约定登记不一致")
+    from check_error_contracts import check_error_contracts
+
+    try:
+        check_error_contracts()
+    except ValueError as failure:
+        errors.append(str(failure))
+    from check_java_layers import check_java_layers
+
+    errors.extend(check_java_layers())
     if errors:
         raise SystemExit("\n".join(errors))
     print(f"通过文件/依赖边界检查：{len(files)}个文件、6个Java模块、{len(registered)}个管理资源")

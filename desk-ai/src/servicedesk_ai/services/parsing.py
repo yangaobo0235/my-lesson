@@ -39,7 +39,9 @@ def parse_markdown(data: bytes, job_id: str, config: ProcessingConfig) -> list[P
         raise ValueError("Markdown不允许远程资源")
     lines = text.splitlines()
     chunks: list[ParsedChunk] = []
-    anchor, section, start, pending = "document", [], 1, []
+    anchor, start = "document", 1
+    section: list[str] = []
+    pending: list[str] = []
     counts: Counter[str] = Counter()
     fence: str | None = None
 

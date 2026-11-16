@@ -1,11 +1,11 @@
 package com.yangaobo.servicedesk.user.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.common.util.IdentifierGenerator;
 import com.yangaobo.servicedesk.user.mapper.AccountMapper;
 import com.yangaobo.servicedesk.user.mapper.OrganizationMapper;
 import com.yangaobo.servicedesk.user.model.entity.OrganizationEntity;
@@ -16,16 +16,14 @@ import com.yangaobo.servicedesk.user.model.vo.organization.OrganizationVO;
 import com.yangaobo.servicedesk.user.service.IIdentityAdministrationService;
 import com.yangaobo.servicedesk.user.service.IOrganizationService;
 
-import lombok.RequiredArgsConstructor;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
-import java.util.UUID;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 组织的业务边界。
@@ -40,34 +38,23 @@ public class OrganizationServiceImpl extends ServiceImpl<OrganizationMapper, Org
     private final AccountMapper accountMapper;
     private final IIdentityAdministrationService administration;
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PageVO<OrganizationVO> listOrganizations(IdentityDTO actor, IdentityQueryForm form) {
         administration.requireAdministrator(actor);
-        LambdaQueryWrapper<OrganizationEntity> query =
-                new LambdaQueryWrapper<OrganizationEntity>()
-                        .eq(
-                                form.getStatus() != null,
-                                OrganizationEntity::getStatus,
-                                form.getStatus());
-        if (form.getKeyword() != null && !form.getKeyword().isBlank())
-            query.likeRight(OrganizationEntity::getOrganizationName, form.getKeyword().strip());
-        long total = baseMapper.selectCount(query);
-        query.orderByAsc(OrganizationEntity::getId)
-                .last(
-                        "LIMIT "
-                                + form.getPageSize()
-                                + " OFFSET "
-                                + ((long) (form.getPageNum() - 1) * form.getPageSize()));
-        PageVO<OrganizationVO> result = new PageVO<>();
-        result.setRecords(baseMapper.selectList(query).stream().map(this::view).toList());
-        result.setTotal(total);
-        result.setPageNum(form.getPageNum());
-        result.setPageSize(form.getPageSize());
-        return result;
+        String keyword = form.getKeyword() == null || form.getKeyword().isBlank()
+                ? null : form.getKeyword().strip();
+        long total = baseMapper.countOrganizations(form, keyword);
+        var records = baseMapper.listOrganizations(form, keyword, form.getPageSize(), form.offset())
+                .stream().map(this::view).toList();
+        return PageVO.of(records, total, form);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public OrganizationVO query(IdentityDTO actor, String id) {
         administration.requireAdministrator(actor);
@@ -76,13 +63,15 @@ public class OrganizationServiceImpl extends ServiceImpl<OrganizationMapper, Org
         return view(organization);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public OrganizationVO create(IdentityDTO actor, OrganizationCreateForm form) {
         administration.lockAdministrator(actor);
         OrganizationEntity organization = new OrganizationEntity();
-        organization.setId(UUID.randomUUID().toString().replace("-", ""));
+        organization.setId(IdentifierGenerator.next());
         organization.setOrganizationCode(
                 form.getOrganizationCode().strip().toLowerCase(Locale.ROOT));
         organization.setOrganizationName(form.getOrganizationName().strip());
@@ -104,7 +93,9 @@ public class OrganizationServiceImpl extends ServiceImpl<OrganizationMapper, Org
         return result;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public OrganizationVO updateOrganization(IdentityDTO actor, OrganizationUpdateForm form) {
@@ -134,7 +125,9 @@ public class OrganizationServiceImpl extends ServiceImpl<OrganizationMapper, Org
         return after;
     }
 
-    /** 显式映射组织公开字段。 */
+    /**
+     * 显式映射组织公开字段。
+     */
     private OrganizationVO view(OrganizationEntity entity) {
         OrganizationVO result = new OrganizationVO();
         result.setId(entity.getId());

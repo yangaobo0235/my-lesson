@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from desk_contracts.ai.v1.execution_pb2 import ValidatedDraft, ValidateDraftRequest
 from desk_contracts.user.v1.identity_pb2 import VerifiedIdentity
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
-from servicedesk_ai.errors.diagnosis import DiagnosisErrorCode
+from servicedesk_ai.errors.draft import DraftErrorCode
 from servicedesk_ai.repositories import diagnosis as store
+from servicedesk_ai.repositories import drafts as queries
 from servicedesk_ai.schemas.diagnosis import DraftCreate
 from servicedesk_ai.schemas.diagnosis_views import DraftContent, DraftView
 from servicedesk_ai.schemas.indexing import canonical_hash
@@ -29,21 +29,8 @@ class DraftService:
     ) -> DraftView:
         """查询原草稿保留过期回执；实际采用时才强制期限及当前事实版本。"""
         async with self.engine.connect() as db:
-            row = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT id,owner_id,conversation_id,source_generation_id,purpose,ticket_id,
-                ticket_version,state_version,content,expires_at FROM ai_action_draft WHERE
-                id=:id
-            """),
-                        {"id": identifier},
-                    )
-                )
-                .mappings()
-                .first()
-            )
-            now = (await db.execute(text("SELECT UTC_TIMESTAMP(6)"))).scalar_one()
+            row = await queries.read_draft(db, {"id": identifier})
+            now = await queries.database_now(db)
         if row is None or row["owner_id"] != actor.actor.owner_id:
             raise BusinessError(CommonErrorCode.NOT_FOUND)
         conversation = await self.conversations.authorized(actor, row["conversation_id"])
@@ -51,7 +38,7 @@ class DraftService:
         if run.status != "SUCCEEDED" or run.sources_hidden:
             raise BusinessError(CommonErrorCode.FORBIDDEN)
         if validate and row["expires_at"] <= now:
-            raise BusinessError(DiagnosisErrorCode.DRAFT_EXPIRED)
+            raise BusinessError(DraftErrorCode.DRAFT_EXPIRED)
         if validate and row["state_version"] != conversation.state_version:
             raise BusinessError(CommonErrorCode.CONFLICT)
         return DraftView(
@@ -68,15 +55,9 @@ class DraftService:
     async def by_request(self, actor: VerifiedIdentity, key: str) -> DraftView:
         """拥有者原请求键查询，未见不推断在途动作已经失败。"""
         async with self.engine.connect() as db:
-            identifier = (
-                await db.execute(
-                    text(
-                        "SELECT id FROM ai_action_draft WHERE owner_id=:owner "
-                        "AND client_request_id=:key"
-                    ),
-                    {"owner": actor.actor.owner_id, "key": key},
-                )
-            ).scalar_one_or_none()
+            identifier = await queries.find_draft_request(
+                db, {"owner": actor.actor.owner_id, "key": key}
+            )
         if identifier is None:
             raise BusinessError(CommonErrorCode.NOT_FOUND)
         return await self.get(actor, identifier)
@@ -87,15 +68,9 @@ class DraftService:
         """客户只取本人明确确认反馈，技术用途只取源运行已校验结构化建议。"""
         request_hash = canonical_hash({"conversation_id": identifier, **form.model_dump()})
         async with self.engine.connect() as db:
-            old = (
-                await db.execute(
-                    text(
-                        "SELECT id,request_hash FROM ai_action_draft WHERE "
-                        "owner_id=:owner AND client_request_id=:key"
-                    ),
-                    {"owner": actor.actor.owner_id, "key": form.client_request_id},
-                )
-            ).first()
+            old = await queries.draft_request_receipt(
+                db, {"owner": actor.actor.owner_id, "key": form.client_request_id}
+            )
         if old:
             if old[1] != request_hash:
                 raise BusinessError(CommonErrorCode.CONFLICT)
@@ -116,22 +91,14 @@ class DraftService:
             async with self.engine.connect() as db:
                 confirmed = []
                 for fact_id in dict.fromkeys(form.confirmed_fact_ids):
-                    row = (
-                        await db.execute(
-                            text("""
-                SELECT fact_kind,statement FROM ai_diagnostic_fact f WHERE id=:fact
-                AND conversation_id=:conversation AND reported_by=:owner AND
-                source_type='USER_REPORT' AND operation='ASSERT'
-                AND NOT EXISTS (SELECT 1 FROM ai_diagnostic_fact s WHERE
-                s.supersedes_fact_id=f.id)
-            """),
-                            {
-                                "fact": fact_id,
-                                "conversation": identifier,
-                                "owner": actor.actor.owner_id,
-                            },
-                        )
-                    ).first()
+                    row = await queries.confirmed_user_fact(
+                        db,
+                        {
+                            "fact": fact_id,
+                            "conversation": identifier,
+                            "owner": actor.actor.owner_id,
+                        },
+                    )
                     if row is None:
                         raise BusinessError(CommonErrorCode.CONFLICT)
                     confirmed.append(row)
@@ -169,15 +136,8 @@ class DraftService:
                 await store.require_idle(db, identifier)
                 if current.state_version != conversation.state_version:
                     raise BusinessError(CommonErrorCode.CONFLICT)
-                await db.execute(
-                    text("""
-                INSERT INTO ai_action_draft
-                (id,owner_id,conversation_id,source_generation_id,purpose,ticket_id,ticket_version,state_version,
-                client_request_id,request_hash,content,expires_at)
-                VALUES
-                (:id,:owner,:conversation,:run,:purpose,:ticket,:ticket_version,:version,:key,:hash,:content,
-                UTC_TIMESTAMP(6)+INTERVAL 24 HOUR)
-            """),
+                await queries.insert_draft(
+                    db,
                     {
                         "id": draft_id,
                         "owner": actor.actor.owner_id,
@@ -196,15 +156,9 @@ class DraftService:
                 )
         except IntegrityError:
             async with self.engine.connect() as db:
-                old = (
-                    await db.execute(
-                        text(
-                            "SELECT id,request_hash FROM ai_action_draft WHERE "
-                            "owner_id=:owner AND client_request_id=:key"
-                        ),
-                        {"owner": actor.actor.owner_id, "key": form.client_request_id},
-                    )
-                ).first()
+                old = await queries.draft_request_receipt(
+                    db, {"owner": actor.actor.owner_id, "key": form.client_request_id}
+                )
             if old is None or old[1] != request_hash:
                 raise BusinessError(CommonErrorCode.CONFLICT) from None
             draft_id = old[0]
@@ -215,12 +169,7 @@ class DraftService:
         actor = await self.conversations.rpc.identity.verify_ref(request.actor)
         draft = await self.get(actor, request.draft_id, validate=True)
         async with self.engine.connect() as db:
-            identifier = (
-                await db.execute(
-                    text("SELECT conversation_id FROM ai_action_draft WHERE id=:id"),
-                    {"id": draft.id},
-                )
-            ).scalar_one()
+            identifier = await queries.draft_conversation(db, {"id": draft.id})
         conversation = await self.conversations.authorized(actor, identifier)
         if draft.purpose != request.purpose or conversation.customer_id != request.customer_id:
             raise BusinessError(CommonErrorCode.FORBIDDEN)

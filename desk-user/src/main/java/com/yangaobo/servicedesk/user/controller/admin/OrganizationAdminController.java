@@ -9,14 +9,10 @@ import com.yangaobo.servicedesk.user.model.form.organization.OrganizationUpdateF
 import com.yangaobo.servicedesk.user.model.vo.organization.OrganizationVO;
 import com.yangaobo.servicedesk.user.security.CurrentActor;
 import com.yangaobo.servicedesk.user.service.IOrganizationService;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-
 import jakarta.validation.Valid;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,8 +33,10 @@ public class OrganizationAdminController {
     private final IOrganizationService organizationService;
     private final CurrentActor currentActor;
 
-    /** 执行organization的list用例，权限与事务由业务服务负责。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行organization的list用例，权限与事务由业务服务负责。")
+    /**
+     * 执行organization的list用例，权限与事务由业务服务负责。
+     */
+    @Operation(summary = "执行organization的list用例，权限与事务由业务服务负责。")
     @PostMapping("/list")
     public Result<PageVO<OrganizationVO>> list(@Valid @RequestBody IdentityQueryForm form) {
         PageVO<OrganizationVO> data =
@@ -46,8 +44,10 @@ public class OrganizationAdminController {
         return Result.success(data);
     }
 
-    /** 执行organization的query用例，权限与事务由业务服务负责。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行organization的query用例，权限与事务由业务服务负责。")
+    /**
+     * 执行organization的query用例，权限与事务由业务服务负责。
+     */
+    @Operation(summary = "执行organization的query用例，权限与事务由业务服务负责。")
     @PostMapping("/query")
     public Result<OrganizationVO> query(@Valid @RequestBody IdForm form) {
         OrganizationVO data =
@@ -55,8 +55,10 @@ public class OrganizationAdminController {
         return Result.success(data);
     }
 
-    /** 执行organization的add用例，权限与事务由业务服务负责。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行organization的add用例，权限与事务由业务服务负责。")
+    /**
+     * 执行organization的add用例，权限与事务由业务服务负责。
+     */
+    @Operation(summary = "执行organization的add用例，权限与事务由业务服务负责。")
     @PostMapping("/add")
     public Result<OrganizationVO> add(@Valid @RequestBody OrganizationCreateForm form) {
         OrganizationVO data =
@@ -64,8 +66,10 @@ public class OrganizationAdminController {
         return Result.success(data);
     }
 
-    /** 执行organization的update用例，权限与事务由业务服务负责。 */
-    @io.swagger.v3.oas.annotations.Operation(summary = "执行organization的update用例，权限与事务由业务服务负责。")
+    /**
+     * 执行organization的update用例，权限与事务由业务服务负责。
+     */
+    @Operation(summary = "执行organization的update用例，权限与事务由业务服务负责。")
     @PostMapping("/update")
     public Result<OrganizationVO> update(@Valid @RequestBody OrganizationUpdateForm form) {
         OrganizationVO data =

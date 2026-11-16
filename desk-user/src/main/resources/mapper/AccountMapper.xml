@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.user.mapper.AccountMapper">
+  <select id="lock" resultType="com.yangaobo.servicedesk.user.model.entity.AccountEntity">
+    SELECT
+      id,
+      organization_id,
+      username,
+      password_hash,
+      display_name,
+      status,
+      must_change_password,
+      password_changed_at,
+      last_login_at,
+      auth_version,
+      created_by,
+      created_at,
+      updated_at,
+      row_version
+    FROM sys_user
+    WHERE id = #{id}
+    FOR UPDATE
+  </select>
+
+  <select id="roles" resultType="java.lang.String">
+    SELECT role_code
+    FROM sys_user_role
+    WHERE user_id = #{id}
+    ORDER BY role_code
+  </select>
+
+  <select id="scopes" resultType="java.lang.String">
+    SELECT customer_id
+    FROM sys_user_customer_scope
+    WHERE user_id = #{id}
+    ORDER BY customer_id
+  </select>
+
+  <delete id="clearRoles">
+    DELETE FROM sys_user_role WHERE user_id = #{id}
+  </delete>
+
+  <insert id="grantRole">
+    INSERT INTO sys_user_role (
+      user_id,
+      role_code,
+      granted_by
+    )
+    VALUES (
+      #{id},
+      #{role},
+      #{actor}
+    )
+  </insert>
+
+  <delete id="clearScopes">
+    DELETE FROM sys_user_customer_scope WHERE user_id = #{id}
+  </delete>
+
+  <insert id="grantScope">
+    INSERT INTO sys_user_customer_scope (
+      user_id,
+      customer_id,
+      granted_by
+    )
+    VALUES (
+      #{id},
+      #{customer},
+      #{actor}
+    )
+  </insert>
+
+  <select id="activeAdministrators" resultType="long">
+    SELECT COUNT(*)
+    FROM sys_user u
+    JOIN sys_organization o
+      ON o.id = u.organization_id
+    JOIN sys_user_role r
+      ON r.user_id = u.id
+      AND r.role_code = 'SYSTEM_ADMIN'
+    WHERE u.status = 'ACTIVE'
+      AND o.status = 'ACTIVE'
+      AND o.organization_type = 'SERVICE_PROVIDER'
+  </select>
+
+  <update id="revokeOrganization">
+    UPDATE sys_user
+    SET
+      auth_version = auth_version + 1,
+      row_version = row_version + 1,
+      updated_at = UTC_TIMESTAMP(6)
+    WHERE organization_id = #{id}
+  </update>
+
+  <select id="sessionId" resultType="java.lang.String">
+    SELECT SESSION_ID
+    FROM SPRING_SESSION
+    WHERE PRIMARY_ID = #{id}
+  </select>
+
+  <select id="sessionRef" resultType="java.lang.String">
+    SELECT PRIMARY_ID
+    FROM SPRING_SESSION
+    WHERE SESSION_ID = #{id}
+  </select>
+
+  <sql id="entityColumns">
+    id,
+    organization_id,
+    username,
+    password_hash,
+    display_name,
+    status,
+    must_change_password,
+    password_changed_at,
+    last_login_at,
+    auth_version,
+    created_by,
+    created_at,
+    updated_at,
+    row_version
+  </sql>
+
+  <sql id="countAccountsFromWhere">
+    FROM sys_user
+    <where>
+      <if test="form.status != null">
+        AND status = #{form.status}
+      </if>
+      <if test="form.organizationId != null">
+        AND organization_id = #{form.organizationId}
+      </if>
+      <if test="keyword != null">
+        AND username LIKE CONCAT(#{keyword}, '%')
+      </if>
+    </where>
+  </sql>
+
+  <select id="listAccounts" resultType="com.yangaobo.servicedesk.user.model.entity.AccountEntity">
+    SELECT
+      <include refid="entityColumns"/>
+    <include refid="countAccountsFromWhere"/>
+    ORDER BY id
+    LIMIT #{limit}
+    OFFSET #{offset}
+  </select>
+
+  <select id="countAccounts" resultType="long">
+    SELECT COUNT(*)
+    <include refid="countAccountsFromWhere"/>
+  </select>
+</mapper>

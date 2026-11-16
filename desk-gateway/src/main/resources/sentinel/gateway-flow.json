@@ -1,7 +1,35 @@
 [
-  {"resource":"desk-login","resourceMode":1,"grade":1,"count":10,"intervalSec":1},
-  {"resource":"desk-generation","resourceMode":1,"grade":1,"count":5,"intervalSec":1},
-  {"resource":"desk-upload","resourceMode":1,"grade":0,"count":2},
-  {"resource":"desk-stream","resourceMode":1,"grade":0,"count":20},
-  {"resource":"desk-public","resourceMode":1,"grade":1,"count":100,"intervalSec":1}
+  {
+    "resource": "desk-login",
+    "resourceMode": 1,
+    "grade": 1,
+    "count": 10,
+    "intervalSec": 1
+  },
+  {
+    "resource": "desk-generation",
+    "resourceMode": 1,
+    "grade": 1,
+    "count": 5,
+    "intervalSec": 1
+  },
+  {
+    "resource": "desk-upload",
+    "resourceMode": 1,
+    "grade": 0,
+    "count": 2
+  },
+  {
+    "resource": "desk-stream",
+    "resourceMode": 1,
+    "grade": 0,
+    "count": 20
+  },
+  {
+    "resource": "desk-public",
+    "resourceMode": 1,
+    "grade": 1,
+    "count": 100,
+    "intervalSec": 1
+  }
 ]

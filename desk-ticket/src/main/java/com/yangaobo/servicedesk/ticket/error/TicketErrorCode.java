@@ -8,28 +8,40 @@ import com.yangaobo.servicedesk.common.base.ErrorCode;
  * @author yangaobo
  */
 public enum TicketErrorCode implements ErrorCode {
-    /** 技术人员当前不具备处理资格。 */
+    /**
+     * 技术人员当前不具备处理资格。
+     */
     ASSIGNEE_UNAVAILABLE(3201, "技术人员当前不具备处理资格");
 
-    /** 稳定错误码。 */
+    /**
+     * 稳定错误码。
+     */
     private final int code;
 
-    /** 安全提示。 */
+    /**
+     * 安全提示。
+     */
     private final String message;
 
-    /** 固定错误合同。 */
+    /**
+     * 固定错误合同。
+     */
     TicketErrorCode(int code, String message) {
         this.code = code;
         this.message = message;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public int code() {
         return code;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public String message() {
         return message;

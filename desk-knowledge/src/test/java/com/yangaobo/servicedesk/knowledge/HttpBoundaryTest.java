@@ -1,31 +1,44 @@
 package com.yangaobo.servicedesk.knowledge;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.base.ErrorCode;
 import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
+import com.yangaobo.servicedesk.knowledge.component.OssOriginalStorage;
+import com.yangaobo.servicedesk.knowledge.controller.admin.DocumentAdminController;
+import com.yangaobo.servicedesk.knowledge.controller.admin.IndexJobAdminController;
+import com.yangaobo.servicedesk.knowledge.controller.app.OriginalFileController;
+import com.yangaobo.servicedesk.knowledge.security.CurrentActor;
+import com.yangaobo.servicedesk.knowledge.service.IDocumentService;
+import com.yangaobo.servicedesk.knowledge.service.IIndexJobService;
+import com.yangaobo.servicedesk.knowledge.service.KnowledgeReadService;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 通过真实HTTP验证所属MVC应用的协议边界，不安装业务探针到生产源码。
@@ -34,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles({"dev", "test"})
-@Import(HttpBoundaryTest.BoundaryProbe.class)
+@Import({HttpBoundaryTest.BoundaryProbe.class, HttpBoundaryTest.DocumentationControllers.class})
 class HttpBoundaryTest {
 
     /**
@@ -62,7 +75,9 @@ class HttpBoundaryTest {
         assertEquals("/created", response.headers().firstValue("Location").orElseThrow());
         assertEquals(0, result.get("code").intValue());
         assertEquals("payload", result.get("data").textValue());
-        assertEquals(response.headers().firstValue("X-Trace-Id").orElseThrow(), result.get("traceId").textValue());
+        assertEquals(
+                response.headers().firstValue("X-Trace-Id").orElseThrow(),
+                result.get("traceId").textValue());
     }
 
     /**
@@ -119,18 +134,94 @@ class HttpBoundaryTest {
     }
 
     /**
+     * 实际Controller生成的文档保留异步状态和文件协议，文件不伪装JSON。
+     *
+     * @throws Exception HTTP或JSON检查失败
+     */
+    @Test
+    void documentsAcceptedUploadsAndOriginalRanges() throws Exception {
+        var api = objectMapper.readTree(request("GET", "/v3/api-docs").body());
+        var paths = api.path("paths");
+        var index = paths.path("/api/v1/admin/index-job/add").path("post").path("responses");
+        assertTrue(index.has("200") && index.has("202"));
+        assertTrue(
+                paths.path("/api/v1/admin/document/upload")
+                        .path("post")
+                        .path("responses")
+                        .has("201"));
+        for (String path :
+                new String[]{
+                        "/api/v1/knowledge/documents/{id}/file", "/api/v1/admin/document/{id}/file"
+                }) {
+            var responses = paths.path(path).path("get").path("responses");
+            for (String status : new String[]{"200", "206"}) {
+                var response = responses.path(status);
+                assertTrue(response.path("content").has("application/pdf"));
+                assertTrue(response.path("content").has("text/plain"));
+                assertFalse(response.path("content").has("application/json"));
+                assertTrue(response.path("headers").has("Content-Length"));
+            }
+            assertTrue(responses.path("206").path("headers").has("Content-Range"));
+            assertTrue(responses.path("416").path("headers").has("Content-Range"));
+            assertTrue(responses.path("416").path("content").has("application/json"));
+        }
+    }
+
+    /**
+     * 仅安装真实Controller以生成文档，不启动数据库或外部适配器。
+     *
+     * @author yangaobo
+     */
+    @TestConfiguration(proxyBeanMethods = false)
+    static class DocumentationControllers {
+        /**
+         * 原件协议保持真实方法及注解。
+         */
+        @Bean
+        OriginalFileController originalFileController() {
+            return new OriginalFileController(
+                    mock(KnowledgeReadService.class),
+                    mock(OssOriginalStorage.class),
+                    mock(CurrentActor.class));
+        }
+
+        /**
+         * 索引提交状态来自真实Controller。
+         */
+        @Bean
+        IndexJobAdminController indexJobAdminController() {
+            return new IndexJobAdminController(
+                    mock(CurrentActor.class), mock(IIndexJobService.class));
+        }
+
+        /**
+         * 上传状态来自真实Controller。
+         */
+        @Bean
+        DocumentAdminController documentAdminController() {
+            return new DocumentAdminController(
+                    mock(CurrentActor.class), mock(IDocumentService.class));
+        }
+    }
+
+    /**
      * 使用有界真实HTTP访问随机端口。
      *
      * @param method 请求方法
-     * @param path 测试路径
+     * @param path   测试路径
      * @return 原始HTTP响应
-     * @throws IOException 请求失败
+     * @throws IOException          请求失败
      * @throws InterruptedException 等待中断
      */
-    private HttpResponse<String> request(String method, String path) throws IOException, InterruptedException {
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
-            HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
-                    .timeout(Duration.ofSeconds(10)).method(method, HttpRequest.BodyPublishers.noBody()).build();
+    private HttpResponse<String> request(String method, String path)
+            throws IOException, InterruptedException {
+        try (HttpClient client =
+                     HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            HttpRequest request =
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                            .timeout(Duration.ofSeconds(10))
+                            .method(method, HttpRequest.BodyPublishers.noBody())
+                            .build();
             return client.send(request, HttpResponse.BodyHandlers.ofString());
         }
     }
@@ -181,19 +272,20 @@ class HttpBoundaryTest {
          */
         @GetMapping("/unknown-code")
         public Result<Void> unknownCode() {
-            throw new BusinessException(new ErrorCode() {
-                /** {@inheritDoc} */
-                @Override
-                public int code() {
-                    return 9999;
-                }
+            throw new BusinessException(
+                    new ErrorCode() {
+                        /** {@inheritDoc} */
+                        @Override
+                        public int code() {
+                            return 9999;
+                        }
 
-                /** {@inheritDoc} */
-                @Override
-                public String message() {
-                    return "secret-value";
-                }
-            });
+                        /** {@inheritDoc} */
+                        @Override
+                        public String message() {
+                            return "secret-value";
+                        }
+                    });
         }
     }
 }

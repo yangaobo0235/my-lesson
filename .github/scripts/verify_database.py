@@ -12,6 +12,7 @@ import pymysql
 from alembic import command
 from check_database_constraints import verify_constraints
 from pydantic import SecretStr
+from verify_ai_invariants import verify_ai_invariants
 
 from servicedesk_ai.bootstrap.migrations import (
     migrate_database,
@@ -263,6 +264,7 @@ def main() -> None:
             "rerun": "passed",
             "nonempty_guards": 3,
             "business_constraint_checks": verify_constraints(connection),
+            "ai_invariants": verify_ai_invariants(connection),
         }
         # 全部库均由本函数在独占实例内创建，验证从全空环境一次升至head。
         with db.cursor() as cursor:

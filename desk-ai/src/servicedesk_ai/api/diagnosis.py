@@ -109,7 +109,10 @@ async def rename(
     request: Request, actor: Actor, identifier: BusinessId, form: ConversationChange
 ) -> Result[ConversationView]:
     """改名比较会话管理版本。"""
-    return success(request, await services(request).conversations.change(actor, identifier, form))
+    result = await services(request).conversations.change(actor, identifier, form)
+    if result is None:
+        raise RuntimeError("改名未返回会话")
+    return success(request, result)
 
 
 @router.delete("/conversations/{identifier}")
@@ -195,7 +198,22 @@ async def calls(request: Request, actor: Actor, identifier: BusinessId) -> Resul
     return success(request, await services(request).conversations.calls(actor, identifier))
 
 
-@router.post("/generations/{identifier}/stream")
+@router.post(
+    "/generations/{identifier}/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": (
+                "订阅既有运行；JSON事件含generationId、sequence及data，断流后查询原运行。"
+            ),
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+            "headers": {
+                "Cache-Control": {"schema": {"type": "string"}, "description": "no-store"},
+                "X-Accel-Buffering": {"schema": {"type": "string"}, "description": "no"},
+            },
+        }
+    },
+)
 async def stream(request: Request, actor: Actor, identifier: BusinessId) -> StreamingResponse:
     """只订阅已存在运行；断流不判成功，不触发付费重试。"""
     application = services(request)

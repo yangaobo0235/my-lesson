@@ -8,28 +8,40 @@ import com.yangaobo.servicedesk.common.base.ErrorCode;
  * @author yangaobo
  */
 public enum OrganizationErrorCode implements ErrorCode {
-    /** 组织当前不可用。 */
+    /**
+     * 组织当前不可用。
+     */
     ORGANIZATION_UNAVAILABLE(2201, "组织当前不可用");
 
-    /** 稳定错误码。 */
+    /**
+     * 稳定错误码。
+     */
     private final int code;
 
-    /** 安全错误提示。 */
+    /**
+     * 安全错误提示。
+     */
     private final String message;
 
-    /** 固定错误合同。 */
+    /**
+     * 固定错误合同。
+     */
     OrganizationErrorCode(int code, String message) {
         this.code = code;
         this.message = message;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public int code() {
         return code;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public String message() {
         return message;

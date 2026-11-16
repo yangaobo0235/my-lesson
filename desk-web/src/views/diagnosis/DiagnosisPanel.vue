@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -24,7 +24,6 @@ import {
   draftReceipt,
   putFeedback,
   shareFeedback,
-  subscribeGeneration,
   generationCalls,
   type GenerationCalls,
   deleteConversation,
@@ -58,6 +57,7 @@ import { originalLink } from '../../api/knowledge/knowledgeApi'
 import { newRequestId } from '../../api/http'
 import { useAuthStore } from '../../stores/authStore'
 import { useOperation } from '../../composables/useOperation'
+import { useGenerationSubscription } from '../../composables/useGenerationSubscription'
 import SupportContextFields from '../support/SupportContextFields.vue'
 
 /** 本人私有会话；断流查询原运行，建议必须人工编辑确认后进入正式工单。 @author yangaobo */
@@ -126,10 +126,37 @@ const adoption = ref<
 const feedback = ref<Feedback | null>(null),
   feedbackComment = ref(''),
   notice = ref(''),
-  streaming = ref(false),
   newName = ref('')
-let subscription: AbortController | undefined,
-  selection = 0
+let selection = 0
+const {
+  streaming,
+  follow: followGeneration,
+  stop: stopSubscription,
+} = useGenerationSubscription({
+  signal,
+  csrf: () => auth.token(),
+  status: (id, status) => {
+    if (current.value?.id === id) current.value = { ...current.value, status }
+  },
+  notice: (message) => {
+    notice.value = message
+  },
+  snapshot: async (snapshot) => {
+    current.value = snapshot
+    await loadCurrent()
+  },
+  failed: (failure) => {
+    error.value = failure instanceof Error ? failure.message : '原运行核对失败'
+    if (current.value)
+      current.value = {
+        ...current.value,
+        answer: null,
+        citations: [],
+        structuredResult: null,
+        sourcesHidden: true,
+      }
+  },
+})
 const active = computed(
   () => !!current.value && ['QUEUED', 'RUNNING'].includes(current.value.status),
 )
@@ -160,12 +187,16 @@ watch(
   },
 )
 async function loadList() {
+  const version = selection,
+    owner = auth.user?.ownerId
   const value = await listConversations(
     conversationPage.value,
     mode.value,
     props.ticket?.id,
     signal,
   )
+  if (signal.aborted || version !== selection || owner !== auth.user?.ownerId)
+    return
   conversations.value = value.records
   conversationTotal.value = value.total
 }
@@ -185,7 +216,7 @@ async function loadCurrent(version = selection) {
   factTotal.value = f.total
 }
 function select(value: Conversation) {
-  subscription?.abort()
+  stopSubscription()
   selection++
   const version = selection
   void run(async () => {
@@ -199,6 +230,7 @@ function select(value: Conversation) {
     factPage.value = 1
     context.value = { ...value.supportContext }
     await loadCurrent(version)
+    if (version !== selection || signal.aborted) return
     const latest = turns.value.at(-1)
     if (latest) {
       current.value = latest
@@ -225,7 +257,7 @@ function create() {
           },
       await auth.token(),
     )
-    subscription?.abort()
+    stopSubscription()
     selection++
     conversation.value = value
     current.value = null
@@ -248,58 +280,9 @@ function loadCalls() {
   })
 }
 async function follow(value: Generation, version: number) {
-  subscription?.abort()
-  const controller = new AbortController()
-  subscription = controller
-  streaming.value = true
-  const live = () =>
-    !controller.signal.aborted && !signal.aborted && version === selection
-  try {
-    const complete = await subscribeGeneration(
-      value.id,
-      await auth.token(),
-      controller.signal,
-      (status) => {
-        if (live() && current.value?.id === value.id)
-          current.value = { ...current.value, status }
-      },
-      (tool) => {
-        if (live()) notice.value = `只读工具 ${tool.name}：${tool.status}`
-      },
-    )
-    if (!live()) return
-    if (!complete)
-      notice.value = '订阅已断开，正在核对原运行；没有重新提交问题。'
-  } catch (failure) {
-    if (live())
-      notice.value =
-        failure instanceof Error ? failure.message : '订阅已中断，请核对原运行'
-  } finally {
-    if (live()) {
-      streaming.value = false
-      try {
-        const snapshot = await getGeneration(value.id, signal)
-        if (live()) {
-          current.value = snapshot
-          await loadCurrent(version)
-        }
-      } catch (failure) {
-        if (live()) {
-          error.value =
-            failure instanceof Error ? failure.message : '原运行核对失败'
-          if (current.value)
-            current.value = {
-              ...current.value,
-              answer: null,
-              citations: [],
-              structuredResult: null,
-              sourcesHidden: true,
-            }
-        }
-      }
-    }
-  }
+  await followGeneration(value.id, () => version === selection)
 }
+
 function send() {
   void run(async () => {
     if (!conversation.value) throw new Error('请先创建或选择本人会话')
@@ -350,7 +333,7 @@ function cancel() {
   void run(async () => {
     if (!current.value) return
     current.value = await cancelGeneration(current.value.id, await auth.token())
-    subscription?.abort()
+    stopSubscription()
     streaming.value = false
     await loadCurrent()
   })
@@ -547,7 +530,7 @@ function remove() {
       conversation.value.rowVersion,
       await auth.token(),
     )
-    subscription?.abort()
+    stopSubscription()
     selection++
     conversation.value = null
     current.value = null
@@ -590,7 +573,7 @@ onMounted(() => {
 watch(
   () => auth.user?.ownerId,
   () => {
-    subscription?.abort()
+    stopSubscription()
     selection++
     conversation.value = null
     current.value = null
@@ -602,7 +585,6 @@ watch(
     adoption.value = null
   },
 )
-onScopeDispose(() => subscription?.abort())
 
 function conversationPagePrevious() {
   conversationPage.value--

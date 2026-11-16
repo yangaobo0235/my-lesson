@@ -5,6 +5,7 @@ import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from tempfile import TemporaryFile
 
 import grpc
 from opentelemetry import propagate
@@ -23,6 +24,7 @@ from desk_contracts.knowledge.v1.source_pb2_grpc import (
 from desk_contracts.ticket.v1.support_pb2_grpc import SupportAccessServiceStub
 from servicedesk_ai.bootstrap.components import RpcSettings
 from servicedesk_ai.infrastructure.identity import IdentityClient
+from servicedesk_ai.infrastructure.rpc_contract import remaining_seconds
 
 
 class DomainRpc:
@@ -34,6 +36,7 @@ class DomainRpc:
         ticket: grpc.aio.Channel,
         knowledge: grpc.aio.Channel,
         token: str,
+        original_directory: Path = Path("../.local/runtime/originals"),
     ) -> None:
         """由装配器创建，客户端不自行决定任意目标地址。"""
         self.identity = identity
@@ -41,8 +44,9 @@ class DomainRpc:
         self.knowledge = KnowledgeSourceServiceStub(knowledge)
         self.original = OriginalFileServiceStub(knowledge)
         self.token = token
+        self.original_directory = original_directory
 
-    def options(self, seconds: float = 3) -> dict[str, object]:
+    def options(self, seconds: float = 5) -> dict[str, object]:
         """只传播受控W3C上下文，业务调用禁自动重试。"""
         carrier: dict[str, str] = {}
         propagate.inject(carrier)
@@ -53,15 +57,15 @@ class DomainRpc:
                 for key, value in carrier.items()
                 if key in {"traceparent", "tracestate"}
             ),
-            "timeout": seconds,
+            "timeout": remaining_seconds(seconds),
             "wait_for_ready": False,
         }
 
     async def read_original(
         self, document_id: str, job_id: str, expected_sha: str, content_format: str
     ) -> bytes:
-        """同一30秒预算内至多重读一次不可用流，始终沿精确原件和原任务身份。"""
-        deadline = asyncio.get_running_loop().time() + 30
+        """同一120秒预算内至多重读一次不可用流，始终沿精确原件和原任务身份。"""
+        deadline = asyncio.get_running_loop().time() + remaining_seconds(120)
         for attempt in range(2):
             try:
                 return await self._read_original_once(
@@ -93,7 +97,10 @@ class DomainRpc:
             OriginalRequest(document_id=document_id, job_id=job_id),
             **self.options(remaining_seconds),
         )
-        data = bytearray()
+        self.original_directory.mkdir(parents=True, exist_ok=True)
+        scratch = TemporaryFile(mode="w+b", dir=self.original_directory)
+        offset = 0
+        digest = hashlib.sha256()
         total = None
         sha = None
         try:
@@ -119,16 +126,20 @@ class DomainRpc:
                     or part.HasField("content_format")
                 ):
                     raise ValueError("原件元信息重复")
-                if part.offset != len(data) or len(part.data) > 65536:
+                if part.offset != offset or len(part.data) > 65536:
                     raise ValueError("原件流不连续")
-                data.extend(part.data)
-                if len(data) > total:
+                if offset + len(part.data) > total:
                     raise ValueError("原件流超总量")
-            if total is None or len(data) != total or hashlib.sha256(data).hexdigest() != sha:
+                scratch.write(part.data)
+                digest.update(part.data)
+                offset += len(part.data)
+            if total is None or offset != total or digest.hexdigest() != sha:
                 raise ValueError("原件流未完整核验")
-            return bytes(data)
+            scratch.seek(0)
+            return scratch.read()
         finally:
             stream.cancel()
+            scratch.close()
 
     async def sources(self, query: SourceQuery) -> AuthorizedSources:
         """只有knowledge当前授权的任务集合可用于召回过滤。"""
@@ -172,6 +183,7 @@ async def open_domain_rpc(settings: RpcSettings) -> AsyncIterator[DomainRpc]:
             channels[1],
             channels[2],
             settings.service_token.get_secret_value(),
+            Path(settings.original_directory),
         )
     finally:
         for channel in reversed(channels):

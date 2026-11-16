@@ -170,3 +170,6 @@ logging:
       max-file-size: 20MB
       max-history: 3
       total-size-cap: 512MB
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml

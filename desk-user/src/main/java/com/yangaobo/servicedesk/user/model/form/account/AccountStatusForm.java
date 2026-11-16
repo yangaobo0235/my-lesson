@@ -1,16 +1,16 @@
 package com.yangaobo.servicedesk.user.model.form.account;
 
 import com.yangaobo.servicedesk.common.base.IdVersionForm;
-
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-
-import java.io.Serial;
-import java.io.Serializable;
 
 /**
  * 账号启停的输入约束。
@@ -22,10 +22,13 @@ import java.io.Serializable;
 @NoArgsConstructor
 public class AccountStatusForm extends IdVersionForm implements Serializable {
 
-    @Serial private static final long serialVersionUID = 1L;
+    @Serial
+    private static final long serialVersionUID = 1L;
 
-    /** 停用或启用原因。 */
-    @io.swagger.v3.oas.annotations.media.Schema(description = "停用或启用原因。")
+    /**
+     * 停用或启用原因。
+     */
+    @Schema(description = "停用或启用原因。")
     @NotBlank
     @Size(max = 500)
     private String reason;

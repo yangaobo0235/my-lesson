@@ -140,6 +140,8 @@ class RocketMqSettings(ComponentSettings):
 class RpcSettings(ComponentSettings):
     """跨语言内部端口与双向TLS文件，缺失时不回退明文。"""
 
+    original_directory: str = "../.local/runtime/originals"
+
     user_target: str = "localhost:26202"
     ticket_target: str = "localhost:26203"
     knowledge_target: str = "localhost:26204"

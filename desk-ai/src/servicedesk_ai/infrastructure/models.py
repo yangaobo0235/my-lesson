@@ -6,7 +6,7 @@ import ssl
 from typing import Literal, cast
 
 import httpx
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, omit
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -164,20 +164,18 @@ class ModelClient:
             response = await self._client.chat.completions.create(
                 model=self.settings.chat_model,
                 messages=messages,
-                **({"tools": tools} if tools else {}),
-                **(
+                tools=tools if tools else omit,
+                response_format=(
                     {
-                        "response_format": {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "diagnosis_result",
-                                "strict": True,
-                                "schema": request.result_schema,
-                            },
-                        }
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "diagnosis_result",
+                            "strict": True,
+                            "schema": request.result_schema,
+                        },
                     }
                     if request.result_schema is not None
-                    else {}
+                    else omit
                 ),
                 temperature=self.settings.temperature,
                 max_tokens=self.settings.max_output_tokens,

@@ -30,7 +30,7 @@ public class XxlJobConfig {
         XxlJobSpringExecutor executor = new XxlJobSpringExecutor();
         executor.setAdminAddresses(properties.getAdminAddresses());
         executor.setAccessToken(properties.getAccessToken());
-        if(properties.getTimeoutSeconds()<1 || properties.getTimeoutSeconds()>10)
+        if (properties.getTimeoutSeconds() < 1 || properties.getTimeoutSeconds() > 10)
             throw new IllegalStateException("desk.xxl-job.timeout-seconds必须为1至10秒");
         executor.setTimeout(properties.getTimeoutSeconds());
         executor.setAppname(properties.getAppName());
