@@ -97,4 +97,29 @@ public class OnsiteBookingVO implements Serializable {
      */
     @Schema(description = "更新时刻")
     private Instant updatedAt;
+    /**
+     * 预约出勤负责人。
+     */
+    private String assignedTechnicianId;
+
+    /**
+     * 登记的实际执行人。
+     */
+    private String performedBy;
+
+    /**
+     * 履约结果说明。
+     */
+    private String finishNote;
+
+    /**
+     * 到访前取消原因。
+     */
+    private String cancelReason;
+
+    /**
+     * 预约独立写版本。
+     */
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.yangaobo.servicedesk.common.serialize.DecimalStringSerializer.class)
+    private Long rowVersion;
 }

@@ -41,7 +41,7 @@ public class TicketEventEntity implements Serializable {
     /**
      * 工单内正序，锁工单分配。
      */
-    private Integer sequenceNumber;
+    private Long sequenceNumber;
 
     /**
      * CREATED / ACCEPTED / ASSIGNED / REASSIGNED / NEED_INFO / SUPPLEMENTED / RESOLVED / UNRESOLVED
@@ -111,4 +111,8 @@ public class TicketEventEntity implements Serializable {
      * 记录创建时间。
      */
     private LocalDateTime createdAt;
+    /**
+     * 本次正式用户动作的统一回执，系统事件为空。
+     */
+    private String actionReceiptId;
 }

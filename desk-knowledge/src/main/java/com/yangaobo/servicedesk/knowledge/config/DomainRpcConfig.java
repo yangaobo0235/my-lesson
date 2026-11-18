@@ -2,6 +2,7 @@ package com.yangaobo.servicedesk.knowledge.config;
 
 import com.yangaobo.servicedesk.knowledge.rpc.DomainRpcInterceptor;
 import com.yangaobo.servicedesk.knowledge.rpc.KnowledgeSourceRpcService;
+import com.yangaobo.servicedesk.knowledge.rpc.KnowledgeEvidenceRpcService;
 import com.yangaobo.servicedesk.knowledge.rpc.OriginalFileRpcService;
 import com.yangaobo.servicedesk.knowledge.security.DomainServiceCredentials;
 import io.grpc.Server;
@@ -42,6 +43,7 @@ public class DomainRpcConfig {
             matchIfMissing = true)
     public SmartLifecycle domainRpcLifecycle(
             KnowledgeSourceRpcService knowledgeSourceRpcService,
+            KnowledgeEvidenceRpcService knowledgeEvidenceRpcService,
             OriginalFileRpcService originalFileRpcService,
             DomainServiceCredentials credentials,
             Propagator propagator,
@@ -64,6 +66,7 @@ public class DomainRpcConfig {
                         .maxInboundMessageSize(4 * 1024 * 1024)
                         .maxConcurrentCallsPerConnection(32)
                         .addService(knowledgeSourceRpcService)
+                        .addService(knowledgeEvidenceRpcService)
                         .addService(originalFileRpcService)
                         .intercept(new DomainRpcInterceptor(credentials, propagator, tracer))
                         .build();

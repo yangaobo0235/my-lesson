@@ -22,6 +22,7 @@ ROOT_FILES = {
     ".gitignore",
     ".gitattributes",
     ".editorconfig",
+    ".dockerignore",
 }
 ROOT_DIRECTORIES = JAVA_MODULES | {".github", "docs", "desk-ai", "desk-web"}
 AI_ROOT = {

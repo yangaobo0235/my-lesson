@@ -1,6 +1,7 @@
 package com.yangaobo.servicedesk.ticket.config;
 
 import com.yangaobo.servicedesk.ticket.rpc.DomainRpcInterceptor;
+import com.yangaobo.servicedesk.ticket.rpc.DiagnosticAttachmentRpcService;
 import com.yangaobo.servicedesk.ticket.rpc.SupportAccessRpcService;
 import com.yangaobo.servicedesk.ticket.security.DomainServiceCredentials;
 import io.grpc.Server;
@@ -41,6 +42,7 @@ public class DomainRpcConfig {
             matchIfMissing = true)
     public SmartLifecycle domainRpcLifecycle(
             SupportAccessRpcService supportAccessRpcService,
+            DiagnosticAttachmentRpcService diagnosticAttachmentRpcService,
             DomainServiceCredentials credentials,
             Propagator propagator,
             Tracer tracer,
@@ -62,6 +64,7 @@ public class DomainRpcConfig {
                         .maxInboundMessageSize(4 * 1024 * 1024)
                         .maxConcurrentCallsPerConnection(32)
                         .addService(supportAccessRpcService)
+                        .addService(diagnosticAttachmentRpcService)
                         .intercept(new DomainRpcInterceptor(credentials, propagator, tracer))
                         .build();
         return new RpcLifecycle(server, executor);

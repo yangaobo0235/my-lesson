@@ -15,6 +15,11 @@ import org.apache.ibatis.annotations.Param;
  */
 public interface DocumentMapper extends BaseMapper<DocumentEntity> {
     /**
+     * 系列锁内读取最近已发布过的修订，风险撤回仍保留后继关系。
+     */
+    DocumentEntity latestPublished(@Param("seriesId") String seriesId);
+
+    /**
      * 固定行锁在业务短事务内使用，外部调用不得持锁。
      */
     DocumentEntity lock(@Param("id") String id);

@@ -9,6 +9,10 @@ import com.yangaobo.servicedesk.ticket.model.entity.OnsiteSlotEntity;
 import com.yangaobo.servicedesk.ticket.model.entity.TicketEntity;
 import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteBookingForm;
 import com.yangaobo.servicedesk.ticket.service.IOnsiteBookingService;
+import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteCancelForm;
+import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteFinishForm;
+import com.yangaobo.servicedesk.ticket.component.IdentityVerificationClient;
+import com.yangaobo.servicedesk.api.user.dto.EligibilityDTO;
 import org.springframework.boot.SpringApplication;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -29,7 +33,25 @@ class VerifyOnsite {
      */
     public static void main(String[] args) throws Exception {
         if (!"true".equals(System.getenv("DESK_VERIFY_ISOLATED"))) throw new IllegalStateException("仅独占验收环境");
-        try (var app = SpringApplication.run(TicketApplication.class, "--server.port=0")) {
+        var application = new SpringApplication(TicketApplication.class);
+        application.addInitializers(context -> {
+            // 此入口只验证独占数据库事务；身份网络合同由独立验收执行。
+            var definition = new org.springframework.beans.factory.support.RootBeanDefinition(IdentityVerificationClient.class);
+            definition.setPrimary(true);
+            definition.setInstanceSupplier(() -> new IdentityVerificationClient(null, new ObjectMapper(), "x".repeat(32)) {
+                /** 隔离夹具只提供负责人可用性，不模拟浏览器认证。 */
+                @Override
+                public EligibilityDTO eligibility(IdentityDTO actor, String customer, String assignee) {
+                    var result = new EligibilityDTO();
+                    result.setCustomerActive(true);
+                    result.setAssigneeAvailable(true);
+                    return result;
+                }
+            });
+            ((org.springframework.context.support.GenericApplicationContext) context)
+                    .registerBeanDefinition("onsiteVerificationIdentity", definition);
+        });
+        try (var app = application.run("--server.port=0")) {
             var db = app.getBean(JdbcTemplate.class);
             require("desk_ticket_ci".equals(db.queryForObject("SELECT DATABASE()", String.class)), "独占库");
             var tickets = app.getBean(TicketMapper.class);
@@ -104,8 +126,9 @@ class VerifyOnsite {
                 var receipt = winning == a ? x : y;
                 require(!service.book(owner, winning.getId(), key).isCreated(), "原键重放返回原资源");
                 require(slots.selectById(future.getId()).getReservedCount() == 1, "重放不重复扣容量");
-                require(service.end(owner, winning.getId(), receipt.getId(), null).getStatus().equals("CANCELLED"), "到访前取消");
-                service.end(owner, winning.getId(), receipt.getId(), null);
+                var cancel = cancellation(0L);
+                require(service.cancel(owner, winning.getId(), receipt.getId(), cancel).getBookingStatus().equals("CANCELLED"), "到访前取消");
+                service.cancel(owner, winning.getId(), receipt.getId(), cancel);
                 require(slots.selectById(future.getId()).getReservedCount() == 0, "重复取消只回补一次");
                 require(service.book(owner, winning.getId(), key).getBooking().getStatus().equals("CANCELLED"), "原键不复活取消预约");
                 var changed = request(future.getId());
@@ -119,22 +142,30 @@ class VerifyOnsite {
             String booking = id();
             db.update("""
                     INSERT INTO sd_onsite_booking
-                    (id,ticket_id,slot_id,service_area_code,visit_address,client_request_id,request_hash,status,confirmed_at,created_at,updated_at)
-                    VALUES (?,?,?,'VERIFY','隔离地址',?,?,'CONFIRMED',UTC_TIMESTAMP(6)-INTERVAL 1 DAY,UTC_TIMESTAMP(6)-INTERVAL 1 DAY,UTC_TIMESTAMP(6)-INTERVAL 1 DAY)
-                    """, booking, c.getId(), past.getId(), id(), "b".repeat(64));
+                    (id,ticket_id,slot_id,service_area_code,visit_address,client_request_id,request_hash,status,assigned_technician_id,confirmed_at,created_at,updated_at)
+                    VALUES (?,?,?,'VERIFY','隔离地址',?,?,'CONFIRMED',?,UTC_TIMESTAMP(6)-INTERVAL 1 DAY,UTC_TIMESTAMP(6)-INTERVAL 1 DAY,UTC_TIMESTAMP(6)-INTERVAL 1 DAY)
+                    """, booking, c.getId(), past.getId(), id(), "b".repeat(64), handler);
             db.update("UPDATE sd_onsite_slot SET reserved_count=1 WHERE id=?", past.getId());
-            conflict(() -> service.end(actor(c, false), c.getId(), booking, null));
-            require(service.end(actor(c, true), c.getId(), booking, "VISITED").getFinishResult().equals("VISITED"), "真实履约");
-            service.end(actor(c, true), c.getId(), booking, "VISITED");
-            conflict(() -> service.end(actor(c, true), c.getId(), booking, "NOT_PERFORMED"));
-            require(service.end(actor(c, false), c.getId(), booking, null).getStatus().equals("FINISHED"), "取消返回已履约真实状态");
+            conflict(() -> service.cancel(actor(c, false), c.getId(), booking, cancellation(0L)));
+            var finish = new OnsiteFinishForm();
+            finish.setClientActionId(id());
+            finish.setRowVersion(0L);
+            finish.setFinishResult("VISITED");
+            finish.setPerformedBy(handler);
+            finish.setFinishNote("现场检查已完成并记录结果");
+            var result = service.finish(actor(c, true), c.getId(), booking, finish);
+            require(result.getBookingStatus().equals("FINISHED"), "真实履约");
+            require(service.finish(actor(c, true), c.getId(), booking, finish).getReceiptId().equals(result.getReceiptId()), "原键履约回执");
+            finish.setFinishResult("NOT_PERFORMED");
+            conflict(() -> service.finish(actor(c, true), c.getId(), booking, finish));
+            conflict(() -> service.cancel(actor(c, false), c.getId(), booking, cancellation(1L)));
             require(slots.selectById(past.getId()).getReservedCount() == 1, "已履约保留容量占用");
             require(db.queryForObject("SELECT COUNT(*) FROM sd_ticket_event WHERE onsite_booking_id=?", Long.class, booking) == 1, "履约事件只追加一次");
             IdentityDTO intruder = actor(c, false);
             intruder.setOwnerId(id());
             conflict(() -> service.history(intruder, c.getId(), new BasePageForm()));
             require(service.history(actor(c, false), c.getId(), new BasePageForm()).getTotal() == 1, "本人读取历史");
-            System.out.println("PASS onsite: capacity race, replay, hash conflict, cancel once, finish replay/conflict, visibility, timeline, notifications");
+            System.out.println("PASS onsite (identity availability fixture, real MySQL): capacity race, replay, hash conflict, cancel once, finish replay/conflict, visibility, timeline, notifications");
         }
     }
 
@@ -216,7 +247,19 @@ class VerifyOnsite {
     private static OnsiteBookingForm request(String slot) {
         var form = new OnsiteBookingForm();
         form.setSlotId(slot);
+        form.setRowVersion(0L);
         form.setClientRequestId(id());
+        return form;
+    }
+
+    /**
+     * 每个新的取消意图具有自己的原键和独立预约版本。
+     */
+    private static OnsiteCancelForm cancellation(long version) {
+        var form = new OnsiteCancelForm();
+        form.setClientActionId(id());
+        form.setRowVersion(version);
+        form.setReason("客户临时无法到场");
         return form;
     }
 

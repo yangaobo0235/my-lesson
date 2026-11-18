@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from opentelemetry.trace import SpanKind
@@ -13,11 +15,31 @@ from servicedesk_ai.infrastructure.tracing import parent
 from servicedesk_ai.schemas.indexing import IndexCommand
 from servicedesk_ai.services.indexing import IndexService
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("servicedesk_ai.receiver")
+
+
+def configure_direct_transport() -> None:
+    """独立receiver清除进程继承的代理，覆盖SDK未暴露的Channel选项。
+
+    RocketMQ SDK内部自行创建连接及路由后的通道，不能注入单通道配置。此设置仅
+    作用于本进程并在创建SDK前执行，不修改用户系统代理、不替换SDK函数或TLS。
+    同时清理gRPC的HTTPS/HTTP回退变量；Windows空变量会被原生运行时视为删除，
+    不能仅设空grpc_proxy后仍让SDK回退到其他代理。其他应用进程保持原环境。
+    """
+    for name in (
+        "grpc_proxy",
+        "https_proxy",
+        "http_proxy",
+        "GRPC_PROXY",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+    ):
+        os.environ.pop(name, None)
 
 
 async def serve() -> None:
     """同步SDK位于专属有界线程，AsyncConnection始终留在当前事件循环。"""
+    configure_direct_transport()
     settings = get_settings()
     mq = settings.rocketmq
     config = ClientConfiguration(
@@ -34,16 +56,26 @@ async def serve() -> None:
     )
     loop = asyncio.get_running_loop()
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="index-receiver")
-    async with open_resources(settings) as resources:
+    async with open_resources(settings, process="receiver") as resources:
         service = IndexService(resources.database)
         try:
             await loop.run_in_executor(executor, consumer.startup)
+            LOGGER.info("索引接收器已启动", extra={"event": "receiver_ready"})
             while True:
+                message_id = "unknown"
+                delivery_attempt: int | None = None
                 try:
                     messages = await loop.run_in_executor(
                         executor, consumer.receive, 1, mq.invisible_seconds
                     )
                     for message in messages or []:
+                        if isinstance(message.message_id, str) and re.fullmatch(
+                            r"[0-9A-Fa-f]{32,64}", message.message_id
+                        ):
+                            message_id = message.message_id
+                        attempt = message.delivery_attempt
+                        if type(attempt) is int and 1 <= attempt <= 10000:
+                            delivery_attempt = attempt
                         if len(message.body) > 65536:
                             raise ValueError("索引信封超过预算")
                         command = IndexCommand.model_validate_json(message.body)
@@ -61,7 +93,13 @@ async def serve() -> None:
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
-                    LOGGER.warning("索引消息未确认 errorType=%s", type(error).__name__)
+                    LOGGER.warning(
+                        "索引消息未确认 messageId=%s deliveryAttempt=%s errorType=%s",
+                        message_id,
+                        delivery_attempt,
+                        type(error).__name__,
+                        extra={"event": "index_message_unacknowledged"},
+                    )
                     await asyncio.sleep(1)
         finally:
             await loop.run_in_executor(executor, consumer.shutdown)

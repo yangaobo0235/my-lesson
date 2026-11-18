@@ -100,7 +100,7 @@ public class IdentityVerificationServiceImpl implements IIdentityVerificationSer
                         && "CUSTOMER".equals(organization.getOrganizationType())
                         && "ACTIVE".equals(organization.getStatus()));
         if (form.getAssigneeId() != null) {
-            if (!staff) throw new BusinessException(CommonErrorCode.FORBIDDEN);
+            // 仅内部ticket调用；客户申请预约时核验该客户范围的现场负责人，不返回账号资料。
             AccountEntity assignee = accountMapper.selectById(form.getAssigneeId());
             OrganizationEntity team =
                     assignee == null

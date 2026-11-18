@@ -28,6 +28,9 @@ import com.yangaobo.servicedesk.knowledge.model.entity.DocumentEventEntity;
 import com.yangaobo.servicedesk.knowledge.model.entity.DocumentRuleEntity;
 import com.yangaobo.servicedesk.knowledge.model.entity.IndexJobEntity;
 import com.yangaobo.servicedesk.knowledge.model.enums.ContentFormatEnum;
+import com.yangaobo.servicedesk.knowledge.model.enums.DocumentAccessStatusEnum;
+import com.yangaobo.servicedesk.knowledge.model.enums.DocumentSafetyActionEnum;
+import com.yangaobo.servicedesk.knowledge.model.form.DocumentSafetyForm;
 import com.yangaobo.servicedesk.knowledge.model.enums.IndexCommandTypeEnum;
 import com.yangaobo.servicedesk.knowledge.model.enums.IndexTransactionStateEnum;
 import com.yangaobo.servicedesk.knowledge.model.enums.PublicationStatusEnum;
@@ -41,6 +44,8 @@ import com.yangaobo.servicedesk.knowledge.model.vo.DocumentVO;
 import com.yangaobo.servicedesk.knowledge.service.IDocumentService;
 import com.yangaobo.servicedesk.knowledge.service.KnowledgeRules;
 import com.yangaobo.servicedesk.knowledge.service.KnowledgeViews;
+import com.yangaobo.servicedesk.knowledge.service.ProcedureRules;
+import com.yangaobo.servicedesk.knowledge.model.form.DocumentProcedureForm;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -108,6 +113,8 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
             throws IOException {
         KnowledgeRules.administrator(actor);
         normalizeRules(form.getRules());
+        if (form.getProcedureDefinition() != null)
+            ProcedureRules.validate(form.getProcedureDefinition(), form.getContentFormat());
         if (filename == null
                 || filename.isBlank()
                 || filename.length() > 255
@@ -232,8 +239,12 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
                                     value.setRevisionLabel(form.getRevisionLabel());
                                     value.setIssuedOn(form.getIssuedOn());
                                     value.setApplicabilityNote(form.getApplicabilityNote());
+                                    value.setProcedureDefinition(form.getProcedureDefinition());
+                                    if (form.getProcedureDefinition() != null)
+                                        value.setProcedureSha256(knowledgeDigest.hash(form.getProcedureDefinition()));
                                     value.setPublicationStatus(
                                             PublicationStatusEnum.DRAFT.getValue());
+                                    value.setAccessStatus(DocumentAccessStatusEnum.ALLOWED.getValue());
                                     value.setCreatedBy(actor.getOwnerId());
                                     value.setCreatedAt(now);
                                     value.setUpdatedAt(now);
@@ -343,22 +354,30 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
                                                     DocumentEntity::getPublicationStatus,
                                                     PublicationStatusEnum.PUBLISHED.getValue(),
                                                     PublicationStatusEnum.DISABLED.getValue()));
+                    if (current == null) {
+                        current = baseMapper.latestPublished(document.getSeriesId());
+                        if (current != null && !PublicationStatusEnum.WITHDRAWN.getValue().equals(current.getPublicationStatus())) {
+                            throw new BusinessException(CommonErrorCode.CONFLICT);
+                        }
+                    }
                     if (current != null) {
                         current = baseMapper.lock(current.getId());
                         if (!current.getId().equals(form.getReplacesDocumentId())
                                 || current.getRevisionNumber() >= document.getRevisionNumber())
                             throw new BusinessException(CommonErrorCode.CONFLICT);
                         var prior = view(current);
-                        current.setPublicationStatus(PublicationStatusEnum.RETIRED.getValue());
-                        touch(current, now);
                         document.setReplacesDocumentId(current.getId());
-                        event(
-                                actor,
-                                current,
-                                PublicationStatusEnum.RETIRED.getValue(),
-                                document.getId(),
-                                prior,
-                                now);
+                        if (!PublicationStatusEnum.WITHDRAWN.getValue().equals(current.getPublicationStatus())) {
+                            current.setPublicationStatus(PublicationStatusEnum.RETIRED.getValue());
+                            touch(current, now);
+                            event(
+                                    actor,
+                                    current,
+                                    PublicationStatusEnum.RETIRED.getValue(),
+                                    document.getId(),
+                                    prior,
+                                    now);
+                        }
                     } else if (form.getReplacesDocumentId() != null)
                         throw new BusinessException(CommonErrorCode.CONFLICT);
                     document.setPublicationStatus(PublicationStatusEnum.PUBLISHED.getValue());
@@ -414,6 +433,155 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
                     return view(document);
                 },
                 () -> null);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public DocumentVO safety(IdentityDTO actor, DocumentSafetyForm form, DocumentSafetyActionEnum action) {
+        KnowledgeRules.administrator(actor);
+        form.setReason(form.getReason().strip());
+        String hash = knowledgeDigest.hash(List.of(action.getValue(), form));
+        var previous = safetyReceipt(actor, form, hash);
+        if (previous != null) return previous;
+        var snapshot = baseMapper.selectById(form.getId());
+        if (snapshot == null) throw new BusinessException(CommonErrorCode.NOT_FOUND);
+        return businessTransaction.execute(() -> {
+            documentSeriesMapper.lock(snapshot.getSeriesId());
+            var document = baseMapper.lock(form.getId());
+            var receipt = safetyReceipt(actor, form, hash);
+            if (receipt != null) return receipt;
+            version(document, form.getRowVersion());
+            var before = view(document);
+            switch (action) {
+                case WITHDRAWN -> {
+                    if (!Set.of("PUBLISHED", "DISABLED", "RETIRED").contains(document.getPublicationStatus()))
+                        throw new BusinessException(CommonErrorCode.CONFLICT);
+                    document.setPublicationStatus(PublicationStatusEnum.WITHDRAWN.getValue());
+                    document.setWithdrawalReason(form.getReason());
+                }
+                case ACCESS_REVOKED, ACCESS_RESTORED -> {
+                    boolean restore = action == DocumentSafetyActionEnum.ACCESS_RESTORED;
+                    String expected = (restore ? DocumentAccessStatusEnum.REVOKED : DocumentAccessStatusEnum.ALLOWED).getValue();
+                    if (PublicationStatusEnum.DELETED.getValue().equals(document.getPublicationStatus())
+                            || !expected.equals(document.getAccessStatus()))
+                        throw new BusinessException(CommonErrorCode.CONFLICT);
+                    document.setAccessStatus((restore ? DocumentAccessStatusEnum.ALLOWED : DocumentAccessStatusEnum.REVOKED).getValue());
+                    document.setAccessReason(form.getReason());
+                }
+            }
+            LocalDateTime now = baseMapper.decisionTime();
+            touch(document, now);
+            var result = view(document);
+            var details = objectMapper.createObjectNode().put("schema_version", 1).put("reason", form.getReason());
+            details.set("before", objectMapper.valueToTree(before));
+            details.set("after", objectMapper.valueToTree(result));
+            var event = new DocumentEventEntity();
+            event.setId(id());
+            event.setDocumentId(document.getId());
+            event.setActorId(actor.getOwnerId());
+            event.setEventType(action.getValue());
+            event.setClientActionId(form.getClientActionId());
+            event.setRequestHash(hash);
+            event.setDetails(details);
+            event.setCreatedAt(now);
+            documentEventMapper.insert(event);
+            return result;
+        }, () -> safetyReceipt(actor, form, hash));
+    }
+
+    /**
+     * 原动作摘要同义返回提交时快照，后续版本和状态不影响已提交回执。
+     */
+    private DocumentVO safetyReceipt(IdentityDTO actor, DocumentSafetyForm form, String hash) {
+        return actionReceipt(actor, form.getId(), form.getClientActionId(), hash);
+    }
+
+    /**
+     * 当前管理员授权内重放同义动作，不以新版本拒绝已提交结果。
+     */
+    private DocumentVO actionReceipt(IdentityDTO actor, String documentId, String key, String hash) {
+        var event = documentEventMapper.selectOne(new LambdaQueryWrapper<DocumentEventEntity>()
+                .eq(DocumentEventEntity::getDocumentId, documentId)
+                .eq(DocumentEventEntity::getActorId, actor.getOwnerId())
+                .eq(DocumentEventEntity::getClientActionId, key));
+        if (event == null) return null;
+        if (!hash.equals(event.getRequestHash())) throw new BusinessException(CommonErrorCode.CONFLICT);
+        return objectMapper.convertValue(event.getDetails().required("after"), DocumentVO.class);
+    }
+
+    /**
+     * {@inheritDoc} 原件读取和AI页数核对在事务外，不占用文档行锁。
+     */
+    @Override
+    public DocumentVO validateProcedure(IdentityDTO actor, DocumentProcedureForm form) {
+        KnowledgeRules.administrator(actor);
+        String hash = knowledgeDigest.hash(List.of("PROCEDURE_VALIDATED", form));
+        var previous = actionReceipt(actor, form.getId(), form.getClientActionId(), hash);
+        if (previous != null) return previous;
+        var snapshot = baseMapper.selectById(form.getId());
+        version(snapshot, form.getRowVersion());
+        if (!"DRAFT".equals(snapshot.getPublicationStatus()) || snapshot.getProcedureDefinition() == null)
+            throw new BusinessException(CommonErrorCode.CONFLICT);
+        ProcedureRules.validate(snapshot.getProcedureDefinition(), snapshot.getContentFormat());
+        if (!knowledgeDigest.hash(snapshot.getProcedureDefinition()).equals(snapshot.getProcedureSha256()))
+            throw new BusinessException(CommonErrorCode.CONFLICT);
+        int extent;
+        if ("MARKDOWN".equals(snapshot.getContentFormat())) {
+            try (var original = originalStorage.open(snapshot, null)) {
+                byte[] bytes = original.body().readNBytes(1048577);
+                if (bytes.length != snapshot.getFileSizeBytes() || !HexFormat.of().formatHex(
+                        MessageDigest.getInstance("SHA-256").digest(bytes)).equals(snapshot.getFileSha256()))
+                    throw new BusinessException(CommonErrorCode.UPSTREAM_PROTOCOL_ERROR);
+                extent = Math.toIntExact(StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(bytes)).toString().lines().count());
+            } catch (BusinessException error) {
+                throw error;
+            } catch (Exception error) {
+                throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE);
+            }
+        } else {
+            if (snapshot.getCurrentJobId() == null)
+                throw new BusinessException(DocumentErrorCode.PUBLICATION_NOT_READY);
+            var status = aiIndexClient.status(snapshot.getCurrentJobId());
+            var job = indexJobMapper.selectById(snapshot.getCurrentJobId());
+            if (status == null || job == null || !job.getRequestHash().equals(status.getRequestHash())
+                    || !"SUCCEEDED".equals(status.getStatus()) || !"SUBMIT".equals(status.getLastCommand())
+                    || !status.hasPageCount()) throw new BusinessException(DocumentErrorCode.PUBLICATION_NOT_READY);
+            extent = status.getPageCount();
+        }
+        ProcedureRules.verifyLocations(snapshot.getProcedureDefinition(), snapshot.getContentFormat(), extent);
+        return businessTransaction.execute(() -> {
+            documentSeriesMapper.lock(snapshot.getSeriesId());
+            var document = baseMapper.lock(form.getId());
+            var receipt = actionReceipt(actor, form.getId(), form.getClientActionId(), hash);
+            if (receipt != null) return receipt;
+            version(document, form.getRowVersion());
+            if (!"DRAFT".equals(document.getPublicationStatus())
+                    || !Objects.equals(snapshot.getProcedureSha256(), document.getProcedureSha256()))
+                throw new BusinessException(CommonErrorCode.CONFLICT);
+            LocalDateTime now = baseMapper.decisionTime();
+            document.setProcedureValidatedSha256(document.getProcedureSha256());
+            document.setProcedureValidatedAt(now);
+            document.setProcedureValidatedBy(actor.getOwnerId());
+            touch(document, now);
+            var result = view(document);
+            var details = objectMapper.createObjectNode().put("schema_version", 1)
+                    .put("definition_sha256", document.getProcedureSha256()).put("rule_version", "procedure-v1");
+            details.set("after", objectMapper.valueToTree(result));
+            var event = new DocumentEventEntity();
+            event.setId(id());
+            event.setDocumentId(document.getId());
+            event.setActorId(actor.getOwnerId());
+            event.setEventType("PROCEDURE_VALIDATED");
+            event.setClientActionId(form.getClientActionId());
+            event.setRequestHash(hash);
+            event.setDetails(details);
+            event.setCreatedAt(now);
+            documentEventMapper.insert(event);
+            return result;
+        }, () -> actionReceipt(actor, form.getId(), form.getClientActionId(), hash));
     }
 
     /**
@@ -490,7 +658,9 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
      * 发布前查询真实AI成功与当前副本可见性，不能在锁内外调。
      */
     private void ready(DocumentEntity document) {
-        if (document.getSourceReviewNote() == null
+        procedureReady(document);
+        if (!DocumentAccessStatusEnum.ALLOWED.getValue().equals(document.getAccessStatus())
+                || document.getSourceReviewNote() == null
                 || document.getSourceReviewNote().isBlank()
                 || document.getCurrentJobId() == null
                 || documentRuleMapper.selectCount(
@@ -514,6 +684,9 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
      * 文档锁后按同序锁当前任务，取消准备和取消提交均阻止发布。
      */
     private void localReady(DocumentEntity document) {
+        procedureReady(document);
+        if (!DocumentAccessStatusEnum.ALLOWED.getValue().equals(document.getAccessStatus()))
+            throw new BusinessException(DocumentErrorCode.PUBLICATION_NOT_READY);
         var job = indexJobMapper.lock(document.getCurrentJobId());
         if (job == null
                 || !IndexTransactionStateEnum.COMMITTED.getValue().equals(job.getSubmitState())
@@ -521,6 +694,15 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
                         IndexTransactionStateEnum.NONE.getValue(),
                         IndexTransactionStateEnum.ABORTED.getValue())
                 .contains(job.getCancelState()))
+            throw new BusinessException(DocumentErrorCode.PUBLICATION_NOT_READY);
+    }
+
+    /**
+     * 定义本身不可变，发布与恢复都要求人工校验的是相同定义。
+     */
+    private void procedureReady(DocumentEntity document) {
+        if (document.getProcedureDefinition() != null
+                && (document.getProcedureSha256() == null || !document.getProcedureSha256().equals(document.getProcedureValidatedSha256())))
             throw new BusinessException(DocumentErrorCode.PUBLICATION_NOT_READY);
     }
 

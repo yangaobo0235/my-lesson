@@ -11,15 +11,18 @@ from opentelemetry.trace import NoOpTracer, SpanKind, Tracer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from servicedesk_ai.diagnosis.budget import ExecutionBudgetExceeded
 from servicedesk_ai.infrastructure.domain_rpc import DomainRpc
 from servicedesk_ai.infrastructure.index_replicas import IndexReplicas
 from servicedesk_ai.infrastructure.mineru import MineruClient, parse_artifact
+from servicedesk_ai.infrastructure.models import EmbeddingResponse
 from servicedesk_ai.infrastructure.rpc_contract import request_budget
 from servicedesk_ai.infrastructure.tracing import parent, snapshot
 from servicedesk_ai.repositories import index_execution as queries
 from servicedesk_ai.repositories import index_jobs as jobs
 from servicedesk_ai.schemas.indexing import IndexCommand, ParsedChunk
-from servicedesk_ai.services.parsing import parse_markdown
+from servicedesk_ai.services.model_calls import ModelCalls
+from servicedesk_ai.services.parsing import build_manifest, parse_markdown
 
 LOGGER = logging.getLogger(__name__)
 
@@ -57,10 +60,12 @@ class IndexWorker:
         rpc: DomainRpc,
         mineru: MineruClient,
         replicas: IndexReplicas,
+        models: ModelCalls,
         tracer: Tracer | None = None,
     ) -> None:
         """每个worker拥有资源，不与receiver跨事件循环共享。"""
         self.engine, self.rpc, self.mineru, self.replicas = engine, rpc, mineru, replicas
+        self.models = models
         self.tracer = tracer or NoOpTracer()
 
     async def heartbeat(self, job: jobs.IndexJob) -> None:
@@ -110,7 +115,13 @@ class IndexWorker:
                     and current.status == "RUNNING"
                     and current.claim_token == job.claim_token
                 ):
-                    await jobs.finish_job(db, job, "INDEX_DEPENDENCY_FAILED")
+                    await jobs.finish_job(
+                        db,
+                        job,
+                        "INDEX_BUDGET_EXCEEDED"
+                        if isinstance(error, ExecutionBudgetExceeded)
+                        else "INDEX_DEPENDENCY_FAILED",
+                    )
         finally:
             for task in (heartbeat, execution):
                 task.cancel()
@@ -131,13 +142,19 @@ class IndexWorker:
                     chunks = parse_markdown(data, job.id, job.processing_config)
                 else:
                     chunks, pages = await self.parse_pdf(job, data)
+                chunks = build_manifest(chunks, job.id, job.processing_config)
                 async with self.engine.begin() as db:
                     await jobs.save_manifest(db, job, chunks, pages)
             async with self.engine.begin() as db:
                 await jobs.owned(db, job)
                 await queries.mark_indexing(db, {"id": job.id})
             await self.replicas.prepare()
-            await self.replicas.write_and_verify(job.id, job.document_id, chunks)
+
+            async def embed(texts: list[str]) -> EmbeddingResponse:
+                """索引适配只能通过当前领取的持久调用账目发起Embedding。"""
+                return await self.models.embed(job, texts)
+
+            await self.replicas.write_and_verify(job.id, job.document_id, chunks, embed)
             async with self.engine.begin() as db:
                 await jobs.finish_job(db, job)
 

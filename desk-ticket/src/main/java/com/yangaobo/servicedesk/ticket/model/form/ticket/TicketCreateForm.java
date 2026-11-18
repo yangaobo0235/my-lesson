@@ -95,9 +95,19 @@ public class TicketCreateForm implements Serializable {
     private String serviceLocation;
 
     /**
-     * 可选AI草稿，真实草稿消费者接入前不接受非空。
+     * 可选AI草稿，与根标识及内容摘要一同确认。
      */
-    @Schema(description = "可选AI草稿，真实草稿消费者接入前不接受非空。")
+    @Schema(description = "可选AI草稿，与根标识及内容摘要一同确认。")
     @Identifier
     private String sourceDraftId;
+    /**
+     * 草稿根标识，只用于本地回执对账，新动作仍由内部RPC验证。
+     */
+    @Identifier
+    private String sourceDraftRootId;
+    /**
+     * 用户确认的不可变内容摘要。
+     */
+    @Pattern(regexp = "[0-9a-f]{64}")
+    private String contentSha256;
 }

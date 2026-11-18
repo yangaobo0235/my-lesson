@@ -62,7 +62,15 @@ public final class KnowledgeViews {
         result.setRevisionLabel(value.getRevisionLabel());
         result.setIssuedOn(value.getIssuedOn());
         result.setApplicabilityNote(value.getApplicabilityNote());
+        result.setProcedureDefinition(value.getProcedureDefinition());
+        result.setProcedureSha256(value.getProcedureSha256());
+        result.setProcedureValidatedSha256(value.getProcedureValidatedSha256());
+        result.setProcedureValidatedAt(value.getProcedureValidatedAt() == null ? null : value.getProcedureValidatedAt().toInstant(ZoneOffset.UTC));
+        result.setProcedureValidatedBy(value.getProcedureValidatedBy());
         result.setPublicationStatus(value.getPublicationStatus());
+        result.setAccessStatus(value.getAccessStatus());
+        result.setAccessReason(value.getAccessReason());
+        result.setWithdrawalReason(value.getWithdrawalReason());
         result.setCurrentJobId(value.getCurrentJobId());
         result.setReplacesDocumentId(value.getReplacesDocumentId());
         result.setPublishedAt(

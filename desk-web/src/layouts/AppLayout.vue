@@ -65,11 +65,6 @@ function logout() {
           to="/administration/knowledge"
           >知识管理</RouterLink
         >
-        <RouterLink
-          v-if="auth.has('KNOWLEDGE_ADMIN')"
-          to="/administration/knowledge/feedback"
-          >共享反馈</RouterLink
-        >
         <RouterLink to="/password">修改密码</RouterLink>
       </nav>
       <span>{{ auth.user?.displayName }}</span

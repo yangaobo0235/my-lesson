@@ -46,7 +46,7 @@ spring:
             - id: ticket
               uri: ${desk.downstream.ticket}
               predicates:
-                - Path=/api/v1/tickets/**,/api/v1/admin/service-item/**,/api/v1/admin/service-entitlement/**,/api/v1/admin/product-model/**,/api/v1/admin/device/**,/api/v1/admin/onsite-slot/**,/api/v1/admin/onsite-booking/**
+                - Path=/api/v1/tickets/**,/api/v1/attachments/**,/api/v1/admin/service-item/**,/api/v1/admin/service-entitlement/**,/api/v1/admin/product-model/**,/api/v1/admin/device/**,/api/v1/admin/onsite-slot/**,/api/v1/admin/onsite-booking/**
             - id: knowledge
               metadata:
                 response-timeout: 60000
@@ -58,7 +58,7 @@ spring:
                 response-timeout: 190000
               uri: ${desk.downstream.ai}
               predicates:
-                - Path=/api/v1/ai/**,/api/v1/admin/retrieval/**,/api/v1/admin/feedback/**
+                - Path=/api/v1/ai/**,/api/v1/admin/retrieval/**
     openfeign:
       client:
         config:

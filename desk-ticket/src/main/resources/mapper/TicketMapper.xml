@@ -2,6 +2,12 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
   "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.yangaobo.servicedesk.ticket.mapper.TicketMapper">
+  <update id="advanceEventSequence">
+    UPDATE sd_ticket
+    SET event_sequence = event_sequence + 1
+    WHERE id = #{id}
+      AND event_sequence = #{expected}
+  </update>
   <resultMap id="entityMap" type="com.yangaobo.servicedesk.ticket.model.entity.TicketEntity" autoMapping="true">
     <id column="id" property="id"/>
     <result column="service_scope_snapshot" property="serviceScopeSnapshot"
@@ -54,7 +60,13 @@
       cancelled_at,
       created_at,
       updated_at,
-      row_version
+      row_version,
+      diagnosis_context_version,
+      event_sequence,
+      wait_reason,
+      follow_up_at,
+      wait_cycle,
+      follow_up_notified_at
     FROM sd_ticket
     WHERE id = #{id}
     FOR UPDATE
@@ -106,7 +118,13 @@
     cancelled_at,
     created_at,
     updated_at,
-    row_version
+    row_version,
+    diagnosis_context_version,
+    event_sequence,
+    wait_reason,
+    follow_up_at,
+    wait_cycle,
+    follow_up_notified_at
   </sql>
 
   <sql id="countTicketsFromWhere">
@@ -167,6 +185,10 @@
     ) OR (
       status = 'RESOLVED'
       AND confirmation_due_at &lt;= #{now}
+    ) OR (
+      status IN ('WAITING_CUSTOMER','WAITING_EXTERNAL')
+      AND follow_up_notified_at IS NULL
+      AND follow_up_at &lt;= #{now}
     )
     ORDER BY id
     LIMIT #{limit}

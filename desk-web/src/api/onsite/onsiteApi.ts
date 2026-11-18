@@ -41,6 +41,11 @@ export function booking(value: unknown) {
     status: choices('CONFIRMED', 'REJECTED', 'CANCELLED', 'FINISHED')(o.status),
     resultCode: nullable(choices('SOLD_OUT', 'SLOT_CLOSED'))(o.resultCode),
     finishResult: nullable(choices('VISITED', 'NOT_PERFORMED'))(o.finishResult),
+    assignedTechnicianId: nullable(identifier)(o.assignedTechnicianId),
+    performedBy: nullable(identifier)(o.performedBy),
+    finishNote: nullable(text)(o.finishNote),
+    cancelReason: nullable(text)(o.cancelReason),
+    rowVersion: decimal(o.rowVersion),
     createdAt: text(o.createdAt),
   }
 }
@@ -99,7 +104,14 @@ export const bookingHistory = (
   })
 export const bookOnsite = (
   id: string,
-  body: { slotId: string; clientRequestId: string },
+  body: {
+    slotId: string
+    clientRequestId: string
+    rowVersion: string
+    sourceDraftId?: string
+    sourceDraftRootId?: string
+    contentSha256?: string
+  },
   csrf: string,
 ) => request(`tickets/${id}/onsite-bookings`, booking, { body, csrf })
 export const bookingReceipt = (id: string, key: string, signal?: AbortSignal) =>
@@ -108,21 +120,44 @@ export const bookingReceipt = (id: string, key: string, signal?: AbortSignal) =>
   })
 export const queryBooking = (id: string, csrf: string, signal?: AbortSignal) =>
   request('admin/onsite-booking/query', booking, { body: { id }, csrf, signal })
-export const cancelBooking = (id: string, bookingId: string, csrf: string) =>
-  request(`tickets/${id}/onsite-bookings/${bookingId}/cancel`, booking, {
-    body: {},
-    csrf,
-  })
-export const finishBooking = (
+export type BookingAction =
+  | {
+      name: 'cancel'
+      body: { clientActionId: string; rowVersion: string; reason: string }
+    }
+  | {
+      name: 'assign'
+      body: {
+        clientActionId: string
+        rowVersion: string
+        technicianId: string
+        reason: string
+      }
+    }
+  | {
+      name: 'finish'
+      body: {
+        clientActionId: string
+        rowVersion: string
+        finishResult: 'VISITED' | 'NOT_PERFORMED'
+        performedBy: string
+        finishNote: string
+      }
+    }
+/** 所有预约修改均返回原提交回执，当前预约另行查询。 */
+export const changeBooking = (
   id: string,
   bookingId: string,
-  finishResult: 'VISITED' | 'NOT_PERFORMED',
+  action: BookingAction,
   csrf: string,
 ) =>
-  request(`tickets/${id}/onsite-bookings/${bookingId}/finish`, booking, {
-    body: { finishResult },
-    csrf,
-  })
+  request(
+    `tickets/${id}/onsite-bookings/${bookingId}/${action.name}`,
+    receipt,
+    { body: action.body, csrf },
+  )
+export const unifiedReceipt = (key: string, signal?: AbortSignal) =>
+  request(`tickets/action-receipts/by-action/${key}`, receipt, { signal })
 export const setOnsiteEligibility = (
   id: string,
   rowVersion: string,

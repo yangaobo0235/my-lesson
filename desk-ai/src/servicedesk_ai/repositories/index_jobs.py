@@ -13,6 +13,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
+from servicedesk_ai.repositories.call_usage import interrupt_calls
 from servicedesk_ai.schemas.indexing import IndexCommand, ParsedChunk, ProcessingConfig
 
 
@@ -92,6 +93,7 @@ async def accept_command(
             """),
                 {"id": command.job_id},
             )
+            await interrupt_calls(db, index_job_id=command.job_id)
         return
     cancelled = command.command == "CANCEL"
     await db.execute(
@@ -135,6 +137,7 @@ async def claim_job(db: AsyncConnection) -> IndexJob | None:
     ).first()
     if row is None:
         return None
+    await interrupt_calls(db, index_job_id=row[0])
     token = str(uuid4())
     await db.execute(
         text("""
@@ -186,12 +189,26 @@ async def save_manifest(
     existing = await read_chunks(db, job.id)
     if existing:
         raise BusinessError(CommonErrorCode.CONFLICT)
+    seen: dict[str, ParsedChunk] = {}
+    for chunk in chunks:
+        parent = seen.get(chunk.parent_chunk_id) if chunk.parent_chunk_id else None
+        if (
+            chunk.id in seen
+            or chunk.token_estimate is None
+            or (chunk.node_kind == "SECTION" and chunk.parent_chunk_id is not None)
+            or (chunk.node_kind == "LEAF" and (parent is None or parent.node_kind != "SECTION"))
+            or chunk.source_locations.kind != job.content_format
+        ):
+            raise ValueError("片段清单的父子关系或格式不合法")
+        seen[chunk.id] = chunk
     for number, chunk in enumerate(chunks, 1):
         await db.execute(
             text("""
                 INSERT INTO ai_chunk
-                (id,index_job_id,document_id,chunk_number,section_path,content,source_locations,error_codes)
-                VALUES (:id,:job,:document,:number,:section,:content,:locations,:codes)
+                (id,index_job_id,document_id,chunk_number,section_path,content,source_locations,error_codes,
+                 parent_chunk_id,node_kind,content_sha256,token_estimate)
+                VALUES (:id,:job,:document,:number,:section,:content,:locations,:codes,
+                        :parent,:kind,:sha,:tokens)
             """),
             {
                 "id": chunk.id,
@@ -202,6 +219,10 @@ async def save_manifest(
                 "content": chunk.content,
                 "locations": chunk.source_locations.model_dump_json(),
                 "codes": json.dumps(chunk.error_codes),
+                "parent": chunk.parent_chunk_id,
+                "kind": chunk.node_kind,
+                "sha": chunk.content_sha256,
+                "tokens": chunk.token_estimate,
             },
         )
     await db.execute(
@@ -218,7 +239,8 @@ async def read_chunks(db: AsyncConnection, job_id: str) -> list[ParsedChunk]:
     rows = (
         await db.execute(
             text("""
-                SELECT id,section_path,content,source_locations,error_codes
+                SELECT id,section_path,content,source_locations,error_codes,
+                    parent_chunk_id,node_kind,content_sha256,token_estimate
                 FROM ai_chunk WHERE index_job_id=:job ORDER BY chunk_number
             """),
             {"job": job_id},
@@ -239,6 +261,7 @@ async def read_chunks(db: AsyncConnection, job_id: str) -> list[ParsedChunk]:
 async def finish_job(db: AsyncConnection, job: IndexJob, error: str | None = None) -> None:
     """取消与终态争同一行；失去执行权的迟到结果不落库。"""
     await owned(db, job)
+    await interrupt_calls(db, index_job_id=job.id)
     await db.execute(
         text("""
                 UPDATE ai_index_job SET status=:status,error_code=:error,

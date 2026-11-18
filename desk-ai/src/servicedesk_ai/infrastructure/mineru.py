@@ -109,6 +109,8 @@ def parse_artifact(
         if element.type not in {
             "text",
             "heading",
+            "doc_title",
+            "paragraph_title",
             "table",
             "list",
             "equation",
@@ -125,7 +127,7 @@ def parse_artifact(
             if isinstance(element.content, str)
             else "\n".join(node.content for node in element.content)
         )
-        if element.type == "heading":
+        if element.type in {"heading", "doc_title", "paragraph_title"}:
             section = content.strip()
         content = content.strip()
         for offset in range(0, len(content), config.chunk_chars):

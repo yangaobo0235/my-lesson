@@ -7,6 +7,10 @@ import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.ticket.model.dto.onsite.OnsiteBookingResult;
 import com.yangaobo.servicedesk.ticket.model.entity.OnsiteBookingEntity;
 import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteBookingForm;
+import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteCancelForm;
+import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteFinishForm;
+import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteAssignmentForm;
+import com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketActionReceiptVO;
 import com.yangaobo.servicedesk.ticket.model.vo.onsite.OnsiteBookingVO;
 import com.yangaobo.servicedesk.ticket.model.vo.onsite.OnsiteSlotVO;
 
@@ -42,7 +46,17 @@ public interface IOnsiteBookingService extends IService<OnsiteBookingEntity> {
     OnsiteBookingResult book(IdentityDTO actor, String ticketId, OnsiteBookingForm form);
 
     /**
-     * 到访前取消或当前处理人登记实际履约；结果相同幂等。
+     * 到访前取消，原动作回执优先于版本判断，只回补一次容量。
      */
-    OnsiteBookingVO end(IdentityDTO actor, String ticketId, String bookingId, String finishResult);
+    TicketActionReceiptVO cancel(IdentityDTO actor, String ticketId, String bookingId, OnsiteCancelForm form);
+
+    /**
+     * 当前处理人登记实际结果、执行人和说明。
+     */
+    TicketActionReceiptVO finish(IdentityDTO actor, String ticketId, String bookingId, OnsiteFinishForm form);
+
+    /**
+     * 当前客服或处理人调整已核验现场负责人。
+     */
+    TicketActionReceiptVO assign(IdentityDTO actor, String ticketId, String bookingId, OnsiteAssignmentForm form);
 }

@@ -54,7 +54,7 @@ public final class RpcResponses {
     /**
      * 保留安全数字详情与追踪号，系统异常明确映射INTERNAL。
      */
-    private static void fail(StreamObserver<?> observer, ErrorCode error) {
+    static void fail(StreamObserver<?> observer, ErrorCode error) {
         if (Context.current().isCancelled()) {
             return;
         }

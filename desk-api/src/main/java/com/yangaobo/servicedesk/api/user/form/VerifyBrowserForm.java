@@ -1,6 +1,7 @@
 package com.yangaobo.servicedesk.api.user.form;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -23,9 +24,9 @@ public class VerifyBrowserForm implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 仅交给身份所有者核验的原Cookie，不记录日志。
+     * 仅交给身份所有者核验的原Cookie；无请求头传空串，由身份用例返回未登录。
      */
-    @NotBlank
+    @NotNull
     @Size(max = 8192)
     @lombok.ToString.Exclude
     private String cookie;

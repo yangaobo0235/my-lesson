@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryFile
 
@@ -18,13 +19,28 @@ from desk_contracts.knowledge.v1.source_pb2 import (
     VerifySourcesRequest,
 )
 from desk_contracts.knowledge.v1.source_pb2_grpc import (
+    KnowledgeEvidenceServiceStub,
     KnowledgeSourceServiceStub,
     OriginalFileServiceStub,
 )
-from desk_contracts.ticket.v1.support_pb2_grpc import SupportAccessServiceStub
+from desk_contracts.ticket.v1.support_pb2 import RedactedRequest
+from desk_contracts.ticket.v1.support_pb2_grpc import (
+    DiagnosticAttachmentServiceStub,
+    SupportAccessServiceStub,
+)
 from servicedesk_ai.bootstrap.components import RpcSettings
 from servicedesk_ai.infrastructure.identity import IdentityClient
 from servicedesk_ai.infrastructure.rpc_contract import remaining_seconds
+
+
+@dataclass(frozen=True)
+class RedactedText:
+    """仅在流完整成功后交付的固定脱敏版本，不保留原件地址。"""
+
+    content: str
+    sha256: str
+    content_format: str
+    redaction_version: int
 
 
 class DomainRpc:
@@ -41,13 +57,18 @@ class DomainRpc:
         """由装配器创建，客户端不自行决定任意目标地址。"""
         self.identity = identity
         self.ticket = SupportAccessServiceStub(ticket)
+        self.attachments = DiagnosticAttachmentServiceStub(ticket)
         self.knowledge = KnowledgeSourceServiceStub(knowledge)
+        self.procedures = KnowledgeEvidenceServiceStub(knowledge)
         self.original = OriginalFileServiceStub(knowledge)
         self.token = token
         self.original_directory = original_directory
 
     def options(self, seconds: float = 5) -> dict[str, object]:
-        """只传播受控W3C上下文，业务调用禁自动重试。"""
+        """只传播受控W3C上下文，预留100毫秒交付余量，业务调用禁自动重试。"""
+        remaining = remaining_seconds(seconds)
+        if remaining <= 0.1:
+            raise TimeoutError("领域RPC剩余预算不足以完成交付")
         carrier: dict[str, str] = {}
         propagate.inject(carrier)
         return {
@@ -57,9 +78,54 @@ class DomainRpc:
                 for key, value in carrier.items()
                 if key in {"traceparent", "tracestate"}
             ),
-            "timeout": remaining_seconds(seconds),
+            "timeout": remaining - 0.1,
             "wait_for_ready": False,
         }
+
+    async def read_redacted(self, request: RedactedRequest) -> RedactedText:
+        """元信息独立首帧；连续有界正文、摘要及最终RPC成功全部成立才使用。"""
+        stream = self.attachments.ReadRedacted(request, **self.options())
+        body = bytearray()
+        metadata = None
+        fields = ("total_bytes", "sha256", "content_format", "redaction_version")
+        try:
+            async for part in stream:
+                if metadata is None:
+                    if (
+                        not all(part.HasField(field) for field in fields)
+                        or part.offset != 0
+                        or part.data
+                        or not 0 < part.total_bytes <= 1048576
+                        or part.redaction_version != request.redaction_version
+                        or part.redaction_version < 1
+                        or part.content_format not in {"TEXT", "LOG", "JSON"}
+                        or len(part.sha256) != 64
+                    ):
+                        raise ValueError("脱敏附件元信息不匹配")
+                    metadata = part
+                    continue
+                if (
+                    any(part.HasField(field) for field in fields)
+                    or part.offset != len(body)
+                    or not 0 < len(part.data) <= 65536
+                    or len(body) + len(part.data) > metadata.total_bytes
+                ):
+                    raise ValueError("脱敏附件流不连续或超过预算")
+                body.extend(part.data)
+            if (
+                metadata is None
+                or len(body) != metadata.total_bytes
+                or hashlib.sha256(body).hexdigest() != metadata.sha256
+            ):
+                raise ValueError("脱敏附件流未完整核验")
+            return RedactedText(
+                body.decode("utf-8", errors="strict"),
+                metadata.sha256,
+                metadata.content_format,
+                metadata.redaction_version,
+            )
+        finally:
+            stream.cancel()
 
     async def read_original(
         self, document_id: str, job_id: str, expected_sha: str, content_format: str
@@ -173,6 +239,7 @@ async def open_domain_rpc(settings: RpcSettings) -> AsyncIterator[DomainRpc]:
                 target,
                 credentials,
                 options=(
+                    ("grpc.enable_http_proxy", 0),
                     ("grpc.enable_retries", 0),
                     ("grpc.max_receive_message_length", settings.max_message_bytes),
                 ),

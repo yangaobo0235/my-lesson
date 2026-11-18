@@ -1,6 +1,8 @@
 package com.yangaobo.servicedesk.ticket.model.vo.ticket;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.yangaobo.servicedesk.common.serialize.DecimalStringSerializer;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -37,7 +39,8 @@ public class TicketEventVO implements Serializable {
      * 工单内正序，锁工单分配。
      */
     @Schema(description = "工单内正序，锁工单分配。")
-    private Integer sequenceNumber;
+    @JsonSerialize(using = DecimalStringSerializer.class)
+    private Long sequenceNumber;
 
     /**
      * CREATED / ACCEPTED / ASSIGNED / REASSIGNED / NEED_INFO / SUPPLEMENTED / RESOLVED / UNRESOLVED

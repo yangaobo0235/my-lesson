@@ -18,7 +18,7 @@ import {
 } from '../support/types'
 
 /** AI合同在边界解码，私有正文不写浏览器持久存储。 @author yangaobo */
-const mode = choices('CUSTOMER_SELF_SERVICE', 'TECHNICIAN_ASSIST')
+const mode = choices('CONSULT', 'CUSTOMER_SELF_SERVICE', 'TECHNICIAN_ASSIST')
 const runStatus = choices(
   'QUEUED',
   'RUNNING',
@@ -45,12 +45,8 @@ export function conversation(value: unknown) {
     id: identifier(o.id),
     title: text(o.title),
     mode: mode(o.mode),
-    customerId: identifier(o.customerId),
-    serviceItemId: nullable(identifier)(o.serviceItemId),
-    deviceId: nullable(identifier)(o.deviceId),
+    customerId: nullable(identifier)(o.customerId),
     ticketId: nullable(identifier)(o.ticketId),
-    supportContext: supportContext(o.supportContext),
-    stateVersion: decimal(o.stateVersion),
     rowVersion: decimal(o.rowVersion),
   }
 }
@@ -69,6 +65,8 @@ function location(value: unknown): string {
       })(o.segments).join('、')
     case 'TICKET_EVENT':
       return `工单事件 ${integer(o.sequence)}`
+    case 'MESSAGE':
+      return `私有消息 ${identifier(o.message_id)}`
     case 'DIAGNOSTIC_FACT':
       return `诊断事实 ${identifier(o.fact_id)}`
     default:
@@ -89,8 +87,27 @@ export function citation(value: unknown) {
 function structured(value: unknown) {
   const o = record(value)
   return {
-    openQuestions: array(text)(o.openQuestions),
-    hypotheses: array(text)(o.hypotheses),
+    checks: array((v) => {
+      const c = record(v)
+      return {
+        checkKey: text(c.checkKey),
+        instruction: text(c.instruction),
+        checkKind: choices('CLARIFICATION', 'CHECK')(c.checkKind),
+      }
+    })(o.checks),
+    hypotheses: array((v) => {
+      const h = record(v)
+      return {
+        hypothesisKey: text(h.hypothesisKey),
+        statement: text(h.statement),
+        status: choices(
+          'PROPOSED',
+          'SUPPORTED',
+          'REFUTED',
+          'INAPPLICABLE',
+        )(h.status),
+      }
+    })(o.hypotheses),
     proposedRecord: nullable(text)(o.proposedRecord),
     proposedResolution: nullable(text)(o.proposedResolution),
     resolutionType: nullable(choices('RESTORED', 'GUIDANCE', 'REFERRED'))(
@@ -99,28 +116,62 @@ function structured(value: unknown) {
     referralTarget: nullable(text)(o.referralTarget),
   }
 }
-export function generation(value: unknown) {
+export function run(value: unknown) {
   const o = record(value)
   return {
     id: identifier(o.id),
     conversationId: identifier(o.conversationId),
+    taskId: nullable(identifier)(o.taskId),
+    inputMessageId: identifier(o.inputMessageId),
+    executionPhase: choices(
+      'CONTEXT',
+      'MODEL',
+      'TOOL',
+      'COMMIT',
+    )(o.executionPhase),
+    iterationNumber: integer(o.iterationNumber),
+    usageUnknown: bool(o.usageUnknown),
     question: text(o.question),
     status: runStatus(o.status),
     answerType: nullable(
-      choices('ANSWERED', 'CLARIFICATION', 'INSUFFICIENT_EVIDENCE'),
+      choices('ANSWERED', 'CLARIFICATION', 'INSUFFICIENT_EVIDENCE', 'HANDOVER'),
     )(o.answerType),
     answer: nullable(text)(o.answer),
     structuredResult: nullable(structured)(o.structuredResult),
-    inputStateVersion: decimal(o.inputStateVersion),
+    inputStateVersion: nullable(decimal)(o.inputStateVersion),
     outputStateVersion: nullable(decimal)(o.outputStateVersion),
-    ticketVersion: nullable(decimal)(o.ticketVersion),
+    ticketRowVersion: nullable(decimal)(o.ticketRowVersion),
     sourcesHidden: bool(o.sourcesHidden),
+    stale: bool(o.stale),
+    diagnosisContextVersion: nullable(decimal)(o.diagnosisContextVersion),
+    currentDiagnosisContextVersion: nullable(decimal)(
+      o.currentDiagnosisContextVersion,
+    ),
     citations: array(citation)(o.citations),
     inputTokens: nullable(decimal)(o.inputTokens),
     outputTokens: nullable(decimal)(o.outputTokens),
     errorCode: nullable(text)(o.errorCode),
   }
 }
+export const safetyCondition = choices(
+  'SAFETY_HAZARD_REPORTED',
+  'DATA_LOSS_RISK_REPORTED',
+  'ADMIN_PRIVILEGE_REQUIRED',
+  'OUT_OF_SERVICE_SCOPE',
+  'NO_PROGRESS_LIMIT',
+  'EVIDENCE_CONFLICT',
+)
+export type SafetyCondition = ReturnType<typeof safetyCondition>
+/** 明确人工报告，不代表工具实测；需更正或撤回原事实才能解除。 */
+export const safetyConditionNames: Record<SafetyCondition, string> = {
+  SAFETY_HAZARD_REPORTED: '发现电气或人身安全风险',
+  DATA_LOSS_RISK_REPORTED: '有数据丢失风险',
+  ADMIN_PRIVILEGE_REQUIRED: '需要管理员权限',
+  OUT_OF_SERVICE_SCOPE: '已超出支持范围',
+  NO_PROGRESS_LIMIT: '反复检查仍无进展',
+  EVIDENCE_CONFLICT: '观察或资料相互矛盾',
+}
+/** 事实来源与更正链由后端提供，前端不推断执行结果。 */
 export function fact(value: unknown) {
   const o = record(value)
   return {
@@ -128,18 +179,19 @@ export function fact(value: unknown) {
     stateVersion: decimal(o.stateVersion),
     factKind: choices(
       'OBSERVATION',
-      'PERFORMED_ACTION',
-      'OPEN_QUESTION',
-      'HYPOTHESIS',
+      'ACTION_REPORT',
+      'SYMPTOM',
+      'ENVIRONMENT',
+      'OUTCOME',
     )(o.factKind),
-    operation: choices('ASSERT', 'RETRACT')(o.operation),
+    operation: choices('ASSERT', 'CORRECT', 'RETRACT')(o.operation),
     active: bool(o.active),
     statement: nullable(text)(o.statement),
+    reportedConditions: array(safetyCondition)(o.reportedConditions),
     sourceType: choices(
       'USER_REPORT',
-      'STAFF_RECORD',
+      'HUMAN_RECORD',
       'TOOL_OBSERVATION',
-      'ASSISTANT_PROPOSAL',
     )(o.sourceType),
     supersedesFactId: nullable(identifier)(o.supersedesFactId),
     sourcesHidden: bool(o.sourcesHidden),
@@ -150,17 +202,25 @@ export const draftPurpose = choices(
   'CREATE_TICKET',
   'ADD_RECORD',
   'RESOLVE_TICKET',
+  'REQUEST_INFORMATION',
+  'BOOK_ONSITE',
 )
 export function draft(value: unknown) {
   const o = record(value),
     c = record(o.content)
   return {
     id: identifier(o.id),
-    sourceGenerationId: identifier(o.sourceGenerationId),
+    draftRootId: identifier(o.draftRootId),
+    revisionNumber: integer(o.revisionNumber),
+    contentSha256: text(o.contentSha256),
+    status: choices('PENDING', 'SUPERSEDED', 'WITHDRAWN', 'EXPIRED')(o.status),
+    sourceRunId: nullable(identifier)(o.sourceRunId),
     purpose: draftPurpose(o.purpose),
     ticketId: nullable(identifier)(o.ticketId),
-    ticketVersion: nullable(decimal)(o.ticketVersion),
-    stateVersion: decimal(o.stateVersion),
+    ticketRowVersion: nullable(decimal)(o.ticketRowVersion),
+    taskId: identifier(o.taskId),
+    taskStateVersion: decimal(o.taskStateVersion),
+    diagnosisContextVersion: decimal(o.diagnosisContextVersion),
     expiresAt: text(o.expiresAt),
     content: {
       title: text(c.title),
@@ -171,6 +231,8 @@ export function draft(value: unknown) {
         c.resolutionType,
       ),
       referralTarget: nullable(text)(c.referralTarget),
+      ...(c.followUpAt === undefined ? {} : { followUpAt: text(c.followUpAt) }),
+      ...(c.slotId === undefined ? {} : { slotId: identifier(c.slotId) }),
     },
   }
 }
@@ -178,57 +240,32 @@ function feedback(value: unknown) {
   const o = record(value)
   return {
     id: identifier(o.id),
+    runId: identifier(o.runId),
     rating: choices('HELPFUL', 'UNHELPFUL')(o.rating),
-    issueCategory: nullable(text)(o.issueCategory),
+    adoption: choices(
+      'NOT_USED',
+      'ACCEPTED',
+      'MODIFIED',
+      'REJECTED',
+    )(o.adoption),
+    issueCategory: nullable(
+      choices(
+        'INCORRECT',
+        'IRRELEVANT',
+        'MISSING_CONTEXT',
+        'UNSUPPORTED',
+        'OTHER',
+      ),
+    )(o.issueCategory),
     comment: nullable(text)(o.comment),
-    status: choices(
-      'NOT_REQUIRED',
-      'RECORDED',
-      'PENDING',
-      'RESOLVED',
-      'DISMISSED',
-    )(o.status),
-    shareWithKnowledgeAdmin: bool(o.shareWithKnowledgeAdmin),
     rowVersion: decimal(o.rowVersion),
   }
 }
 export type Conversation = ReturnType<typeof conversation>
-export type Generation = ReturnType<typeof generation>
+export type Run = ReturnType<typeof run>
 export type Fact = ReturnType<typeof fact>
 export type Draft = ReturnType<typeof draft>
 export type Feedback = ReturnType<typeof feedback>
-function feedbackQueueItem(value: unknown) {
-  const o = record(value)
-  return {
-    id: identifier(o.id),
-    generationId: identifier(o.generationId),
-    rating: choices('UNHELPFUL')(o.rating),
-    issueCategory: text(o.issueCategory),
-    status: choices('PENDING', 'RESOLVED', 'DISMISSED')(o.status),
-    rowVersion: decimal(o.rowVersion),
-    createdAt: text(o.createdAt),
-  }
-}
-function sharedFeedbackCase(value: unknown) {
-  const o = record(value),
-    item = feedbackQueueItem(o.feedback)
-  return {
-    feedback: item,
-    comment: nullable(text)(o.comment),
-    question: text(o.question),
-    answer: text(o.answer),
-    sources: array((source) => {
-      const s = record(source)
-      return {
-        title: text(s.title),
-        locator: record(s.locator),
-        excerpt: text(s.excerpt),
-      }
-    })(o.sources),
-  }
-}
-export type FeedbackQueueItem = ReturnType<typeof feedbackQueueItem>
-export type SharedFeedbackCase = ReturnType<typeof sharedFeedbackCase>
 export type ConversationMode = Conversation['mode']
 export type DraftPurpose = Draft['purpose']
 export function toolCall(value: unknown) {
@@ -237,13 +274,18 @@ export function toolCall(value: unknown) {
     number: integer(o.number),
     name: choices(
       'search_knowledge',
-      'read_knowledge',
+      'read_evidence',
+      'load_procedure',
       'read_ticket_events',
     )(o.name),
     status: choices(
-      'STARTED',
-      'SUCCEEDED',
-      'FAILED',
+      'PREPARED',
+      'RUNNING',
+      'OK',
+      'EMPTY',
+      'DENIED',
+      'RETRYABLE_ERROR',
+      'FATAL_ERROR',
       'UNKNOWN',
       'CANCELLED',
     )(o.status),
@@ -270,38 +312,26 @@ function calls(value: unknown) {
     })(o.modelCalls),
   }
 }
-export const generationCalls = (id: string, signal?: AbortSignal) =>
-  request(`ai/generations/${id}/calls`, calls, { signal })
-export type GenerationCalls = ReturnType<typeof calls>
-export type ConversationInput =
-  | {
-      mode: 'CUSTOMER_SELF_SERVICE'
-      title: string
-      serviceItemId: string
-      deviceId: string | null
-      supportContext: SupportContextForm
-    }
-  | { mode: 'TECHNICIAN_ASSIST'; title: string; ticketId: string }
-export type GenerationInput = {
-  question: string
-  stateVersion: string
+export const runCalls = (id: string, signal?: AbortSignal) =>
+  request(`ai/runs/${id}/calls`, calls, { signal })
+export type RunCalls = ReturnType<typeof calls>
+/** 会话只管理私有范围，诊断目标和环境由独立任务拥有。 */
+export type ConversationInput = {
+  mode: ConversationMode
+  title: string
   clientRequestId: string
+  ticketId?: string
 }
-export type FactInput =
-  | {
-      stateVersion: string
-      clientActionId: string
-      action: 'ASSERT' | 'CORRECT' | 'RETRACT'
-      statement: string
-      factKind: 'OBSERVATION' | 'PERFORMED_ACTION'
-      factId: string | null
-    }
-  | {
-      stateVersion: string
-      clientActionId: string
-      action: 'SET_CONTEXT'
-      supportContext: SupportContextForm
-    }
+/** 已保存反馈和新消息二选一；任务与版本必须成对提供。 */
+export type RunInput = {
+  clientRequestId: string
+  taskId?: string
+  taskStateVersion?: string
+  resumesRunId?: string
+} & (
+  | { message: string; inputMessageId?: never }
+  | { inputMessageId: string; message?: never }
+)
 export const listConversations = (
   pageNum: number,
   mode: ConversationMode,
@@ -340,102 +370,62 @@ export const deleteConversation = (
     },
     { method: 'DELETE', body: { rowVersion }, csrf },
   )
-export const listTurns = (id: string, pageNum: number, signal?: AbortSignal) =>
-  request(
-    `ai/conversations/${id}/turns${query({ pageNum })}`,
-    page(generation),
-    { signal },
-  )
-export const listFacts = (id: string, pageNum: number, signal?: AbortSignal) =>
-  request(`ai/conversations/${id}/facts${query({ pageNum })}`, page(fact), {
+export const listRuns = (id: string, pageNum: number, signal?: AbortSignal) =>
+  request(`ai/conversations/${id}/runs${query({ pageNum })}`, page(run), {
     signal,
   })
-export const changeFacts = (id: string, body: FactInput, csrf: string) =>
-  request(`ai/conversations/${id}/facts`, conversation, { body, csrf })
-export const createGeneration = (
-  id: string,
-  body: GenerationInput,
-  csrf: string,
-) => request(`ai/conversations/${id}/generations`, generation, { body, csrf })
-export const generationReceipt = (key: string, signal?: AbortSignal) =>
-  request(`ai/generations/by-request/${key}`, generation, { signal })
-export const getGeneration = (id: string, signal?: AbortSignal) =>
-  request(`ai/generations/${id}`, generation, { signal })
-export const cancelGeneration = (id: string, csrf: string) =>
-  request(`ai/generations/${id}/cancel`, generation, { body: {}, csrf })
+export const createRun = (id: string, body: RunInput, csrf: string) =>
+  request(`ai/conversations/${id}/runs`, run, { body, csrf })
+export const runReceipt = (key: string, signal?: AbortSignal) =>
+  request(`ai/runs/by-request/${key}`, run, { signal })
+export const getRun = (id: string, signal?: AbortSignal) =>
+  request(`ai/runs/${id}`, run, { signal })
+export const cancelRun = (id: string, csrf: string) =>
+  request(`ai/runs/${id}/cancel`, run, { body: {}, csrf })
 export const createDraft = (
   id: string,
   body: {
-    sourceGenerationId: string
+    sourceRunId: string | null
     purpose: DraftPurpose
     clientRequestId: string
     confirmedFactIds: string[]
+    followUpAt?: string
+    slotId?: string
+    waitForConfirmation?: boolean
   },
   csrf: string,
-) => request(`ai/conversations/${id}/action-drafts`, draft, { body, csrf })
+) => request(`ai/tasks/${id}/action-drafts`, draft, { body, csrf })
 export const draftReceipt = (key: string, signal?: AbortSignal) =>
   request(`ai/action-drafts/by-request/${key}`, draft, { signal })
 export const putFeedback = (
   id: string,
   body: {
     rating: 'HELPFUL' | 'UNHELPFUL'
-    issueCategory: 'OTHER' | null
+    adoption: Feedback['adoption']
+    issueCategory: Feedback['issueCategory']
     comment: string | null
+    rowVersion?: string
   },
   csrf: string,
 ) =>
-  request(`ai/generations/${id}/feedback`, feedback, {
+  request(`ai/runs/${id}/feedback`, feedback, {
     method: 'PUT',
     body,
     csrf,
   })
-export const shareFeedback = (
-  id: string,
-  rowVersion: string,
-  share: boolean,
-  csrf: string,
-) =>
-  request(`ai/generations/${id}/feedback/share`, feedback, {
-    method: 'PATCH',
-    body: { rowVersion, share },
-    csrf,
-  })
-
-export const listSharedFeedback = (
-  pageNum: number,
-  status?: 'PENDING' | 'RESOLVED' | 'DISMISSED',
-  signal?: AbortSignal,
-) =>
-  request(
-    `admin/feedback${query({ pageNum, status })}`,
-    page(feedbackQueueItem),
-    { signal },
-  )
-export const getSharedFeedback = (id: string, signal?: AbortSignal) =>
-  request(`admin/feedback/${id}`, sharedFeedbackCase, { signal })
-export const handleSharedFeedback = (
-  id: string,
-  body: {
-    rowVersion: string
-    action: 'RESOLVE' | 'DISMISS'
-    handlingNote: string
-  },
-  csrf: string,
-) =>
-  request(`admin/feedback/${id}/handle`, feedbackQueueItem, {
-    body,
-    csrf,
-  })
+/** 读取本人已保存的运行评价，尚未评价返回null。 @author yangaobo */
+export const getFeedback = (id: string, signal?: AbortSignal) =>
+  request(`ai/runs/${id}/feedback`, nullable(feedback), { signal })
 
 /** SSE只订阅原运行，逐块解码UTF-8；完成事件缺失时由调用者查询原状态。 */
-export async function subscribeGeneration(
+export async function subscribeRun(
   id: string,
   csrf: string,
   signal: AbortSignal,
-  onStage: (status: Generation['status']) => void,
+  onStage: (status: Run['status']) => void,
   onTool?: (tool: ReturnType<typeof toolCall>) => void,
 ): Promise<boolean> {
-  const response = await fetch(`/api/v1/ai/generations/${id}/stream`, {
+  const response = await fetch(`/api/v1/ai/runs/${id}/stream`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'X-CSRF-TOKEN': csrf },
@@ -491,7 +481,7 @@ export async function subscribeGeneration(
         )
         const event = record(payload),
           next = integer(event.sequence)
-        if (identifier(event.generationId) !== id || next <= sequence)
+        if (identifier(event.runId) !== id || next <= sequence)
           throw new Error('订阅事件身份或顺序不匹配')
         sequence = next
         if (name === 'stage') onStage(runStatus(record(event.data).status))
@@ -506,6 +496,7 @@ export async function subscribeGeneration(
             'ANSWERED',
             'CLARIFICATION',
             'INSUFFICIENT_EVIDENCE',
+            'HANDOVER',
           )(data.answerType)
         }
         if (name === 'citations')
@@ -528,3 +519,24 @@ export async function subscribeGeneration(
     reader.releaseLock()
   }
 }
+
+/** 用户编辑先保存不可变修订，原键重试不覆盖旧内容。 */
+export const reviseDraft = (
+  id: string,
+  body: {
+    clientRequestId: string
+    contentSha256: string
+    content: Draft['content']
+  },
+  csrf: string,
+) => request(`ai/action-drafts/${id}/revisions`, draft, { body, csrf })
+/** 撤回只阻止后续校验，正式结果需查询Java回执。 */
+export const withdrawDraft = (
+  id: string,
+  contentSha256: string,
+  csrf: string,
+) =>
+  request(`ai/action-drafts/${id}/withdraw`, draft, {
+    body: { contentSha256 },
+    csrf,
+  })

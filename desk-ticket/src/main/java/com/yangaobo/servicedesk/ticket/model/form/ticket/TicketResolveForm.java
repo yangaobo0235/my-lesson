@@ -58,4 +58,14 @@ public class TicketResolveForm extends TicketActionForm implements Serializable 
     @Schema(description = "可选处理草稿。")
     @Identifier
     private String sourceDraftId;
+    /**
+     * 草稿根标识，只用于本地回执对账，新动作仍由内部RPC验证。
+     */
+    @Identifier
+    private String sourceDraftRootId;
+    /**
+     * 用户确认的不可变内容摘要。
+     */
+    @Pattern(regexp = "[0-9a-f]{64}")
+    private String contentSha256;
 }

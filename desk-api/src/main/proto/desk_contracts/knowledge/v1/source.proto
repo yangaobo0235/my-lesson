@@ -13,6 +13,20 @@ service KnowledgeSourceService {
 service OriginalFileService {
   rpc ReadOriginal(OriginalRequest) returns (stream OriginalPart);
 }
+// 人工审核规程沿文档当前授权与修订身份读取。
+service KnowledgeEvidenceService {
+  rpc ReadProcedure(ProcedureRequest) returns (ReviewedProcedure);
+}
+message ProcedureRequest {
+  SourceQuery context = 1;
+  string document_id = 2;
+}
+message ReviewedProcedure {
+  KnowledgeSource source = 1;
+  string definition_sha256 = 2;
+  // UTF-8 JSON，固定procedure-v1白名单，最多64KiB；不是脚本。
+  bytes definition_json = 3;
+}
 message SourceQuery {
   servicedesk.common.v1.ActorRef actor = 1;
   string purpose = 2;
@@ -20,7 +34,7 @@ message SourceQuery {
   optional string device_id = 4;
   optional string ticket_id = 5;
   servicedesk.ticket.v1.Environment environment = 6;
-  optional string generation_id = 7;
+  optional string run_id = 7;
   optional string source_usage_id = 8;
   // ResolveContext返回的实际引用约束；普通新检索不填写。
   optional string referenced_document_id = 9;
@@ -34,6 +48,8 @@ message KnowledgeSource {
   string content_format = 5;
   string source_type = 6;
   string audience = 7;
+  optional string procedure_sha256 = 8;
+  repeated string procedure_check_keys = 9;
 }
 message AuthorizedSources { repeated KnowledgeSource sources = 1; }
 message VerifySourcesRequest {

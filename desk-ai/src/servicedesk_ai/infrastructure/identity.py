@@ -36,6 +36,7 @@ def translate_failure(error: grpc.aio.AioRpcError) -> IdentityFailure:
         1003: (grpc.StatusCode.PERMISSION_DENIED, "无权执行此操作"),
         1002: (grpc.StatusCode.NOT_FOUND, "请求资源不存在"),
         1004: (grpc.StatusCode.FAILED_PRECONDITION, "当前状态或版本已变化"),
+        5103: (grpc.StatusCode.FAILED_PRECONDITION, "来源已因风险撤回，请重新取得有效依据"),
         3001: (grpc.StatusCode.FAILED_PRECONDITION, "客户当前未开通有效支持服务"),
         3101: (grpc.StatusCode.FAILED_PRECONDITION, "设备不可发起该新业务"),
         3102: (grpc.StatusCode.FAILED_PRECONDITION, "型号不可新增关联"),
@@ -145,6 +146,7 @@ async def open_identity(settings: RpcSettings) -> AsyncIterator[IdentityClient]:
         settings.user_target,
         credentials,
         options=(
+            ("grpc.enable_http_proxy", 0),
             ("grpc.enable_retries", 0),
             ("grpc.max_receive_message_length", settings.max_message_bytes),
             ("grpc.max_send_message_length", settings.max_message_bytes),

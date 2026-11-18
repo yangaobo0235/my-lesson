@@ -14,14 +14,14 @@ import org.apache.ibatis.annotations.Param;
  */
 public interface TicketEventMapper extends BaseMapper<TicketEventEntity> {
     /**
+     * 仅同事务新事件允许一次绑定正式回执；历史回执不能被改写。
+     */
+    int bindReceipt(@Param("id") String id, @Param("ticket") String ticket, @Param("receipt") String receipt);
+
+    /**
      * 取得当前行锁并映射JSON字段。
      */
     TicketEventEntity lock(@Param("id") String id);
-
-    /**
-     * 工单行锁串行化后分配下一序号。
-     */
-    int lastSequence(@Param("ticket") String ticket);
 
     /**
      * 读取工单可见时间线，列表与统计复用相同条件。
@@ -52,5 +52,5 @@ public interface TicketEventMapper extends BaseMapper<TicketEventEntity> {
      * @param limit         已校验的页大小或扫描上限
      * @return 按稳定顺序返回的有界结果
      */
-    List<TicketEventEntity> readForDiagnosis(@Param("ticketId") String ticketId, @Param("eventIds") List<String> eventIds, @Param("afterSequence") int afterSequence, @Param("limit") int limit);
+    List<TicketEventEntity> readForDiagnosis(@Param("ticketId") String ticketId, @Param("eventIds") List<String> eventIds, @Param("afterSequence") long afterSequence, @Param("limit") int limit);
 }

@@ -106,6 +106,23 @@ class ParsedChunk(WireModel):
 
     id: Identifier
     section_path: str | None
-    content: str = Field(min_length=1, max_length=4000)
+    content: str = Field(min_length=1, max_length=49152)
     source_locations: SourceLocations
     error_codes: list[str] = Field(default_factory=list)
+    parent_chunk_id: Identifier | None = None
+    node_kind: Literal["SECTION", "LEAF"] = "LEAF"
+    content_sha256: Digest | None = None
+    token_estimate: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def verify_content(self) -> Self:
+        """正文与摘要绑定；持久清单不能接受篡改正文或超大节点。"""
+        if not self.content.strip() or len(self.content.encode()) > 48 * 1024:
+            raise ValueError("片段正文为空或超过预算")
+        if self.node_kind == "LEAF" and len(self.content) > 4000:
+            raise ValueError("叶片超过解析预算")
+        digest = hashlib.sha256(self.content.encode()).hexdigest()
+        if self.content_sha256 is not None and self.content_sha256 != digest:
+            raise ValueError("片段正文摘要不匹配")
+        self.content_sha256 = digest
+        return self

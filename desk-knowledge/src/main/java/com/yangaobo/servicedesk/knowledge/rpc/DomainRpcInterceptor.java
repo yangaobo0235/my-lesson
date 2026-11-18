@@ -39,6 +39,7 @@ public final class DomainRpcInterceptor implements ServerInterceptor {
             Set.of(
                     "servicedesk.knowledge.v1.KnowledgeSourceService/QueryAuthorizedSources",
                     "servicedesk.knowledge.v1.KnowledgeSourceService/VerifySources",
+                    "servicedesk.knowledge.v1.KnowledgeEvidenceService/ReadProcedure",
                     "servicedesk.knowledge.v1.OriginalFileService/ReadOriginal");
 
     /**

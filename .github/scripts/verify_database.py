@@ -104,7 +104,7 @@ def dictionary() -> dict:
             r"^\| `([a-z_][a-z0-9_]*)` \| ([^|]+) \| ([^|]+) \| [^|]+ \|$", body, re.M
         )
         tables[table] = (owner, {name: (typ.strip(), null) for name, typ, null in fields})
-    if len(tables) != 31:
+    if len(tables) != 37 or sum(len(value[1]) for value in tables.values()) != 585:
         raise RuntimeError("正式数据库字典表数异常")
     return tables
 

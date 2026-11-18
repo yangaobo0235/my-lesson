@@ -12,6 +12,7 @@ import {
   text,
 } from '../validation'
 import { productModel, serviceItem } from '../support/types'
+import { nullableProcedure } from './procedures'
 
 /** 知识上传、索引与发布分别解码，不把传输成功当成可检索。 @author yangaobo */
 export function series(value: unknown) {
@@ -66,13 +67,22 @@ export function document(value: unknown) {
     revisionLabel: nullable(text)(o.revisionLabel),
     issuedOn: nullable(text)(o.issuedOn),
     applicabilityNote: nullable(text)(o.applicabilityNote),
+    procedureDefinition: nullableProcedure(o.procedureDefinition),
+    procedureSha256: nullable(text)(o.procedureSha256),
+    procedureValidatedSha256: nullable(text)(o.procedureValidatedSha256),
+    procedureValidatedAt: nullable(text)(o.procedureValidatedAt),
+    procedureValidatedBy: nullable(identifier)(o.procedureValidatedBy),
     publicationStatus: choices(
       'DRAFT',
       'PUBLISHED',
       'DISABLED',
       'RETIRED',
+      'WITHDRAWN',
       'DELETED',
     )(o.publicationStatus),
+    accessStatus: choices('ALLOWED', 'REVOKED')(o.accessStatus),
+    accessReason: nullable(text)(o.accessReason),
+    withdrawalReason: nullable(text)(o.withdrawalReason),
     currentJobId: nullable(identifier)(o.currentJobId),
     rowVersion: decimal(o.rowVersion),
     rules: o.rules === null ? [] : array(rule)(o.rules),
@@ -103,7 +113,28 @@ export function indexJob(value: unknown) {
 }
 export type DocumentSeries = ReturnType<typeof series>
 export type KnowledgeDocument = ReturnType<typeof document>
+/** 资料安全动作只改变各自生命周期，重试保持原键和原参数。 @author yangaobo */
+export type DocumentSafetyAction =
+  'withdraw' | 'revoke-access' | 'restore-access'
+/** 安全动作的人工原因和乐观版本，不能从最新详情覆盖待核对请求。 */
+export interface DocumentSafetyInput {
+  id: string
+  rowVersion: string
+  clientActionId: string
+  reason: string
+}
+/** 返回原提交快照；调用方随后查询当前详情，避免旧回执覆盖新状态。 @author yangaobo */
+export const changeDocumentSafety = (
+  action: DocumentSafetyAction,
+  body: DocumentSafetyInput,
+  csrf: string,
+) => request(`admin/document/${action}`, document, { body, csrf })
 export type IndexJob = ReturnType<typeof indexJob>
+/** 校验重试保留同一动作身份，服务端将验证记录与文档版本原子提交。 @author yangaobo */
+export const validateProcedure = (
+  body: { id: string; rowVersion: string; clientActionId: string },
+  csrf: string,
+) => request('admin/document/validate-procedure', document, { body, csrf })
 export interface MetadataInput {
   title: string
   sourceUrl: string | null
@@ -208,13 +239,14 @@ export const createIndex = (
   value: KnowledgeDocument,
   key: string,
   csrf: string,
+  parserTier: 'flash' | 'basic',
 ) =>
   request('admin/index-job/add', indexJob, {
     body: {
       id: value.id,
       rowVersion: value.rowVersion,
       clientRequestId: key,
-      processingConfig: {},
+      processingConfig: value.contentFormat === 'PDF' ? { parserTier } : {},
     },
     csrf,
   })
@@ -243,7 +275,7 @@ export const listRuleModels = (pageNum: number, signal?: AbortSignal) =>
 /** 原件链接只由真实文档ID和实际来源引用构造，不从模型正文解析URL。 */
 export const originalLink = (
   documentId: string,
-  generationId: string,
+  runId: string,
   sourceUsageId: string,
 ) =>
-  `/api/v1/knowledge/documents/${identifier(documentId)}/file${query({ generationId: identifier(generationId), sourceUsageId: identifier(sourceUsageId) })}`
+  `/api/v1/knowledge/documents/${identifier(documentId)}/file${query({ runId: identifier(runId), sourceUsageId: identifier(sourceUsageId) })}`

@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, Field, model_validator
+from pydantic import AfterValidator, AwareDatetime, Field, model_validator
 
 from servicedesk_ai.schemas.indexing import Identifier, WireModel
 
@@ -52,23 +52,18 @@ class SupportEnvironment(DiagnosisInput):
 
 
 class ConversationCreate(DiagnosisInput):
-    """技术模式只允许固定工单，客户模式固定项目及可选设备。"""
+    """会话只固定模式和私有目标；诊断范围与环境归任务。"""
 
-    mode: Literal["CUSTOMER_SELF_SERVICE", "TECHNICIAN_ASSIST"]
+    mode: Literal["CONSULT", "CUSTOMER_SELF_SERVICE", "TECHNICIAN_ASSIST"]
     title: str = Field(min_length=1, max_length=100)
-    service_item_id: Identifier | None = None
-    device_id: Identifier | None = None
+    client_request_id: Identifier
     ticket_id: Identifier | None = None
-    support_context: SupportEnvironment | None = None
 
     @model_validator(mode="after")
     def fixed_binding(self) -> Self:
-        """浏览器不能覆盖技术工单的项目、资产或环境。"""
-        if self.mode == "TECHNICIAN_ASSIST":
-            if not self.ticket_id or self.service_item_id or self.device_id or self.support_context:
-                raise ValueError("技术会话仅接受工单绑定")
-        elif not self.service_item_id or self.ticket_id or self.support_context is None:
-            raise ValueError("客户会话缺少支持上下文")
+        """仅技术模式允许且必须固定工单。"""
+        if (self.mode == "TECHNICIAN_ASSIST") != (self.ticket_id is not None):
+            raise ValueError("会话模式与工单绑定不匹配")
         return self
 
 
@@ -79,62 +74,65 @@ class ConversationChange(DiagnosisInput):
     title: str | None = Field(default=None, min_length=1, max_length=100)
 
 
-class GenerationCreate(DiagnosisInput):
-    """同拥有者原键先返回，只有新受理才校验事实版本和额度。"""
+class DraftContent(WireModel):
+    """草稿待人编辑，建议与确认执行分开，不增加模型调用。"""
 
-    question: str = Field(min_length=1, max_length=4000)
-    client_request_id: Identifier
-    state_version: Version
+    schema_version: Literal[1] = 1
+    title: str = ""
+    symptom: str = ""
+    attempted_actions: str = ""
+    content: str = ""
+    resolution_type: Literal["RESTORED", "GUIDANCE", "REFERRED"] | None = None
+    referral_target: str | None = None
+    follow_up_at: AwareDatetime | None = Field(default=None, exclude_if=lambda value: value is None)
+    slot_id: Identifier | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
-class FactChange(DiagnosisInput):
-    """客户端只能追加当前操作者反馈，来源类型由服务端生成。"""
-
-    state_version: Version
-    client_action_id: Identifier
-    action: Literal["ASSERT", "CORRECT", "RETRACT", "SET_CONTEXT"]
-    statement: str | None = Field(default=None, min_length=1, max_length=2000)
-    fact_kind: Literal["OBSERVATION", "PERFORMED_ACTION"] = "OBSERVATION"
-    fact_id: Identifier | None = None
-    support_context: SupportEnvironment | None = None
-
-    @model_validator(mode="after")
-    def action_fields(self) -> Self:
-        """动作输入互斥，撤回明确前驱与原因，不静默覆盖。"""
-        if self.action == "SET_CONTEXT":
-            if self.support_context is None or self.fact_id or self.statement:
-                raise ValueError("环境动作只接受完整环境")
-        elif not self.statement or self.support_context is not None:
-            raise ValueError("反馈动作需要正文")
-        if (self.action in {"CORRECT", "RETRACT"}) != (self.fact_id is not None):
-            raise ValueError("更正与撤回必须指明前驱")
-        return self
+DraftPurpose = Literal[
+    "CREATE_TICKET", "ADD_RECORD", "RESOLVE_TICKET", "REQUEST_INFORMATION", "BOOK_ONSITE"
+]
 
 
 class DraftCreate(WireModel):
     """创建草稿不发模型请求，客户仅采用明确确认的本人反馈。"""
 
-    source_generation_id: Identifier
-    purpose: Literal["CREATE_TICKET", "ADD_RECORD", "RESOLVE_TICKET"]
+    source_run_id: Identifier | None = None
+    purpose: DraftPurpose
     client_request_id: Identifier
     confirmed_fact_ids: list[Identifier] = Field(default_factory=list, max_length=30)
+    follow_up_at: AwareDatetime | None = Field(default=None, exclude_if=lambda value: value is None)
+    slot_id: Identifier | None = Field(default=None, exclude_if=lambda value: value is None)
+    wait_for_confirmation: bool = Field(default=False, exclude_if=lambda value: value is False)
+
+    @model_validator(mode="after")
+    def purpose_fields(self) -> Self:
+        """具体时间和时段由人选择，不允许无关用途夹带动作参数。"""
+        if (self.purpose == "REQUEST_INFORMATION") != (self.follow_up_at is not None):
+            raise ValueError("补充请求须指定跟进时刻")
+        if (self.purpose == "BOOK_ONSITE") != (self.slot_id is not None):
+            raise ValueError("预约须指定时段")
+        if self.purpose == "BOOK_ONSITE" and (self.source_run_id or self.wait_for_confirmation):
+            raise ValueError("已交接任务的预约不依赖模型运行或重开诊断")
+        return self
 
 
 class FeedbackInput(DiagnosisInput):
-    """默认不共享；共享由单独的版本化动作处理。"""
+    """本人对终态运行的评价和实际采纳反馈，不授予聊天访问权。"""
 
     rating: Literal["HELPFUL", "UNHELPFUL"]
+    adoption: Literal["NOT_USED", "ACCEPTED", "MODIFIED", "REJECTED"]
     issue_category: (
         Literal[
-            "INCORRECT_ANSWER",
-            "MISSING_CONDITION",
-            "INCORRECT_CITATION",
-            "OUTDATED_SOURCE",
+            "INCORRECT",
+            "IRRELEVANT",
+            "MISSING_CONTEXT",
+            "UNSUPPORTED",
             "OTHER",
         ]
         | None
     ) = None
-    comment: str | None = Field(default=None, max_length=1000)
+    comment: str | None = Field(default=None, max_length=2000)
+    row_version: Version | None = None
 
     @model_validator(mode="after")
     def category_required(self) -> Self:
@@ -144,58 +142,73 @@ class FeedbackInput(DiagnosisInput):
         return self
 
 
-class FeedbackShare(WireModel):
-    """技术会话不支持共享；撤销共享保留已有处理结论。"""
-
-    row_version: Version
-    share: bool
-
-
-class FeedbackHandle(DiagnosisInput):
-    """处置比较反馈版本，保留人工确认的处理说明。"""
-
-    row_version: Version
-    action: Literal["RESOLVE", "DISMISS"]
-    handling_note: str = Field(min_length=1, max_length=2000)
-
-
-class DiagnosisResult(DiagnosisInput):
-    """模型只能返回公开结果与允许编号，不返回或保存隐藏思维链。"""
-
-    schema_version: Literal[1] = 1
-    answer_type: Literal["ANSWERED", "CLARIFICATION", "INSUFFICIENT_EVIDENCE"]
-    text: str = Field(min_length=1, max_length=8000)
-    citation_numbers: list[int] = Field(default_factory=list, max_length=8)
-    open_questions: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
-        default_factory=list, max_length=5
-    )
-    hypotheses: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
-        default_factory=list, max_length=5
-    )
-    proposed_record: str | None = Field(default=None, max_length=5000)
-    proposed_resolution: str | None = Field(default=None, max_length=5000)
-    resolution_type: Literal["RESTORED", "GUIDANCE", "REFERRED"] | None = None
-    referral_target: str | None = Field(default=None, max_length=500)
-
-
 class SearchKnowledge(DiagnosisInput):
     """工具范围由宿主固定，只允许模型选择查询文本和有界数量。"""
 
     query: str = Field(min_length=1, max_length=1000)
-    source_type: Literal["OFFICIAL_MANUAL", "TROUBLESHOOTING_GUIDE", "SANITIZED_CASE"] | None = None
+    document_title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=300,
+        description="用户指定完整资料标题时原样填写，只搜索当前有权且标题完全一致的文档；未指定时为null",
+    )
+    source_type: Literal["OFFICIAL_MANUAL", "TROUBLESHOOTING_GUIDE", "SANITIZED_CASE"] | None = (
+        Field(
+            default=None,
+            description="默认不筛选；仅用户明确要求知识分类时指定。厂商发布的排障指南也属于TROUBLESHOOTING_GUIDE，官方来源不等于OFFICIAL_MANUAL。",
+        )
+    )
     limit: int = Field(default=8, ge=1, le=8)
 
 
-class ReadKnowledge(WireModel):
-    """只能读取本轮已知候选，不能由模型指定任意任务。"""
+class ReadEvidence(WireModel):
+    """按候选与字符游标阅读，完整章节可由多个有界正文页组成。"""
 
-    chunk_ids: list[Identifier] = Field(min_length=1, max_length=8)
+    chunk_id: Identifier
+    expand_section: bool = Field(default=True, description="将候选叶片扩展到父章节时必须从0开始")
+    offset: int = Field(
+        default=0,
+        ge=0,
+        le=49152,
+        strict=True,
+        description="首次阅读为0；续页仅使用正文回执的chunkId与nextOffset，不能沿用搜索预览的endOffset",
+    )
+
+
+class ReadTaskContext(DiagnosisInput):
+    """仅查询当前私有任务；字面子串筛选与ID游标不允许指定其他任务或客户。"""
+
+    section: Literal["FACTS", "CHECKS"]
+    before_id: Identifier | None = None
+    query: str | None = Field(default=None, min_length=1, max_length=100)
+    limit: int = Field(default=3, ge=1, le=3)
+
+
+class ListDiagnosticAttachments(WireModel):
+    """固定工单的可读脱敏附件游标，不接受外部URL或客户范围。"""
+
+    after_id: Identifier | None = None
+
+
+class InspectDiagnosticText(WireModel):
+    """固定脱敏版本按Unicode字符分页，不执行正文或跟随正文中的链接。"""
+
+    attachment_id: Identifier
+    redaction_version: Version
+    offset: int = Field(default=0, ge=0, le=1048576, strict=True)
+
+    @model_validator(mode="after")
+    def confirmed_version(self) -> Self:
+        """未确认版本不能交给诊断工具读取。"""
+        if int(self.redaction_version) < 1:
+            raise ValueError("附件必须是已确认的脱敏版本")
+        return self
 
 
 class ReadTicketEvents(WireModel):
     """工单固定在会话，游标与ID集合二选一。"""
 
-    after_sequence: int | None = Field(default=None, ge=0)
+    after_sequence: int | None = Field(default=None, ge=0, le=9223372036854775807)
     event_ids: list[Identifier] = Field(default_factory=list, max_length=20)
     limit: int = Field(default=20, ge=1, le=20)
 
@@ -205,3 +218,17 @@ class ReadTicketEvents(WireModel):
         if self.event_ids and self.after_sequence is not None:
             raise ValueError("事件ID与游标二选一")
         return self
+
+
+class DraftRevision(WireModel):
+    """编辑必须针对原修订及其摘要，未知响应保留原请求键。"""
+
+    client_request_id: Identifier
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content: DraftContent
+
+
+class DraftWithdraw(WireModel):
+    """撤回仅阻止后续校验，不声明在途正式动作已取消。"""
+
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")

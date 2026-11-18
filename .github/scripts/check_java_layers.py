@@ -12,9 +12,15 @@ def check_java_layers() -> list[str]:
     """允许有效空层，拒绝缺失对应、重复statement和Java内嵌SQL。"""
     errors: list[str] = []
     structure = (ROOT / "docs/设计/项目结构.md").read_text(encoding="utf-8")
-    section = structure.split("已实现真实实体的文件对应如下。", 1)[1].split(
-        "NotificationQueryMapper、TicketOverviewMapper", 1
-    )[0]
+    table = re.search(
+        r"^\| 服务 \| Entity / Mapper / XML \| Service / ServiceImpl \| Controller \|\r?\n"
+        r"(?:\|[^\n]*\n)+",
+        structure,
+        re.M,
+    )
+    if table is None:
+        return ["项目结构缺少实体分层登记表，无法核对文件对应"]
+    section = table[0]
     registered: dict[str, set[str]] = {module: set() for module in MODULES}
     for line in section.splitlines():
         columns = [item.strip() for item in line.split("|")]

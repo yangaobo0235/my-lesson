@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+FROM node:24.22.2-bookworm-slim AS build
+WORKDIR /workspace/desk-web
+COPY desk-web/package.json desk-web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY desk-web/src/ src/
+COPY desk-web/index.html desk-web/vite.config.ts desk-web/tsconfig.json ./
+RUN npm run build
+
+FROM nginx:1.30.6-alpine AS runtime
+COPY .github/docker/nginx.conf /etc/nginx/nginx.conf
+COPY --from=build /workspace/desk-web/dist/ /usr/share/nginx/html/
+USER nginx
+EXPOSE 8080 8443
+ENTRYPOINT ["nginx"]
+CMD ["-g", "daemon off;"]

@@ -1,3 +1,5 @@
+-- 历史初始结构快照：不是2026-11-16协同排障目标DDL。
+-- 目标模型见 docs/设计/数据库设计.md；执行及迁移限制见同目录README.md。
 -- Service Desk 测试环境初始化 / MySQL 8.4 LTS
 -- 在IDEA中使用MySQL管理员连接，执行整个文件；连接字符集为utf8mb4。
 -- 目标为四个服务独立库，每环境24张业务表及2张Spring Session技术表。

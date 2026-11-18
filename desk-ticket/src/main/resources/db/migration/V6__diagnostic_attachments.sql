@@ -1,0 +1,57 @@
+CREATE TABLE sd_attachment (
+  id VARCHAR(32) NOT NULL COMMENT '附件身份',
+  ticket_id VARCHAR(32) NOT NULL COMMENT '所属工单',
+  uploaded_by VARCHAR(32) NOT NULL COMMENT '原上传者',
+  client_upload_id VARCHAR(32) NOT NULL COMMENT '上传者请求键',
+  request_hash VARCHAR(64) NOT NULL COMMENT '上传输入摘要',
+  original_file_name VARCHAR(255) NOT NULL COMMENT '仅用于展示',
+  content_format VARCHAR(16) NOT NULL COMMENT 'TEXT / LOG / JSON',
+  visibility VARCHAR(16) NOT NULL COMMENT 'PUBLIC / INTERNAL',
+  status VARCHAR(16) NOT NULL DEFAULT 'UPLOADING',
+  storage_bucket VARCHAR(63) NOT NULL,
+  storage_key VARCHAR(255) NOT NULL,
+  storage_version_id VARCHAR(1024) NULL,
+  file_size_bytes BIGINT NOT NULL,
+  file_sha256 VARCHAR(64) NOT NULL,
+  redacted_text MEDIUMTEXT NULL,
+  redaction_version BIGINT NOT NULL DEFAULT 0,
+  redacted_sha256 VARCHAR(64) NULL,
+  ai_use_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+  confirmed_by VARCHAR(32) NULL,
+  confirmed_at DATETIME(6) NULL,
+  retain_until DATETIME(6) NULL,
+  deleted_at DATETIME(6) NULL,
+  error_code VARCHAR(64) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  row_version BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_sd_attachment_upload (uploaded_by,client_upload_id),
+  UNIQUE KEY uk_sd_attachment_key (storage_key),
+  UNIQUE KEY uk_sd_attachment_ticket (id,ticket_id),
+  KEY idx_sd_attachment_ticket_status (ticket_id,status,created_at,id),
+  CONSTRAINT fk_sd_attachment_ticket FOREIGN KEY (ticket_id) REFERENCES sd_ticket(id),
+  CONSTRAINT ck_sd_attachment_ids CHECK (REGEXP_LIKE(id,'^[0-9a-f]{32}$','c') AND REGEXP_LIKE(ticket_id,'^[0-9a-f]{32}$','c') AND REGEXP_LIKE(uploaded_by,'^[0-9a-f]{32}$','c') AND REGEXP_LIKE(client_upload_id,'^[0-9a-f]{32}$','c')),
+  CONSTRAINT ck_sd_attachment_hashes CHECK (REGEXP_LIKE(request_hash,'^[0-9a-f]{64}$','c') AND REGEXP_LIKE(file_sha256,'^[0-9a-f]{64}$','c')),
+  CONSTRAINT ck_sd_attachment_format CHECK (content_format IN ('TEXT','LOG','JSON')),
+  CONSTRAINT ck_sd_attachment_visibility CHECK (visibility IN ('PUBLIC','INTERNAL')),
+  CONSTRAINT ck_sd_attachment_status CHECK (status IN ('UPLOADING','READY','FAILED','UNKNOWN','DELETED')),
+  CONSTRAINT ck_sd_attachment_size CHECK (file_size_bytes BETWEEN 1 AND 1048576),
+  CONSTRAINT ck_sd_attachment_name CHECK (REGEXP_LIKE(original_file_name,'[^[:space:]]') AND NOT REGEXP_LIKE(original_file_name,'[[:cntrl:]]')),
+  CONSTRAINT ck_sd_attachment_storage CHECK (REGEXP_LIKE(storage_bucket,'^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$','c') AND REGEXP_LIKE(storage_key,'^ticket/(ci|test|prod)/attachments/[0-9a-f]{32}$','c') AND RIGHT(storage_key,32)=id),
+  CONSTRAINT ck_sd_attachment_version CHECK (((status='READY' AND storage_version_id IS NOT NULL AND storage_version_id<>'null' AND CHAR_LENGTH(TRIM(storage_version_id))>0) OR (status='DELETED') OR (status IN ('UPLOADING','FAILED','UNKNOWN') AND storage_version_id IS NULL)) IS TRUE),
+  CONSTRAINT ck_sd_attachment_redaction CHECK (((redaction_version=0 AND redacted_text IS NULL AND redacted_sha256 IS NULL AND confirmed_by IS NULL AND confirmed_at IS NULL AND ai_use_allowed=FALSE) OR
+    (redaction_version>0 AND redacted_text IS NOT NULL AND OCTET_LENGTH(redacted_text) BETWEEN 1 AND 1048576 AND redacted_sha256 IS NOT NULL AND REGEXP_LIKE(redacted_sha256,'^[0-9a-f]{64}$','c') AND confirmed_by=uploaded_by AND confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL AND storage_version_id IS NOT NULL AND storage_version_id<>'null' AND status IN ('READY','DELETED'))) IS TRUE),
+  CONSTRAINT ck_sd_attachment_ai CHECK (ai_use_allowed IN (FALSE,TRUE) AND (ai_use_allowed=FALSE OR (status='READY' AND redaction_version>0))),
+  CONSTRAINT ck_sd_attachment_deleted CHECK (((status='DELETED' AND deleted_at IS NOT NULL) OR (status<>'DELETED' AND deleted_at IS NULL)) IS TRUE),
+  CONSTRAINT ck_sd_attachment_time CHECK (row_version>=0 AND redaction_version>=0 AND updated_at>=created_at AND (confirmed_at IS NULL OR confirmed_at>=created_at) AND (deleted_at IS NULL OR deleted_at>=created_at))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin;
+
+ALTER TABLE sd_action_receipt
+  DROP CHECK ck_sd_action_receipt_snapshot,
+  ADD CONSTRAINT ck_sd_action_receipt_snapshot CHECK (JSON_SCHEMA_VALID('{"type":"object","required":["schema_version","ticket_id","ticket_row_version","ticket_status","event_sequence","event_id","booking_id","booking_status","booking_row_version"],"properties":{"schema_version":{"type":"integer","enum":[1]},"ticket_id":{"type":"string","pattern":"^[0-9a-f]{32}$"},"ticket_row_version":{"type":"integer","minimum":0},"ticket_status":{"type":"string"},"event_sequence":{"type":"integer","minimum":0},"event_id":{"type":["string","null"]},"booking_id":{"type":["string","null"]},"booking_status":{"type":["string","null"]},"booking_row_version":{"type":["integer","null"],"minimum":0},"attachment_id":{"type":"string","pattern":"^[0-9a-f]{32}$"},"attachment_status":{"type":"string","enum":["READY","DELETED"]},"attachment_row_version":{"type":"integer","minimum":1},"redaction_version":{"type":"integer","minimum":0},"ai_use_allowed":{"type":"boolean"}},"additionalProperties":false}',result_snapshot)=1 AND OCTET_LENGTH(result_snapshot)<=8192),
+  ADD CONSTRAINT ck_sd_action_receipt_attachment CHECK ((action_type NOT IN ('CONFIRM_REDACTION','DELETE_ATTACHMENT') OR JSON_CONTAINS_PATH(result_snapshot,'all','$.attachment_id','$.attachment_status','$.attachment_row_version','$.redaction_version','$.ai_use_allowed')=1) IS TRUE);
+
+ALTER TABLE sd_ticket_event
+  DROP CHECK ck_sd_ticket_event__event_type_values,
+  ADD CONSTRAINT ck_sd_ticket_event__event_type_values CHECK (event_type IN ('CREATED','ACCEPTED','ASSIGNED','REASSIGNED','NEED_INFO','SUPPLEMENTED','RESOLVED','UNRESOLVED','CLOSED','CANCELLED','COMMENTED','RESPONSE_OVERDUE','ACCEPTANCE_OVERDUE','PRIORITY_CHANGED','ONSITE_ELIGIBILITY_CHANGED','ONSITE_BOOKED','ONSITE_BOOKING_CANCELLED','ONSITE_FINISHED','ONSITE_ASSIGNED','CONTEXT_UPDATED','WAIT_EXTERNAL','END_WAIT','FOLLOW_UP','FOLLOW_UP_DUE','ATTACHMENT_REDACTED','ATTACHMENT_DELETED'));

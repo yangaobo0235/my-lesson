@@ -25,6 +25,10 @@ public enum PublicationStatusEnum implements BaseEnum<String> {
      */
     RETIRED("RETIRED", "已退役"),
     /**
+     * 内容风险撤回，纠错须发布新修订。
+     */
+    WITHDRAWN("WITHDRAWN", "风险撤回"),
+    /**
      * 未发布草稿已删除。
      */
     DELETED("DELETED", "未发布草稿已删除");

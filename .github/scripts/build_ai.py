@@ -34,7 +34,17 @@ def main() -> None:
             "servicedesk_ai/migrations/versions/0001_initial_schema.py",
             "servicedesk_ai/migrations/versions/0002_office_it_support.py",
             "servicedesk_ai/migrations/versions/0003_restore_original_digest.py",
+            "servicedesk_ai/migrations/versions/0004_private_feedback.py",
+            "servicedesk_ai/migrations/versions/0005_draft_revisions.py",
+            "servicedesk_ai/migrations/versions/0006_collaborative_agent.py",
+            "servicedesk_ai/migrations/versions/0007_evidence_sections.py",
+            "servicedesk_ai/migrations/versions/0008_draft_task_events.py",
+            "servicedesk_ai/migrations/versions/0009_draft_reconciliation.py",
             "servicedesk_ai/migrations/sql/0002_office_it_support.sql",
+            "servicedesk_ai/migrations/sql/0006_collaborative_agent.sql",
+            "servicedesk_ai/diagnosis/execution.py",
+            "servicedesk_ai/services/task_maintenance.py",
+            "servicedesk_ai/services/run_completion.py",
             "servicedesk_ai/worker.py",
             "servicedesk_ai/receiver.py",
             "servicedesk_ai/reconcile_parser.py",
@@ -49,6 +59,17 @@ def main() -> None:
             raise RuntimeError("AI制品未包含完整生成合同")
         if any(Path(name).name.startswith(".env") for name in names):
             raise RuntimeError("AI制品不得包含本机dotenv配置或模板")
+        if any(name.startswith(("tests/", ".local/")) for name in names):
+            raise RuntimeError("AI制品不得包含评测题集、测试或本机报告")
+        if any(
+            name in names
+            for name in (
+                "servicedesk_ai/repositories/generation_execution.py",
+                "servicedesk_ai/repositories/diagnosis.py",
+                "servicedesk_ai/errors/generation.py",
+            )
+        ):
+            raise RuntimeError("AI制品仍包含被Run替代的旧执行入口")
     print(wheels[-1])
 
 

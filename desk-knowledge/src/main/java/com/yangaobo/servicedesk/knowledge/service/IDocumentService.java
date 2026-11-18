@@ -5,6 +5,9 @@ import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.IdVersionForm;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.knowledge.model.entity.DocumentEntity;
+import com.yangaobo.servicedesk.knowledge.model.enums.DocumentSafetyActionEnum;
+import com.yangaobo.servicedesk.knowledge.model.form.DocumentSafetyForm;
+import com.yangaobo.servicedesk.knowledge.model.form.DocumentProcedureForm;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentPublishForm;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentUpdateForm;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentUploadForm;
@@ -21,6 +24,11 @@ import java.io.InputStream;
  * @author yangaobo
  */
 public interface IDocumentService extends IService<DocumentEntity> {
+    /**
+     * 先查动作回执，再核实原件定位并原子提交规程验证标记。
+     */
+    DocumentVO validateProcedure(IdentityDTO actor, DocumentProcedureForm form);
+
     /**
      * 原键先查回执，文件校验与OSS上传在数据库事务外。
      */
@@ -56,6 +64,11 @@ public interface IDocumentService extends IService<DocumentEntity> {
      * 停用立即撤销召回，恢复重新校验成功索引及来源。
      */
     DocumentVO availability(IdentityDTO actor, IdVersionForm form, boolean restore);
+
+    /**
+     * 风险撤回或独立变更访问权限，同事务登记原动作回执。
+     */
+    DocumentVO safety(IdentityDTO actor, DocumentSafetyForm form, DocumentSafetyActionEnum action);
 
     /**
      * 仅从未发布且所有索引和解析已安全收敛的草稿可逻辑删除。

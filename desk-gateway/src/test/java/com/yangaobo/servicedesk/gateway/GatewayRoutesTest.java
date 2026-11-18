@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -32,7 +33,9 @@ import org.springframework.test.context.DynamicPropertySource;
  *
  * @author yangaobo
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"management.tracing.enabled=true", "management.tracing.sampling.probability=1.0"})
+@AutoConfigureObservability
 @ActiveProfiles({"dev", "test"})
 class GatewayRoutesTest {
 
@@ -84,6 +87,7 @@ class GatewayRoutesTest {
                 });
         upstream.start();
         String uri = "http://127.0.0.1:" + upstream.getAddress().getPort();
+        registry.add("management.zipkin.tracing.endpoint", () -> uri + "/api/v2/spans");
         for (String service : new String[]{"user", "ticket", "knowledge", "ai"}) {
             registry.add("desk.downstream." + service, () -> uri);
         }
@@ -111,6 +115,7 @@ class GatewayRoutesTest {
                     new String[]{
                             "/api/v1/users/probe",
                             "/api/v1/tickets/probe",
+                            "/api/v1/attachments/by-request/probe",
                             "/api/v1/knowledge/probe",
                             "/api/v1/ai/probe",
                             "/api/v1/admin/organization/query",
@@ -126,8 +131,7 @@ class GatewayRoutesTest {
                             "/api/v1/admin/document/query",
                             "/api/v1/admin/document-event/list",
                             "/api/v1/admin/index-job/query",
-                            "/api/v1/admin/retrieval/diagnostics",
-                            "/api/v1/admin/feedback/query"
+                            "/api/v1/admin/retrieval/diagnostics"
                     }) {
                 HttpResponse<String> response =
                         client.send(request(path).build(), HttpResponse.BodyHandlers.ofString());
@@ -143,6 +147,7 @@ class GatewayRoutesTest {
                             "/api/v1/admin/service-item-extra/query",
                             "/api/v1/admin/service-entitlements/query",
                             "/api/v1/admin/unknown/query",
+                            "/api/v1/admin/feedback/query",
                             "/internal/v1/users/probe",
                             "/v3/api-docs",
                             "/swagger-ui.html",
@@ -184,10 +189,14 @@ class GatewayRoutesTest {
                     client.send(request, HttpResponse.BodyHandlers.ofString());
             assertEquals(200, response.statusCode());
             for (String header :
-                    new String[]{"X-User-Id", "X-Internal-Token", "traceparent", "baggage"}) {
+                    new String[]{"X-User-Id", "X-Internal-Token", "baggage"}) {
                 assertFalse(
                         response.headers().firstValue("Received-" + header).isPresent(), header);
             }
+            String traceparent = response.headers().firstValue("Received-traceparent").orElseThrow();
+            assertTrue(traceparent.matches("00-[0-9a-f]{32}-[0-9a-f]{16}-01"));
+            assertFalse(traceparent.contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                    "真实观测必须生成新链，不能先继承外部头再仅删除原始字段");
             assertEquals(
                     "DESK_SESSION=test-session",
                     response.headers().firstValue("Received-Cookie").orElseThrow());

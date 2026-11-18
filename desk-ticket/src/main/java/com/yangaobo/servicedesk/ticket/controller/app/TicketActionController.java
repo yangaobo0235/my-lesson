@@ -7,6 +7,8 @@ import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketActionForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketAssignmentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketCommentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContentForm;
+import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketWaitForm;
+import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketInformationForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContextForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketPriorityForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketResolveForm;
@@ -103,9 +105,42 @@ public class TicketActionController {
     @Operation(summary = "执行工单request-information，当前权限、原键及版本由业务层校验。")
     @PostMapping("/request-information")
     public Result<TicketActionReceiptVO> requestInformation(
-            @PathVariable String id, @Valid @RequestBody TicketContentForm form) {
+            @PathVariable String id, @Valid @RequestBody TicketInformationForm form) {
         TicketActionReceiptVO data =
                 ticketService.requestInformation(currentActor.requireIdentity(), id, form);
+        return Result.success(data);
+    }
+
+    /**
+     * 登记外部等待，动作键和行版本由业务用例核验。
+     */
+    @PostMapping("/wait-external")
+    @Operation(summary = "登记外部等待")
+    public Result<TicketActionReceiptVO> waitExternal(
+            @PathVariable String id, @Valid @RequestBody TicketWaitForm form) {
+        TicketActionReceiptVO data = ticketService.waitExternal(currentActor.requireIdentity(), id, form);
+        return Result.success(data);
+    }
+
+    /**
+     * 结束当前等待，动作键和行版本由业务用例核验。
+     */
+    @PostMapping("/end-wait")
+    @Operation(summary = "结束当前等待")
+    public Result<TicketActionReceiptVO> endWait(
+            @PathVariable String id, @Valid @RequestBody TicketContentForm form) {
+        TicketActionReceiptVO data = ticketService.endWait(currentActor.requireIdentity(), id, form);
+        return Result.success(data);
+    }
+
+    /**
+     * 记录跟进并设置下一期限，动作键和行版本由业务用例核验。
+     */
+    @PostMapping("/follow-up")
+    @Operation(summary = "记录跟进并设置下一期限")
+    public Result<TicketActionReceiptVO> followUp(
+            @PathVariable String id, @Valid @RequestBody TicketWaitForm form) {
+        TicketActionReceiptVO data = ticketService.followUp(currentActor.requireIdentity(), id, form);
         return Result.success(data);
     }
 

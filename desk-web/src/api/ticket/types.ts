@@ -19,6 +19,7 @@ export const status = choices(
   'SUBMITTED',
   'PROCESSING',
   'WAITING_CUSTOMER',
+  'WAITING_EXTERNAL',
   'RESOLVED',
   'CLOSED',
   'CANCELLED',
@@ -28,6 +29,7 @@ export const statusNames: Record<TicketStatus, string> = {
   SUBMITTED: '待受理',
   PROCESSING: '处理中',
   WAITING_CUSTOMER: '待补充',
+  WAITING_EXTERNAL: '等待外部反馈',
   RESOLVED: '待确认',
   CLOSED: '已结单',
   CANCELLED: '已取消',
@@ -62,6 +64,12 @@ export function ticket(v: unknown) {
     priority: choices('NORMAL', 'HIGH')(o.priority),
     assigneeId: nullable(identifier)(o.assigneeId),
     rowVersion: decimal(o.rowVersion),
+    diagnosisContextVersion: decimal(o.diagnosisContextVersion),
+    eventSequence: decimal(o.eventSequence),
+    waitReason: nullable(text)(o.waitReason),
+    followUpAt: nullable(text)(o.followUpAt),
+    waitCycle: integer(o.waitCycle),
+    followUpNotifiedAt: nullable(text)(o.followUpNotifiedAt),
     createdAt: text(o.createdAt),
     updatedAt: text(o.updatedAt),
     acceptanceDueAt: text(o.acceptanceDueAt),
@@ -83,7 +91,7 @@ export function ticketEvent(v: unknown) {
   const o = record(v)
   return {
     id: identifier(o.id),
-    sequenceNumber: integer(o.sequenceNumber),
+    sequenceNumber: decimal(o.sequenceNumber),
     eventType: text(o.eventType),
     visibility: choices('PUBLIC', 'INTERNAL')(o.visibility),
     content: nullable(text)(o.content),
@@ -99,9 +107,24 @@ export function detail(v: unknown) {
 export function receipt(v: unknown) {
   const o = record(v)
   return {
-    eventId: identifier(o.eventId),
+    eventId: nullable(identifier)(o.eventId),
+    receiptId: identifier(o.receiptId),
+    actionType: text(o.actionType),
+    clientActionId: identifier(o.clientActionId),
+    ticketRowVersion: decimal(o.ticketRowVersion),
+    bookingId: nullable(identifier)(o.bookingId),
+    bookingStatus: nullable(text)(o.bookingStatus),
+    bookingRowVersion: nullable(decimal)(o.bookingRowVersion),
+    attachmentId: nullable(identifier)(o.attachmentId),
+    attachmentStatus: nullable(choices('READY', 'DELETED'))(o.attachmentStatus),
+    attachmentRowVersion: nullable(decimal)(o.attachmentRowVersion),
+    redactionVersion: nullable(decimal)(o.redactionVersion),
+    aiUseAllowed: nullable(bool)(o.aiUseAllowed),
+    resultCode: choices('APPLIED', 'SOLD_OUT', 'SLOT_CLOSED')(o.resultCode),
+    sourceDraftId: nullable(identifier)(o.sourceDraftId),
+    sourceDraftRootId: nullable(identifier)(o.sourceDraftRootId),
     ticketId: identifier(o.ticketId),
-    sequenceNumber: integer(o.sequenceNumber),
+    sequenceNumber: decimal(o.sequenceNumber),
     toStatus: status(o.toStatus),
   }
 }
@@ -111,6 +134,7 @@ export function overview(v: unknown) {
     submitted: decimal(o.submitted),
     processing: decimal(o.processing),
     waitingCustomer: decimal(o.waitingCustomer),
+    waitingExternal: decimal(o.waitingExternal),
     resolved: decimal(o.resolved),
     overdue: decimal(o.overdue),
     triage: decimal(o.triage),
@@ -142,6 +166,8 @@ export interface TicketCreateForm {
   serviceAreaCode: string | null
   serviceLocation: string | null
   sourceDraftId: string | null
+  sourceDraftRootId: string | null
+  contentSha256: string | null
 }
 export interface ActionForm {
   clientActionId: string
@@ -150,8 +176,22 @@ export interface ActionForm {
 export type TicketAction =
   | { name: 'accept' | 'confirm'; form: ActionForm }
   | {
-      name: 'request-information' | 'supplements' | 'unresolved' | 'cancel'
+      name: 'supplements' | 'unresolved' | 'cancel' | 'end-wait'
       form: ActionForm & { content: string }
+    }
+  | {
+      name: 'wait-external' | 'follow-up'
+      form: ActionForm & { content: string; followUpAt: string }
+    }
+  | {
+      name: 'request-information'
+      form: ActionForm & {
+        content: string
+        followUpAt: string
+        sourceDraftId?: string
+        sourceDraftRootId?: string
+        contentSha256?: string
+      }
     }
   | {
       name: 'assign' | 'reassign'
@@ -167,6 +207,8 @@ export type TicketAction =
         content: string
         visibility: 'PUBLIC' | 'INTERNAL'
         sourceDraftId: string | null
+        sourceDraftRootId: string | null
+        contentSha256: string | null
       }
     }
   | {
@@ -176,6 +218,8 @@ export type TicketAction =
         resolutionType: 'RESTORED' | 'GUIDANCE' | 'REFERRED'
         referralTarget: string | null
         sourceDraftId: string | null
+        sourceDraftRootId: string | null
+        contentSha256: string | null
       }
     }
   | {

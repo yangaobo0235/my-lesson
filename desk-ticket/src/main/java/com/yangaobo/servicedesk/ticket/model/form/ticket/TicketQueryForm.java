@@ -31,7 +31,7 @@ public class TicketQueryForm extends BasePageForm implements Serializable {
      */
     @Schema(description = "工单状态过滤。")
     @SchemaEnum(TicketStatusEnum.class)
-    @Pattern(regexp = "SUBMITTED|PROCESSING|WAITING_CUSTOMER|RESOLVED|CLOSED|CANCELLED")
+    @Pattern(regexp = "SUBMITTED|PROCESSING|WAITING_CUSTOMER|WAITING_EXTERNAL|RESOLVED|CLOSED|CANCELLED")
     private String status;
 
     /**

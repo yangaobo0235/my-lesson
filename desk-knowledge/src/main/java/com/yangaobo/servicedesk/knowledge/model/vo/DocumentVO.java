@@ -1,6 +1,7 @@
 package com.yangaobo.servicedesk.knowledge.model.vo;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.yangaobo.servicedesk.common.serialize.DecimalStringSerializer;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentRuleForm;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -24,6 +25,32 @@ import lombok.NoArgsConstructor;
 public class DocumentVO implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
+
+    /**
+     * 不可变人工规程，无规程资料为空。
+     */
+    @Schema(description = "修订内不可变人工规程")
+    private JsonNode procedureDefinition;
+    /**
+     * 当前定义的规范摘要。
+     */
+    @Schema(description = "当前规程摘要")
+    private String procedureSha256;
+    /**
+     * 已通过校验的定义摘要。
+     */
+    @Schema(description = "校验通过的规程摘要")
+    private String procedureValidatedSha256;
+    /**
+     * 规程成功校验时刻。
+     */
+    @Schema(description = "校验时刻")
+    private Instant procedureValidatedAt;
+    /**
+     * 执行校验的管理员。
+     */
+    @Schema(description = "校验管理员")
+    private String procedureValidatedBy;
 
     /**
      * 主键，由所属后端生成。
@@ -115,10 +142,28 @@ public class DocumentVO implements Serializable {
     private String applicabilityNote;
 
     /**
-     * DRAFT / PUBLISHED / DISABLED / RETIRED / DELETED。
+     * DRAFT / PUBLISHED / DISABLED / RETIRED / WITHDRAWN / DELETED。
      */
-    @Schema(description = "DRAFT / PUBLISHED / DISABLED / RETIRED / DELETED")
+    @Schema(description = "DRAFT / PUBLISHED / DISABLED / RETIRED / WITHDRAWN / DELETED")
     private String publicationStatus;
+
+    /**
+     * ALLOWED / REVOKED，访问权限独立于发布状态。
+     */
+    @Schema(description = "ALLOWED / REVOKED，访问权限独立于发布状态")
+    private String accessStatus;
+
+    /**
+     * 最近访问权限变更原因。
+     */
+    @Schema(description = "最近访问权限变更原因")
+    private String accessReason;
+
+    /**
+     * 风险撤回原因。
+     */
+    @Schema(description = "风险撤回原因")
+    private String withdrawalReason;
 
     /**
      * 本地复合 FK(current_job_id,id) → kb_index_job(id,document_id)，外部 AI 任务使用同一 ID。

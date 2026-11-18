@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { subscribeGeneration } from '../../src/api/diagnosis/diagnosisApi'
+import { subscribeRun } from '../../src/api/diagnosis/diagnosisApi'
 
 /** 断流只触发原运行查询；分块边界不能改变事件身份和UTF-8正文。 @author yangaobo */
 describe('持久运行SSE订阅', () => {
@@ -21,13 +21,8 @@ describe('持久运行SSE订阅', () => {
     vi.stubGlobal('fetch', fetch)
     return fetch
   }
-  function frame(
-    name: string,
-    sequence: number,
-    data: unknown,
-    generationId = id,
-  ) {
-    return `event: ${name}\r\ndata: ${JSON.stringify({ generationId, sequence, data })}\r\n\r\n`
+  function frame(name: string, sequence: number, data: unknown, runId = id) {
+    return `event: ${name}\r\ndata: ${JSON.stringify({ runId, sequence, data })}\r\n\r\n`
   }
   it('跨字节拆分中文及CRLF仍只交付有效有序事件', async () => {
     const bytes = new TextEncoder().encode(
@@ -41,7 +36,7 @@ describe('持久运行SSE订阅', () => {
     const fetch = response(Array.from(bytes, (byte) => Uint8Array.of(byte)))
     const stage = vi.fn()
     await expect(
-      subscribeGeneration(id, 'csrf', new AbortController().signal, stage),
+      subscribeRun(id, 'csrf', new AbortController().signal, stage),
     ).resolves.toBe(true)
     expect(stage).toHaveBeenCalledExactlyOnceWith('RUNNING')
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -51,7 +46,7 @@ describe('持久运行SSE订阅', () => {
       new TextEncoder().encode(frame('stage', 1, { status: 'RUNNING' })),
     ])
     await expect(
-      subscribeGeneration(id, 'csrf', new AbortController().signal, vi.fn()),
+      subscribeRun(id, 'csrf', new AbortController().signal, vi.fn()),
     ).resolves.toBe(false)
     expect(fetch).toHaveBeenCalledTimes(1)
   })
@@ -62,7 +57,7 @@ describe('持久运行SSE订阅', () => {
   ])('拒绝错运行或重复序号', async (body) => {
     response([new TextEncoder().encode(body)])
     await expect(
-      subscribeGeneration(id, 'csrf', new AbortController().signal, vi.fn()),
+      subscribeRun(id, 'csrf', new AbortController().signal, vi.fn()),
     ).rejects.toThrow('身份或顺序')
   })
 })

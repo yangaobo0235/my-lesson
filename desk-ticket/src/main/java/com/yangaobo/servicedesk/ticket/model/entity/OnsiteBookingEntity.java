@@ -93,4 +93,28 @@ public class OnsiteBookingEntity implements Serializable {
      * 更新时刻。
      */
     private LocalDateTime updatedAt;
+    /**
+     * 预约独立写版本，正式修改比较后递增。
+     */
+    private Long rowVersion;
+    /**
+     * 预约出勤负责人。
+     */
+    private String assignedTechnicianId;
+
+    /**
+     * 登记的实际执行人。
+     */
+    private String performedBy;
+
+    /**
+     * 履约结果说明。
+     */
+    private String finishNote;
+
+    /**
+     * 到访前取消原因。
+     */
+    private String cancelReason;
+
 }

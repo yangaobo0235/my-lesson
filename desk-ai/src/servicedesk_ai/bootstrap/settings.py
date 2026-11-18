@@ -19,6 +19,8 @@ from servicedesk_ai.bootstrap.components import (
     RocketMqSettings,
     RpcSettings,
 )
+from servicedesk_ai.schemas.model_calls import PricingSnapshot
+from servicedesk_ai.schemas.tasks import TaskBudget
 
 
 class Settings(BaseSettings):
@@ -48,6 +50,13 @@ class Settings(BaseSettings):
     rocketmq: RocketMqSettings = Field(default_factory=RocketMqSettings)
     rpc: RpcSettings = Field(default_factory=RpcSettings)
     execution: ExecutionSettings = Field(default_factory=ExecutionSettings)
+    task_budget: TaskBudget = Field(
+        default_factory=lambda: TaskBudget(
+            max_model_calls=24, max_tokens=96000, currency="CNY", policy_version="desk-v1"
+        )
+    )
+    chat_pricing: PricingSnapshot = Field(default_factory=PricingSnapshot)
+    embedding_pricing: PricingSnapshot = Field(default_factory=PricingSnapshot)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
 
     @model_validator(mode="after")

@@ -1,6 +1,7 @@
 package com.yangaobo.servicedesk.knowledge.model.form;
 
 import com.yangaobo.servicedesk.common.annotation.SchemaEnum;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.yangaobo.servicedesk.common.validator.Identifier;
 import com.yangaobo.servicedesk.knowledge.model.enums.ContentFormatEnum;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -96,6 +97,22 @@ public class DocumentUploadForm implements Serializable {
     @Schema(description = "人可读的适用说明")
     @Size(max = 500)
     private String applicabilityNote;
+
+    /**
+     * 可空人工规程；上传后固定，内容由有限白名单合同校验。
+     */
+    @Schema(description = "修订内人工规程，最多20项检查及64KiB，创建后不可修改")
+    private JsonNode procedureDefinition;
+
+    /**
+     * 显式JSON null与未提供规程含义一致，不把NullNode当作待验证规程。
+     *
+     * @param procedureDefinition 可空修订规程
+     */
+    public void setProcedureDefinition(JsonNode procedureDefinition) {
+        this.procedureDefinition = procedureDefinition == null || procedureDefinition.isNull()
+                ? null : procedureDefinition;
+    }
 
     /**
      * 一条内AND，多条间OR。

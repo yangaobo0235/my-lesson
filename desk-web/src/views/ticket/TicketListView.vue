@@ -87,6 +87,10 @@ onMounted(load)
         ><span>待补充</span>
       </article>
       <article>
+        <strong>{{ summary.waitingExternal }}</strong
+        ><span>等待外部反馈</span>
+      </article>
+      <article>
         <strong>{{ summary.resolved }}</strong
         ><span>待确认</span>
       </article>

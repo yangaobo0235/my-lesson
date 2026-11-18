@@ -42,7 +42,7 @@ public class KnowledgeReadForm extends BasePageForm {
      * 本人历史运行引用，须与实际来源ID同时提供。
      */
     @Identifier
-    private String generationId;
+    private String runId;
 
     /**
      * 本轮实际知识来源，不能用候选或任意jobId扩大范围。

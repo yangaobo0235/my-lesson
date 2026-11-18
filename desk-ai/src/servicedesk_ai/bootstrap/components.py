@@ -35,6 +35,7 @@ class RedisSettings(ComponentSettings):
     database: int = Field(default=0, ge=0, le=15)
     key_prefix: str = "desk:test:ai:"
     daily_limit: int = Field(default=20, ge=1)
+    consult_daily_limit: int = Field(default=5, ge=1)
 
 
 class HttpSettings(ComponentSettings):
@@ -159,7 +160,7 @@ class ExecutionSettings(ComponentSettings):
     """索引与生成的独立执行预算，不由Sentinel代替。"""
 
     index_concurrency: int = Field(default=1, ge=1, le=4)
-    generation_concurrency: int = Field(default=2, ge=1, le=4)
+    run_concurrency: int = Field(default=2, ge=1, le=4)
     queue_capacity: int = Field(default=100, ge=1, le=100)
     lease_seconds: int = Field(default=60, ge=30, le=120)
     renewal_seconds: int = Field(default=15, ge=5, le=20)

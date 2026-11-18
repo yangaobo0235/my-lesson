@@ -10,6 +10,8 @@ import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketActionForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketAssignmentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketCommentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContentForm;
+import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketWaitForm;
+import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketInformationForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContextForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketCreateForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketPriorityForm;
@@ -76,7 +78,22 @@ public interface ITicketService extends IService<TicketEntity> {
     /**
      * 请求客户补充信息。
      */
-    TicketActionReceiptVO requestInformation(IdentityDTO actor, String id, TicketContentForm form);
+    TicketActionReceiptVO requestInformation(IdentityDTO actor, String id, TicketInformationForm form);
+
+    /**
+     * 当前处理人登记外部等待，保留责任人且不得携带活动预约。
+     */
+    TicketActionReceiptVO waitExternal(IdentityDTO actor, String id, TicketWaitForm form);
+
+    /**
+     * 当前处理人说明结束等待，恢复处理中。
+     */
+    TicketActionReceiptVO endWait(IdentityDTO actor, String id, TicketContentForm form);
+
+    /**
+     * 当前处理人记录跟进并设置新期限，递增轮次以允许下一次提醒。
+     */
+    TicketActionReceiptVO followUp(IdentityDTO actor, String id, TicketWaitForm form);
 
     /**
      * 客户补充后恢复处理。

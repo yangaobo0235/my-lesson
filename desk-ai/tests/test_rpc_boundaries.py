@@ -10,6 +10,7 @@ from opentelemetry.trace import NoOpTracer
 
 from desk_contracts.common.v1.common_pb2 import ActorRef, RpcErrorDetail
 from servicedesk_ai.bootstrap.components import RpcSettings
+from servicedesk_ai.infrastructure.domain_rpc import DomainRpc
 from servicedesk_ai.infrastructure.identity import IdentityClient, translate_failure
 from servicedesk_ai.infrastructure.rpc_contract import (
     maximum_seconds,
@@ -38,6 +39,21 @@ def test_method_budgets_and_nested_parent(method, seconds):
             assert 0 < remaining_seconds(seconds) <= 0.100001
         assert 0.1 < remaining_seconds(seconds) <= 0.5
     assert remaining_seconds(seconds) == seconds
+
+
+def test_domain_options_keep_delivery_margin_and_never_extend_parent(monkeypatch):
+    """原件和领域传输不能贴着方法上限发送；不足余量时不发起新RPC。"""
+    client = DomainRpc.__new__(DomainRpc)
+    client.token = "test-token"
+    clock = [10.0]
+    monkeypatch.setattr("servicedesk_ai.infrastructure.rpc_contract.monotonic", lambda: clock[0])
+    assert client.options(120)["timeout"] == pytest.approx(119.9)
+    assert client.options()["timeout"] == pytest.approx(4.9)
+    with request_budget(0.5):
+        assert client.options(120)["timeout"] == pytest.approx(0.4)
+        clock[0] += 0.45
+        with pytest.raises(TimeoutError):
+            client.options(120)
 
 
 @pytest.mark.parametrize(
@@ -126,7 +142,9 @@ async def test_actual_server_enforces_method_deadline_and_cancels_slow_handler(m
         async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
             invoke = channel.unary_unary(path)
             metadata = (("authorization", "Bearer " + token),)
-            assert await invoke(b"ok", metadata=metadata, timeout=budget - 0.1) == b"ok"
+            client = DomainRpc.__new__(DomainRpc)
+            client.token = token
+            assert await invoke(b"ok", **client.options(budget)) == b"ok"
             with pytest.raises(grpc.aio.AioRpcError) as invalid:
                 await invoke(b"ok", metadata=metadata, timeout=budget + 1)
             assert invalid.value.code() == grpc.StatusCode.INVALID_ARGUMENT

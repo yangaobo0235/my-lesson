@@ -22,12 +22,23 @@ def test_offline_migration_preserves_json_schema_literals() -> None:
         "script_location",
         str(Path(__file__).resolve().parents[1] / "src/servicedesk_ai/migrations"),
     )
-    command.upgrade(config, "head", sql=True)
+    command.upgrade(config, "0003", sql=True)
     sql = output.getvalue()
     assert '"maxLength":512' in sql
     assert '"additionalProperties":false' in sql
     assert '"minimum":1' in sql
     assert "\\:" not in sql
+
+
+def test_private_feedback_migration_requires_online_data_guard() -> None:
+    """离线SQL不能绕过旧反馈非空保护。"""
+    config = Config(output_buffer=StringIO())
+    config.set_main_option(
+        "script_location",
+        str(Path(__file__).resolve().parents[1] / "src/servicedesk_ai/migrations"),
+    )
+    with pytest.raises(RuntimeError, match="在线核对"):
+        command.upgrade(config, "0003:0004", sql=True)
 
 
 def connected_settings(*, migrations_enabled: bool = True) -> Settings:

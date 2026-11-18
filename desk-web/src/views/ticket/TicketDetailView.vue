@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AttachmentPanel from './AttachmentPanel.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
@@ -40,6 +41,7 @@ const servicePage = ref(1),
 const eventPage = ref(1),
   eventTotal = ref('0')
 const { busy, error, run, signal } = useOperation()
+const followUpAt = ref('')
 const content = ref(''),
   reason = ref(''),
   assignee = ref(''),
@@ -71,12 +73,19 @@ const actions = computed(() => {
         { name: 'assign', label: '分派' },
         { name: 'priority', label: '调整优先级' },
       )
-    if (['PROCESSING', 'WAITING_CUSTOMER'].includes(t.status))
+    if (
+      ['PROCESSING', 'WAITING_CUSTOMER', 'WAITING_EXTERNAL'].includes(t.status)
+    )
       result.push({ name: 'reassign', label: '转派' })
   }
   if (
     editable.value &&
-    ['SUBMITTED', 'PROCESSING', 'WAITING_CUSTOMER'].includes(t.status)
+    [
+      'SUBMITTED',
+      'PROCESSING',
+      'WAITING_CUSTOMER',
+      'WAITING_EXTERNAL',
+    ].includes(t.status)
   )
     result.push(
       { name: 'context', label: '分类与环境' },
@@ -85,7 +94,16 @@ const actions = computed(() => {
   if (handler.value && t.status === 'PROCESSING')
     result.push(
       { name: 'request-information', label: '请求补充' },
+      { name: 'wait-external', label: '等待外部反馈' },
       { name: 'resolve', label: '提交处理结果' },
+    )
+  if (
+    handler.value &&
+    ['WAITING_CUSTOMER', 'WAITING_EXTERNAL'].includes(t.status)
+  )
+    result.push(
+      { name: 'end-wait', label: '结束等待' },
+      { name: 'follow-up', label: '跟进并续期' },
     )
   if (customer.value && t.status === 'WAITING_CUSTOMER')
     result.push({ name: 'supplements', label: '补充信息' })
@@ -96,11 +114,21 @@ const actions = computed(() => {
     )
   if (
     (customer.value || editable.value) &&
-    ['SUBMITTED', 'PROCESSING', 'WAITING_CUSTOMER'].includes(t.status)
+    [
+      'SUBMITTED',
+      'PROCESSING',
+      'WAITING_CUSTOMER',
+      'WAITING_EXTERNAL',
+    ].includes(t.status)
   )
     result.push({ name: 'cancel', label: '取消工单' })
   return result
 })
+const needsFollowUp = computed(() =>
+  ['request-information', 'wait-external', 'follow-up'].includes(
+    selected.value,
+  ),
+)
 const needsReason = computed(() =>
   ['assign', 'reassign', 'priority', 'context'].includes(selected.value),
 )
@@ -108,6 +136,9 @@ const needsContent = computed(() =>
   [
     'comments',
     'request-information',
+    'wait-external',
+    'follow-up',
+    'end-wait',
     'supplements',
     'unresolved',
     'cancel',
@@ -191,6 +222,8 @@ function buildAction(): TicketAction {
           content: content.value,
           visibility: visibility.value,
           sourceDraftId: null,
+          sourceDraftRootId: null,
+          contentSha256: null,
         },
       }
     case 'resolve':
@@ -202,8 +235,29 @@ function buildAction(): TicketAction {
           resolutionType: resolution.value,
           referralTarget: referral.value || null,
           sourceDraftId: null,
+          sourceDraftRootId: null,
+          contentSha256: null,
         },
       }
+    case 'request-information':
+    case 'wait-external':
+    case 'follow-up': {
+      if (
+        !followUpAt.value ||
+        !Number.isFinite(new Date(followUpAt.value).getTime())
+      )
+        throw new Error('请选择下次跟进时间')
+      if (content.value.length > 1000)
+        throw new Error('等待说明不能超过1000字符')
+      return {
+        name,
+        form: {
+          ...base,
+          content: content.value,
+          followUpAt: new Date(followUpAt.value).toISOString(),
+        },
+      }
+    }
     case 'context':
       return {
         name,
@@ -271,6 +325,10 @@ const eventNames: Record<string, string> = {
   CONTEXT_UPDATED: '环境已更新',
   PRIORITY_CHANGED: '优先级已更新',
   NEED_INFO: '请求补充',
+  WAIT_EXTERNAL: '等待外部反馈',
+  END_WAIT: '结束等待',
+  FOLLOW_UP: '跟进并续期',
+  FOLLOW_UP_DUE: '跟进期限已到',
   SUPPLEMENTED: '已补充',
   COMMENTED: '处理记录',
   RESOLVED: '处理结果',
@@ -298,6 +356,16 @@ const eventNames: Record<string, string> = {
         ><span>版本 {{ ticket.rowVersion }}</span
         ><ElButton :disabled="busy || !!pending" @click="reload">刷新</ElButton>
       </div>
+      <p v-if="ticket.followUpAt">
+        等待原因：{{ ticket.waitReason }} · 第 {{ ticket.waitCycle }} 轮 ·
+        下次跟进：
+        {{
+          new Date(ticket.followUpAt).toLocaleString('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+          })
+        }}
+        {{ ticket.followUpNotifiedAt ? '（已提醒处理人）' : '' }}
+      </p>
       <p v-if="ticket.closureReason">
         结单原因：{{
           ticket.closureReason === 'CUSTOMER_CONFIRMED'
@@ -398,12 +466,20 @@ const eventNames: Record<string, string> = {
               maxlength="500"
               required
               :disabled="!!pending" /></label
+          ><label v-if="needsFollowUp"
+            >下次跟进时间（当前设备时区）
+            <input
+              v-model="followUpAt"
+              type="datetime-local"
+              required
+              :disabled="!!pending"
+            /> </label
           ><label v-if="needsContent"
             >说明<ElInput
               v-model="content"
               type="textarea"
               :rows="4"
-              maxlength="5000"
+              :maxlength="needsFollowUp ? 1000 : 5000"
               required
               :disabled="!!pending" /></label
           ><label v-if="selected === 'comments'"
@@ -478,11 +554,8 @@ const eventNames: Record<string, string> = {
           >
         </div>
       </section>
-      <OnsitePanel
-        :key="ticket.rowVersion"
-        :ticket="ticket"
-        @changed="run(load)"
-      />
+      <OnsitePanel :key="ticket.id" :ticket="ticket" @changed="run(load)" />
+      <AttachmentPanel :key="ticket.id" :ticket="ticket" @changed="run(load)" />
       <DiagnosisPanel
         v-if="auth.has('TECHNICIAN')"
         :key="ticket.id"

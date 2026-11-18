@@ -46,6 +46,15 @@ public class RequestDigest {
     }
 
     /**
+     * 统一动作摘要排除传输幂等键与修订身份；内容摘要、草稿根及必要版本仍参与语义。
+     */
+    public String actionHash(String action, String target, Object form) {
+        ObjectNode input = objectMapper.valueToTree(form);
+        input.remove(java.util.List.of("clientActionId", "clientRequestId", "sourceDraftId"));
+        return hash(action, target, input);
+    }
+
+    /**
      * 排序只影响摘要，不修改原输入或事件内容。
      */
     private JsonNode canonical(JsonNode node) {

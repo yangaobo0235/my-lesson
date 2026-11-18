@@ -9,7 +9,6 @@ import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.knowledge.mapper.DocumentMapper;
 import com.yangaobo.servicedesk.knowledge.model.entity.DocumentEntity;
-import com.yangaobo.servicedesk.knowledge.model.enums.PublicationStatusEnum;
 import com.yangaobo.servicedesk.knowledge.model.form.KnowledgeReadForm;
 import com.yangaobo.servicedesk.knowledge.model.vo.DocumentVO;
 
@@ -54,10 +53,7 @@ public class KnowledgeReadService {
                 .noneMatch(source -> source.getDocumentId().equals(id)))
             throw new BusinessException(CommonErrorCode.NOT_FOUND);
         var document = documents.selectById(id);
-        if (document == null
-                || !PublicationStatusEnum.PUBLISHED
-                .getValue()
-                .equals(document.getPublicationStatus()))
+        if (!KnowledgeRules.readable(document, form.getRunId() != null))
             throw new BusinessException(CommonErrorCode.NOT_FOUND);
         return document;
     }
@@ -87,10 +83,10 @@ public class KnowledgeReadService {
         if (form.getServiceItemId() != null) query.setServiceItemId(form.getServiceItemId());
         if (form.getDeviceId() != null) query.setDeviceId(form.getDeviceId());
         if (form.getTicketId() != null) query.setTicketId(form.getTicketId());
-        if ((form.getGenerationId() == null) != (form.getSourceUsageId() == null))
+        if ((form.getRunId() == null) != (form.getSourceUsageId() == null))
             throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
-        if (form.getGenerationId() != null)
-            query.setGenerationId(form.getGenerationId()).setSourceUsageId(form.getSourceUsageId());
+        if (form.getRunId() != null)
+            query.setRunId(form.getRunId()).setSourceUsageId(form.getSourceUsageId());
         var environment =
                 Environment.newBuilder().setConnectionType("UNKNOWN").setAffectedScope("UNKNOWN");
         var value = form.getEnvironment();

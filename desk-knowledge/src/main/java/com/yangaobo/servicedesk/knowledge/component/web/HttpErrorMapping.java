@@ -5,6 +5,7 @@ import com.yangaobo.servicedesk.common.base.ErrorCode;
 import com.yangaobo.servicedesk.knowledge.component.RemoteIdentityError;
 import com.yangaobo.servicedesk.knowledge.component.RemoteSupportError;
 import com.yangaobo.servicedesk.knowledge.error.DocumentErrorCode;
+import com.yangaobo.servicedesk.knowledge.error.EvidenceErrorCode;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -30,6 +31,7 @@ public final class HttpErrorMapping {
         return error instanceof CommonErrorCode
                 || error instanceof RemoteIdentityError
                 || error instanceof RemoteSupportError
+                || error instanceof EvidenceErrorCode
                 || error instanceof DocumentErrorCode
                 ? error
                 : CommonErrorCode.INTERNAL_ERROR;
@@ -46,7 +48,7 @@ public final class HttpErrorMapping {
             return identity == RemoteIdentityError.PASSWORD_CHANGE_REQUIRED
                     ? HttpStatus.FORBIDDEN
                     : HttpStatus.UNAUTHORIZED;
-        if (error instanceof RemoteSupportError) return HttpStatus.CONFLICT;
+        if (error instanceof RemoteSupportError || error instanceof EvidenceErrorCode) return HttpStatus.CONFLICT;
         if (error instanceof DocumentErrorCode document)
             return switch (document) {
                 case UPLOAD_IN_PROGRESS, PUBLICATION_NOT_READY -> HttpStatus.CONFLICT;

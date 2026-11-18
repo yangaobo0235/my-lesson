@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from servicedesk_ai.api.diagnosis import admin_router
 from servicedesk_ai.api.diagnosis import router as diagnosis_router
 from servicedesk_ai.api.errors import register_error_handlers
 from servicedesk_ai.api.health import router as health_router
@@ -54,6 +53,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_middleware(RequestTraceMiddleware)
     application.include_router(health_router)
     application.include_router(diagnosis_router)
-    application.include_router(admin_router)
     register_error_handlers(application)
     return application

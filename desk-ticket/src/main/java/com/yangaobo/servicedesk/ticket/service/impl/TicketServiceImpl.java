@@ -23,7 +23,11 @@ import com.yangaobo.servicedesk.ticket.mapper.ProductModelMapper;
 import com.yangaobo.servicedesk.ticket.mapper.TicketEventMapper;
 import com.yangaobo.servicedesk.ticket.mapper.TicketMapper;
 import com.yangaobo.servicedesk.ticket.model.dto.support.ServiceAdmission;
+import com.yangaobo.servicedesk.ticket.model.dto.support.DraftValidation;
 import com.yangaobo.servicedesk.ticket.model.entity.DeviceEntity;
+import com.yangaobo.servicedesk.ticket.model.entity.ActionReceiptEntity;
+import com.yangaobo.servicedesk.ticket.model.enums.TicketActionTypeEnum;
+import com.yangaobo.servicedesk.ticket.service.IActionReceiptService;
 import com.yangaobo.servicedesk.ticket.model.entity.ProductModelEntity;
 import com.yangaobo.servicedesk.ticket.model.entity.TicketEntity;
 import com.yangaobo.servicedesk.ticket.model.entity.TicketEventEntity;
@@ -38,6 +42,8 @@ import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketActionForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketAssignmentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketCommentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContentForm;
+import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketWaitForm;
+import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketInformationForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContextForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketCreateForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketPriorityForm;
@@ -56,6 +62,7 @@ import com.yangaobo.servicedesk.ticket.service.TicketScope;
 import com.yangaobo.servicedesk.ticket.service.TicketViews;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -84,6 +91,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
     private final ObjectMapper objectMapper;
     private final IdentityVerificationClient identityClient;
     private final ActionDraftClient draftClient;
+    private final IActionReceiptService receiptService;
 
     /**
      * {@inheritDoc}
@@ -91,12 +99,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
     @Override
     public TicketVO create(IdentityDTO actor, TicketCreateForm form) {
         SupportAuthorization.role(actor, "CUSTOMER_USER");
-        form.setTitle(form.getTitle().strip());
-        form.setSymptom(form.getSymptom().strip());
-        String hash = digest.hash("CREATE", actor.getOrganizationId(), form);
-        TicketEntity old = creationReceipt(actor, form.getClientRequestId(), hash);
+        String hash = digest.actionHash("CREATE", actor.getOrganizationId(), form);
+        TicketEntity old = creationReceipt(actor, form.getClientRequestId(), form.getSourceDraftRootId(), hash);
         if (old != null) return TicketViews.of(old);
-        JsonNode handover =
+        DraftValidation validation =
                 draftClient.validate(
                         actor,
                         form.getSourceDraftId(),
@@ -105,11 +111,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                         form.getServiceItemId(),
                         form.getDeviceId(),
                         null,
-                        null);
+                        null, objectMapper.valueToTree(form));
         JsonNode context = context(form.getSupportContext(), "USER_REPORT");
         return transactions.execute(
                 () -> {
-                    TicketEntity replay = creationReceipt(actor, form.getClientRequestId(), hash);
+                    TicketEntity replay = creationReceipt(actor, form.getClientRequestId(), form.getSourceDraftRootId(), hash);
                     if (replay != null) return TicketViews.of(replay);
                     ServiceAdmission admission =
                             entitlementService.admit(
@@ -124,6 +130,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                             || !"ACTIVE".equals(device.getStatus())))
                         throw new BusinessException(DeviceErrorCode.DEVICE_INELIGIBLE);
                     LocalDateTime now = baseMapper.decisionTime();
+                    draftClient.requireValid(validation, now);
                     TicketEntity ticket = new TicketEntity();
                     ticket.setId(id());
                     ticket.setTicketNo("SD" + ticket.getId());
@@ -132,7 +139,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                     ticket.setClientRequestId(form.getClientRequestId());
                     ticket.setRequestHash(hash);
                     ticket.setSourceDraftId(form.getSourceDraftId());
-                    ticket.setHandoverSnapshot(handover);
+                    ticket.setHandoverSnapshot(validation == null ? null : validation.getHandover());
                     ticket.setServiceItemId(form.getServiceItemId());
                     ticket.setEntitlementId(
                             form.getServiceItemId() == null
@@ -152,11 +159,14 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                     ticket.setStatus(TicketStatusEnum.SUBMITTED.getValue());
                     ticket.setOnsiteEligible(false);
                     ticket.setRowVersion(0L);
+                    ticket.setDiagnosisContextVersion(0L);
+                    ticket.setEventSequence(0L);
+                    ticket.setWaitCycle(0);
                     ticket.setCreatedAt(now);
                     ticket.setUpdatedAt(now);
                     ticket.setAcceptanceDueAt(now.plusHours(4));
                     baseMapper.insert(ticket);
-                    append(
+                    TicketEventEntity event = append(
                             ticket,
                             actor,
                             "CREATED",
@@ -167,10 +177,13 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                             form.getSymptom(),
                             objectMapper.createObjectNode(),
                             now);
+                    draftClient.requireValid(validation, baseMapper.decisionTime());
+                    receiptService.record(actor, ticket, null, event, "CREATE_TICKET", form.getClientRequestId(),
+                            hash, form.getSourceDraftId(), validation == null ? null : validation.getDraftRootId(), now);
                     return TicketViews.of(ticket);
                 },
                 () -> {
-                    TicketEntity replay = creationReceipt(actor, form.getClientRequestId(), hash);
+                    TicketEntity replay = creationReceipt(actor, form.getClientRequestId(), form.getSourceDraftRootId(), hash);
                     return replay == null ? null : TicketViews.of(replay);
                 });
     }
@@ -236,14 +249,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
     public TicketActionReceiptVO actionReceipt(IdentityDTO actor, String ticketId, String key) {
         readable(actor, baseMapper.selectById(ticketId));
         identifier(key);
-        TicketEventEntity event =
-                eventMapper.selectOne(
-                        new LambdaQueryWrapper<TicketEventEntity>()
-                                .eq(TicketEventEntity::getTicketId, ticketId)
-                                .eq(TicketEventEntity::getActorId, actor.getOwnerId())
-                                .eq(TicketEventEntity::getClientActionId, key));
-        if (event == null) throw new BusinessException(CommonErrorCode.NOT_FOUND);
-        return receipt(event);
+        TicketActionReceiptVO result = receiptService.byAction(actor, key);
+        if (!ticketId.equals(result.getTicketId())) throw new BusinessException(CommonErrorCode.NOT_FOUND);
+        return result;
     }
 
     /**
@@ -259,6 +267,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 form.getReason(),
+                null,
                 (ticket, now, metadata) -> {
                     handlerOrAgent(actor, ticket);
                     active(ticket);
@@ -275,7 +284,12 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                         ticket.setEntitlementId(admission.getEntitlement().getId());
                         ticket.setServiceScopeSnapshot(scope(admission, false));
                     }
-                    ticket.setSupportContext(context(form.getSupportContext(), "HUMAN_RECORD"));
+                    JsonNode nextContext = context(form.getSupportContext(), "HUMAN_RECORD");
+                    if (!Objects.equals(metadata.get("old_scope"), ticket.getServiceScopeSnapshot())
+                            || diagnosticEnvironmentChanged(ticket.getSupportContext(), nextContext)) {
+                        ticket.setDiagnosisContextVersion(Math.addExact(ticket.getDiagnosisContextVersion(), 1L));
+                    }
+                    ticket.setSupportContext(nextContext);
                     ticket.setServiceAreaCode(form.getServiceAreaCode());
                     ticket.setServiceLocation(form.getServiceLocation());
                     metadata.set("new_scope", ticket.getServiceScopeSnapshot());
@@ -298,12 +312,14 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 "PUBLIC",
                 form.getReason(),
+                null,
                 (ticket, now, metadata) -> {
                     handlerOrAgent(actor, ticket);
                     active(ticket);
                     noBooking(ticket);
                     if (form.getOnsiteEligible()
-                            && (ticket.getServiceItemId() == null
+                            && (!Set.of("PROCESSING", "WAITING_CUSTOMER").contains(ticket.getStatus())
+                            || ticket.getServiceItemId() == null
                             || !ticket.getServiceScopeSnapshot()
                             .path("onsite_supported")
                             .asBoolean()
@@ -329,6 +345,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 "技术人员已接单",
+                null,
                 (ticket, now, metadata) -> {
                     SupportAuthorization.role(actor, "TECHNICIAN");
                     state(ticket, TicketStatusEnum.SUBMITTED.getValue());
@@ -347,11 +364,12 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
     public TicketActionReceiptVO assign(
             IdentityDTO actor, String id, TicketAssignmentForm form, boolean reassign) {
         String type = reassign ? "REASSIGNED" : "ASSIGNED";
-        String hash = digest.hash(type, id, form);
+        String hash = digest.actionHash(type, id, form);
         TicketEntity initial = readable(actor, baseMapper.selectById(id));
         SupportAuthorization.agent(actor, initial.getCustomerId());
-        TicketEventEntity replay = replay(actor, initial, form.getClientActionId(), hash);
-        if (replay != null) return receipt(replay);
+        ActionReceiptEntity replay = replayAction(actor, form.getClientActionId(),
+                objectMapper.valueToTree(form).path("sourceDraftRootId").asText(null), hash);
+        if (replay != null) return receiptService.view(replay);
         if (!identityClient
                 .eligibility(actor, initial.getCustomerId(), form.getAssigneeId())
                 .isAssigneeAvailable())
@@ -364,12 +382,14 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 form.getReason(),
+                null,
                 (ticket, now, metadata) -> {
                     SupportAuthorization.agent(actor, ticket.getCustomerId());
                     if (reassign) {
                         if (!Set.of(
                                         TicketStatusEnum.PROCESSING.getValue(),
-                                        TicketStatusEnum.WAITING_CUSTOMER.getValue())
+                                        TicketStatusEnum.WAITING_CUSTOMER.getValue(),
+                                        TicketStatusEnum.WAITING_EXTERNAL.getValue())
                                 .contains(ticket.getStatus())
                                 || form.getAssigneeId().equals(ticket.getAssigneeId()))
                             throw new BusinessException(CommonErrorCode.CONFLICT);
@@ -398,6 +418,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.INTERNAL.getValue(),
                 form.getReason(),
+                null,
                 (ticket, now, metadata) -> {
                     SupportAuthorization.agent(actor, ticket.getCustomerId());
                     state(ticket, TicketStatusEnum.SUBMITTED.getValue());
@@ -420,7 +441,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
      */
     @Override
     public TicketActionReceiptVO requestInformation(
-            IdentityDTO actor, String id, TicketContentForm form) {
+            IdentityDTO actor, String id, TicketInformationForm form) {
+        ActionReceiptEntity original = replayAction(actor, form.getClientActionId(), form.getSourceDraftRootId(),
+                digest.actionHash("NEED_INFO", id, form));
+        if (original != null) return receiptService.view(original);
+        DraftValidation validation = validateDraftAction(actor, id, form, form.getSourceDraftId(), "REQUEST_INFORMATION");
         return mutate(
                 actor,
                 id,
@@ -429,10 +454,16 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 form.getContent(),
+                validation,
                 (ticket, now, metadata) -> {
                     handler(actor, ticket);
                     state(ticket, TicketStatusEnum.PROCESSING.getValue());
                     ticket.setStatus(TicketStatusEnum.WAITING_CUSTOMER.getValue());
+                    scheduleFollowUp(ticket, form, now, metadata);
+                    if (validation != null) {
+                        metadata.put("source_draft_id", form.getSourceDraftId());
+                        metadata.put("source_draft_root_id", validation.getDraftRootId());
+                    }
                 });
     }
 
@@ -449,9 +480,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 form.getContent(),
+                null,
                 (ticket, now, metadata) -> {
                     requester(actor, ticket);
                     state(ticket, TicketStatusEnum.WAITING_CUSTOMER.getValue());
+                    clearWait(ticket);
                     ticket.setStatus(TicketStatusEnum.PROCESSING.getValue());
                 });
     }
@@ -461,10 +494,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
      */
     @Override
     public TicketActionReceiptVO comment(IdentityDTO actor, String id, TicketCommentForm form) {
-        TicketActionReceiptVO original =
-                validateDraftAction(
-                        actor, id, form, "COMMENTED", form.getSourceDraftId(), "ADD_RECORD");
-        if (original != null) return original;
+        ActionReceiptEntity original = replayAction(actor, form.getClientActionId(), form.getSourceDraftRootId(),
+                digest.actionHash("COMMENTED", id, form));
+        if (original != null) return receiptService.view(original);
+        DraftValidation validation = validateDraftAction(actor, id, form, form.getSourceDraftId(), "ADD_RECORD");
         return mutate(
                 actor,
                 id,
@@ -473,11 +506,15 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 form.getVisibility(),
                 form.getContent(),
+                validation,
                 (ticket, now, metadata) -> {
                     handlerOrAgent(actor, ticket);
                     active(ticket);
-                    if (form.getSourceDraftId() != null)
+                    draftClient.requireValid(validation, now);
+                    if (validation != null) {
                         metadata.put("source_draft_id", form.getSourceDraftId());
+                        metadata.put("source_draft_root_id", validation.getDraftRootId());
+                    }
                 });
     }
 
@@ -486,10 +523,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
      */
     @Override
     public TicketActionReceiptVO resolve(IdentityDTO actor, String id, TicketResolveForm form) {
-        TicketActionReceiptVO original =
-                validateDraftAction(
-                        actor, id, form, "RESOLVED", form.getSourceDraftId(), "RESOLVE_TICKET");
-        if (original != null) return original;
+        ActionReceiptEntity original = replayAction(actor, form.getClientActionId(), form.getSourceDraftRootId(),
+                digest.actionHash("RESOLVED", id, form));
+        if (original != null) return receiptService.view(original);
+        DraftValidation validation = validateDraftAction(actor, id, form, form.getSourceDraftId(), "RESOLVE_TICKET");
         return mutate(
                 actor,
                 id,
@@ -498,12 +535,16 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 form.getContent(),
+                validation,
                 (ticket, now, metadata) -> {
                     handler(actor, ticket);
                     state(ticket, TicketStatusEnum.PROCESSING.getValue());
                     noBooking(ticket);
-                    if (form.getSourceDraftId() != null)
+                    draftClient.requireValid(validation, now);
+                    if (validation != null) {
                         metadata.put("source_draft_id", form.getSourceDraftId());
+                        metadata.put("source_draft_root_id", validation.getDraftRootId());
+                    }
                     if (ticket.getServiceItemId() == null
                             && !ResolutionTypeEnum.REFERRED
                             .getValue()
@@ -536,6 +577,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 "客户确认处理结果",
+                null,
                 (ticket, now, metadata) -> {
                     requester(actor, ticket);
                     state(ticket, TicketStatusEnum.RESOLVED.getValue());
@@ -559,6 +601,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 form.getContent(),
+                null,
                 (ticket, now, metadata) -> {
                     requester(actor, ticket);
                     state(ticket, TicketStatusEnum.RESOLVED.getValue());
@@ -583,15 +626,92 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 form,
                 VisibilityEnum.PUBLIC.getValue(),
                 form.getContent(),
+                null,
                 (ticket, now, metadata) -> {
                     active(ticket);
                     noBooking(ticket);
                     if (!actor.getOwnerId().equals(ticket.getRequesterId()))
                         handlerOrAgent(actor, ticket);
+                    clearWait(ticket);
                     ticket.setStatus(TicketStatusEnum.CANCELLED.getValue());
                     ticket.setCancelledAt(now);
                     ticket.setOnsiteEligible(false);
                 });
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public TicketActionReceiptVO waitExternal(IdentityDTO actor, String id, TicketWaitForm form) {
+        return mutate(actor, id, form, "WAIT_EXTERNAL", form, VisibilityEnum.PUBLIC.getValue(),
+                form.getContent(), null, (ticket, now, metadata) -> {
+                    handler(actor, ticket);
+                    state(ticket, TicketStatusEnum.PROCESSING.getValue());
+                    noBooking(ticket);
+                    ticket.setOnsiteEligible(false);
+                    ticket.setStatus(TicketStatusEnum.WAITING_EXTERNAL.getValue());
+                    scheduleFollowUp(ticket, form, now, metadata);
+                });
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public TicketActionReceiptVO endWait(IdentityDTO actor, String id, TicketContentForm form) {
+        return mutate(actor, id, form, "END_WAIT", form, VisibilityEnum.PUBLIC.getValue(),
+                form.getContent(), null, (ticket, now, metadata) -> {
+                    handler(actor, ticket);
+                    waiting(ticket);
+                    metadata.put("wait_cycle", ticket.getWaitCycle());
+                    clearWait(ticket);
+                    ticket.setStatus(TicketStatusEnum.PROCESSING.getValue());
+                });
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public TicketActionReceiptVO followUp(IdentityDTO actor, String id, TicketWaitForm form) {
+        return mutate(actor, id, form, "FOLLOW_UP", form, VisibilityEnum.PUBLIC.getValue(),
+                form.getContent(), null, (ticket, now, metadata) -> {
+                    handler(actor, ticket);
+                    waiting(ticket);
+                    scheduleFollowUp(ticket, form, now, metadata);
+                });
+    }
+
+    /**
+     * 仅两种等待可结束或续期，不把备注当成恢复处理。
+     */
+    private void waiting(TicketEntity ticket) {
+        if (!Set.of("WAITING_CUSTOMER", "WAITING_EXTERNAL").contains(ticket.getStatus()))
+            throw new BusinessException(CommonErrorCode.CONFLICT);
+    }
+
+    /**
+     * 同事务登记新轮次和明确期限；已过期时刻不能制造一个立即逾期的新轮次。
+     */
+    private void scheduleFollowUp(TicketEntity ticket, TicketWaitForm form, LocalDateTime now, ObjectNode metadata) {
+        LocalDateTime deadline = LocalDateTime.ofInstant(form.getFollowUpAt(), ZoneOffset.UTC);
+        if (!deadline.isAfter(now)) throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+        ticket.setWaitReason(form.getContent());
+        ticket.setFollowUpAt(deadline);
+        ticket.setFollowUpNotifiedAt(null);
+        ticket.setWaitCycle(Math.addExact(ticket.getWaitCycle(), 1));
+        metadata.put("wait_cycle", ticket.getWaitCycle());
+        metadata.put("follow_up_at", form.getFollowUpAt().toString());
+    }
+
+    /**
+     * 离开等待清空当前期限，历史轮次和原因仍保留在不可变事件。
+     */
+    private void clearWait(TicketEntity ticket) {
+        ticket.setWaitReason(null);
+        ticket.setFollowUpAt(null);
+        ticket.setFollowUpNotifiedAt(null);
     }
 
     /**
@@ -605,15 +725,16 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
             Object input,
             String visibility,
             String content,
+            DraftValidation validation,
             Change change) {
         identifier(id);
-        String hash = digest.hash(type, id, input);
+        String hash = digest.actionHash(type, id, input);
         return transactions.execute(
                 () -> {
                     TicketEntity ticket = readable(actor, baseMapper.lock(id));
-                    TicketEventEntity replay =
-                            replay(actor, ticket, form.getClientActionId(), hash);
-                    if (replay != null) return receipt(replay);
+                    ActionReceiptEntity replay = replayAction(actor, form.getClientActionId(),
+                            objectMapper.valueToTree(form).path("sourceDraftRootId").asText(null), hash);
+                    if (replay != null) return receiptService.view(replay);
                     if (!ticket.getRowVersion().equals(form.getRowVersion()))
                         throw new BusinessException(CommonErrorCode.CONFLICT);
                     String from = ticket.getStatus();
@@ -621,23 +742,19 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                     ObjectNode metadata = objectMapper.createObjectNode();
                     change.apply(ticket, now, metadata);
                     save(ticket, now);
-                    return receipt(
-                            append(
-                                    ticket,
-                                    actor,
-                                    type,
-                                    form.getClientActionId(),
-                                    hash,
-                                    from,
-                                    visibility,
-                                    content,
-                                    metadata,
-                                    now));
+                    TicketEventEntity event = append(ticket, actor, type, form.getClientActionId(), hash,
+                            from, visibility, content, metadata, now);
+                    draftClient.requireValid(validation, baseMapper.decisionTime());
+                    return receiptService.view(receiptService.record(actor, ticket, null, event,
+                            TicketActionTypeEnum.fromEvent(type).getValue(), form.getClientActionId(), hash,
+                            metadata.path("source_draft_id").asText(null),
+                            metadata.path("source_draft_root_id").asText(null), now));
                 },
                 () -> {
-                    TicketEntity ticket = readable(actor, baseMapper.selectById(id));
-                    TicketEventEntity event = replay(actor, ticket, form.getClientActionId(), hash);
-                    return event == null ? null : receipt(event);
+                    readable(actor, baseMapper.selectById(id));
+                    ActionReceiptEntity old = replayAction(actor, form.getClientActionId(),
+                            objectMapper.valueToTree(form).path("sourceDraftRootId").asText(null), hash);
+                    return old == null ? null : receiptService.view(old);
                 });
     }
 
@@ -661,6 +778,16 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                                         && now.isAfter(ticket.getAcceptanceDueAt())) {
                                     recordOverdue(ticket, now);
                                     save(ticket, now);
+                                    return true;
+                                }
+                                if (Set.of("WAITING_CUSTOMER", "WAITING_EXTERNAL").contains(ticket.getStatus())
+                                        && ticket.getFollowUpNotifiedAt() == null
+                                        && !now.isBefore(ticket.getFollowUpAt())) {
+                                    ticket.setFollowUpNotifiedAt(now);
+                                    save(ticket, now);
+                                    append(ticket, null, "FOLLOW_UP_DUE", null, null, ticket.getStatus(),
+                                            VisibilityEnum.INTERNAL.getValue(), "已到本轮跟进期限，请处理人核对进展",
+                                            objectMapper.createObjectNode().put("wait_cycle", ticket.getWaitCycle()), now);
                                     return true;
                                 }
                                 if (TicketStatusEnum.RESOLVED.getValue().equals(ticket.getStatus())
@@ -751,35 +878,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
     }
 
     /**
-     * 原键回执仅在当前读取权限内返回，同键异义拒绝。
-     */
-    private TicketEventEntity replay(
-            IdentityDTO actor, TicketEntity ticket, String key, String hash) {
-        TicketEventEntity event =
-                eventMapper.selectOne(
-                        new LambdaQueryWrapper<TicketEventEntity>()
-                                .eq(TicketEventEntity::getTicketId, ticket.getId())
-                                .eq(TicketEventEntity::getActorId, actor.getOwnerId())
-                                .eq(TicketEventEntity::getClientActionId, key));
-        if (event != null && !event.getActionRequestHash().equals(hash))
-            throw new BusinessException(CommonErrorCode.CONFLICT);
-        return event;
-    }
-
-    /**
      * 原建单键在当前本人及原组织权限内读取。
      */
-    private TicketEntity creationReceipt(IdentityDTO actor, String key, String hash) {
-        TicketEntity ticket =
-                baseMapper.selectOne(
-                        new LambdaQueryWrapper<TicketEntity>()
-                                .eq(TicketEntity::getRequesterId, actor.getOwnerId())
-                                .eq(TicketEntity::getClientRequestId, key));
-        if (ticket == null) return null;
-        readable(actor, ticket);
-        if (!hash.equals(ticket.getRequestHash()))
-            throw new BusinessException(CommonErrorCode.CONFLICT);
-        return ticket;
+    private TicketEntity creationReceipt(IdentityDTO actor, String key, String root, String hash) {
+        ActionReceiptEntity receipt = replayAction(actor, key, root, hash);
+        return receipt == null ? null : readable(actor, baseMapper.selectById(receipt.getTicketId()));
     }
 
     /**
@@ -812,6 +915,17 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
             if (!data.get(key).isNull() && !"UNKNOWN".equals(data.get(key).asText()))
                 sources.put(key, source);
         return data;
+    }
+
+    /**
+     * 来源说明和现场地址不冒充诊断环境变化，只比较明确的环境字段。
+     */
+    private boolean diagnosticEnvironmentChanged(JsonNode previous, JsonNode next) {
+        for (String field : List.of("os_name", "os_version", "software_name", "software_version",
+                "connection_type", "affected_scope", "error_code")) {
+            if (!Objects.equals(previous.path(field), next.path(field))) return true;
+        }
+        return false;
     }
 
     /**
@@ -892,7 +1006,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
         if (!Set.of(
                         TicketStatusEnum.SUBMITTED.getValue(),
                         TicketStatusEnum.PROCESSING.getValue(),
-                        TicketStatusEnum.WAITING_CUSTOMER.getValue())
+                        TicketStatusEnum.WAITING_CUSTOMER.getValue(),
+                        TicketStatusEnum.WAITING_EXTERNAL.getValue())
                 .contains(ticket.getStatus()))
             throw new BusinessException(CommonErrorCode.CONFLICT);
     }
@@ -916,31 +1031,24 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
     /**
      * 原动作回执优先于新草稿期限；网络复核在工单事务外，提交时仍比较原版本。
      */
-    private TicketActionReceiptVO validateDraftAction(
-            IdentityDTO actor,
-            String id,
-            TicketActionForm form,
-            String type,
-            String draftId,
-            String purpose) {
-        if (draftId == null) return null;
+    private DraftValidation validateDraftAction(
+            IdentityDTO actor, String id, TicketActionForm form, String draftId, String purpose) {
         TicketEntity ticket = readable(actor, baseMapper.selectById(id));
-        TicketEventEntity old =
-                replay(actor, ticket, form.getClientActionId(), digest.hash(type, id, form));
-        if (old != null) return receipt(old);
-        handler(actor, ticket);
-        if (!ticket.getRowVersion().equals(form.getRowVersion()))
-            throw new BusinessException(CommonErrorCode.CONFLICT);
-        draftClient.validate(
-                actor,
-                draftId,
-                purpose,
-                ticket.getCustomerId(),
-                ticket.getServiceItemId(),
-                ticket.getDeviceId(),
-                id,
-                ticket.getRowVersion());
-        return null;
+        if (draftId != null) {
+            handler(actor, ticket);
+            if (!ticket.getRowVersion().equals(form.getRowVersion()))
+                throw new BusinessException(CommonErrorCode.CONFLICT);
+        }
+        return draftClient.validate(actor, draftId, purpose, ticket.getCustomerId(),
+                ticket.getServiceItemId(), ticket.getDeviceId(), id, ticket.getRowVersion(), objectMapper.valueToTree(form));
+    }
+
+    /**
+     * 本地原键和草稿根均先于远端校验；同根相同最终语义复用正式结果。
+     */
+    private ActionReceiptEntity replayAction(IdentityDTO actor, String key, String root, String hash) {
+        ActionReceiptEntity value = receiptService.replay(actor, key, hash);
+        return value == null ? receiptService.replayDraft(actor, root, hash) : value;
     }
 
     /**
@@ -956,18 +1064,6 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
      */
     private String id() {
         return IdentifierGenerator.next();
-    }
-
-    /**
-     * 返回原动作提交时的结果。
-     */
-    private TicketActionReceiptVO receipt(TicketEventEntity event) {
-        TicketActionReceiptVO result = new TicketActionReceiptVO();
-        result.setEventId(event.getId());
-        result.setTicketId(event.getTicketId());
-        result.setSequenceNumber(event.getSequenceNumber());
-        result.setToStatus(event.getToStatus());
-        return result;
     }
 
     /**

@@ -19,6 +19,10 @@ import {
   uploadReceipt,
   updateDocument,
   changePublication,
+  validateProcedure,
+  changeDocumentSafety,
+  type DocumentSafetyAction,
+  type DocumentSafetyInput,
   deleteDocument,
   createIndex,
   getIndex,
@@ -29,10 +33,12 @@ import {
   type IndexJob,
   type MetadataInput,
 } from '../../api/knowledge/knowledgeApi'
-import { newRequestId } from '../../api/http'
+import { ApiError, newRequestId } from '../../api/http'
 import { useAuthStore } from '../../stores/authStore'
 import { useOperation } from '../../composables/useOperation'
 import RuleEditor from './RuleEditor.vue'
+import ProcedureEditor from './ProcedureEditor.vue'
+import type { ProcedureInput } from '../../api/knowledge/procedures'
 
 /** 原件、索引事务、AI执行和发布分别显示，超时沿原键查证。 @author yangaobo */
 const auth = useAuthStore(),
@@ -69,8 +75,24 @@ const format = ref<'PDF' | 'MARKDOWN'>('MARKDOWN'),
   markdown = ref(''),
   useEditor = ref(true)
 const uploadPending = ref<{ form: FormData; key: string } | null>(null),
-  indexPending = ref<{ document: KnowledgeDocument; key: string } | null>(null)
+  indexPending = ref<{
+    document: KnowledgeDocument
+    key: string
+    parserTier: 'flash' | 'basic'
+  } | null>(null)
+const parserTier = ref<'flash' | 'basic'>('flash')
 const predecessor = ref('')
+const procedureDefinition = ref<ProcedureInput | null>(null)
+const procedurePending = ref<{
+  id: string
+  rowVersion: string
+  clientActionId: string
+} | null>(null)
+const safetyPending = ref<{
+  action: DocumentSafetyAction
+  body: DocumentSafetyInput
+} | null>(null)
+const safetyReason = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined,
   pollingUntil = 0,
   selectionVersion = 0
@@ -78,6 +100,7 @@ const frozen = computed(
   () =>
     busy.value ||
     !!uploadPending.value ||
+    !!procedurePending.value ||
     (selected.value !== null && selected.value.publicationStatus !== 'DRAFT'),
 )
 const canIndex = computed(
@@ -151,6 +174,7 @@ async function poll(version: number) {
   }
 }
 function select(value: KnowledgeDocument) {
+  if (procedurePending.value) return
   stopPolling()
   selectionVersion++
   const version = selectionVersion
@@ -164,6 +188,7 @@ function select(value: KnowledgeDocument) {
     if (version !== selectionVersion) return
     selectedSeries.value = source
     selected.value = document
+    procedureDefinition.value = document.procedureDefinition
     job.value = null
     metadata.value = {
       title: document.title,
@@ -179,9 +204,11 @@ function select(value: KnowledgeDocument) {
   })
 }
 function newRevision() {
+  if (procedurePending.value) return
   stopPolling()
   selectionVersion++
   selected.value = null
+  procedureDefinition.value = null
   selectedSeries.value = null
   job.value = null
 }
@@ -230,6 +257,7 @@ function upload() {
               clientUploadId: key,
               seriesId: seriesId.value,
               contentFormat: format.value,
+              procedureDefinition: procedureDefinition.value,
             }),
           ],
           { type: 'application/json' },
@@ -261,6 +289,34 @@ function checkUpload() {
     await loadList()
   })
 }
+
+/** 响应未知沿原动作重试，只有明确业务拒绝才能释放原表单。 @author yangaobo */
+function validateSelectedProcedure() {
+  void run(async () => {
+    if (!procedurePending.value) {
+      if (!selected.value) return
+      procedurePending.value = {
+        id: selected.value.id,
+        rowVersion: selected.value.rowVersion,
+        clientActionId: newRequestId(),
+      }
+    }
+    const submission = procedurePending.value
+    try {
+      await validateProcedure(submission, await auth.token())
+      procedurePending.value = null
+      selected.value = await getDocument(
+        submission.id,
+        await auth.token(),
+        signal,
+      )
+    } catch (failure) {
+      if (failure instanceof ApiError && [1001, 1004].includes(failure.code))
+        procedurePending.value = null
+      throw failure
+    }
+  })
+}
 function save() {
   void run(async () => {
     if (!selected.value) return
@@ -282,11 +338,13 @@ function index() {
     indexPending.value ??= {
       document: { ...selected.value },
       key: newRequestId(),
+      parserTier: parserTier.value,
     }
     job.value = await createIndex(
       indexPending.value.document,
       indexPending.value.key,
       await auth.token(),
+      indexPending.value.parserTier,
     )
     indexPending.value = null
     await readSelected()
@@ -354,6 +412,58 @@ function remove() {
     )
     await deleteDocument(selected.value, await auth.token())
     newRevision()
+    await loadList()
+  })
+}
+/** 未知结果保留原动作身份；重试只查证同一次动作，不重新生成请求。 */
+function safety(action?: DocumentSafetyAction) {
+  void run(async () => {
+    if (!safetyPending.value) {
+      if (!selected.value || !action || !safetyReason.value.trim()) return
+      const labels = {
+        withdraw: '风险撤回',
+        'revoke-access': '撤销访问',
+        'restore-access': '恢复访问',
+      }
+      await ElMessageBox.confirm(
+        `确认${labels[action]}“${selected.value.title}”？风险撤回必须另建修订纠错，恢复访问不会恢复已撤回的指导。`,
+        '核对资料安全动作',
+      )
+      safetyPending.value = {
+        action,
+        body: {
+          id: selected.value.id,
+          rowVersion: selected.value.rowVersion,
+          clientActionId: newRequestId(),
+          reason: safetyReason.value.trim(),
+        },
+      }
+    }
+    const pending = safetyPending.value
+    try {
+      await changeDocumentSafety(
+        pending.action,
+        pending.body,
+        await auth.token(),
+      )
+    } catch (failure) {
+      if (
+        failure instanceof ApiError &&
+        [400, 401, 403, 404, 409, 422].includes(failure.status)
+      ) {
+        safetyPending.value = null
+      }
+      throw failure
+    }
+    safetyPending.value = null
+    safetyReason.value = ''
+    if (selected.value?.id === pending.body.id) {
+      selected.value = await getDocument(
+        pending.body.id,
+        await auth.token(),
+        signal,
+      )
+    }
     await loadList()
   })
 }
@@ -509,6 +619,28 @@ function pageNumNext() {
           @update:model-value="metadata.applicabilityNote = $event || null"
       /></label>
       <RuleEditor v-model="metadata.rules" :disabled="frozen" />
+      <ProcedureEditor
+        v-model="procedureDefinition"
+        :format="selected?.contentFormat ?? format"
+        :disabled="frozen || !!selected"
+      />
+      <template v-if="selected?.procedureDefinition">
+        <p>
+          规程校验：{{
+            selected.procedureSha256 === selected.procedureValidatedSha256
+              ? '已通过'
+              : '待校验'
+          }}
+        </p>
+        <ElButton
+          v-if="selected.publicationStatus === 'DRAFT'"
+          :disabled="busy"
+          @click="validateSelectedProcedure"
+          >{{
+            procedurePending ? '沿原动作重试校验' : '核对并校验规程'
+          }}</ElButton
+        >
+      </template>
       <template v-if="!selected"
         ><label
           >原件格式<ElSelect v-model="format" :disabled="!!uploadPending"
@@ -562,6 +694,13 @@ function pageNumNext() {
           >保存草稿规则与元数据</ElButton
         >
         <div v-if="selected.publicationStatus === 'DRAFT'">
+          <label v-if="selected.contentFormat === 'PDF'">
+            PDF 解析方式
+            <ElSelect v-model="parserTier" :disabled="busy || !!indexPending">
+              <ElOption label="快速解析（普通文字资料）" value="flash" />
+              <ElOption label="基础解析" value="basic" />
+            </ElSelect>
+          </label>
           <ElButton
             :disabled="busy || (!canIndex && !indexPending)"
             @click="index"
@@ -579,7 +718,9 @@ function pageNumNext() {
             >替换的当前修订 ID<ElSelect v-model="predecessor"
               ><ElOption
                 v-for="row in docs.filter((row) =>
-                  ['PUBLISHED', 'DISABLED'].includes(row.publicationStatus),
+                  ['PUBLISHED', 'DISABLED', 'WITHDRAWN'].includes(
+                    row.publicationStatus,
+                  ),
                 )"
                 :key="row.id"
                 :value="row.id"
@@ -596,12 +737,71 @@ function pageNumNext() {
           @click="publication('disable')"
           >停用</ElButton
         ><ElButton
-          v-if="selected.publicationStatus === 'DISABLED'"
+          v-if="
+            selected.publicationStatus === 'DISABLED' &&
+            selected.accessStatus === 'ALLOWED'
+          "
           :disabled="busy"
           @click="publication('restore')"
           >重新核验并恢复</ElButton
         >
+        <p>
+          访问状态：{{
+            selected.accessStatus === 'ALLOWED' ? '允许授权读取' : '已撤销访问'
+          }}
+        </p>
+        <p v-if="selected.accessReason">
+          访问变更依据：{{ selected.accessReason }}
+        </p>
+        <ElAlert
+          v-if="selected.withdrawalReason"
+          type="warning"
+          :closable="false"
+          :title="`风险撤回：${selected.withdrawalReason}`"
+        />
+        <template
+          v-if="selected.publicationStatus !== 'DELETED' && !safetyPending"
+        >
+          <label
+            >安全动作依据<ElInput
+              v-model="safetyReason"
+              type="textarea"
+              :maxlength="1000"
+              :disabled="busy"
+          /></label>
+          <ElButton
+            v-if="
+              ['PUBLISHED', 'DISABLED', 'RETIRED'].includes(
+                selected.publicationStatus,
+              )
+            "
+            :disabled="busy || !safetyReason.trim()"
+            @click="safety('withdraw')"
+            >风险撤回</ElButton
+          >
+          <ElButton
+            v-if="selected.accessStatus === 'ALLOWED'"
+            :disabled="busy || !safetyReason.trim()"
+            @click="safety('revoke-access')"
+            >撤销访问</ElButton
+          >
+          <ElButton
+            v-else
+            :disabled="busy || !safetyReason.trim()"
+            @click="safety('restore-access')"
+            >仅恢复访问</ElButton
+          >
+        </template>
       </template>
+    </section>
+    <section v-if="safetyPending" class="panel" aria-live="polite">
+      <ElAlert
+        type="warning"
+        :closable="false"
+        title="安全动作尚未核对结果。保留原参数，沿原动作重试。"
+      />
+      <p>资料 {{ safetyPending.body.id }} · {{ safetyPending.body.reason }}</p>
+      <ElButton :disabled="busy" @click="safety()">核对原安全动作</ElButton>
     </section>
     <section v-if="job" class="panel" aria-live="polite">
       <h2>索引任务进展</h2>

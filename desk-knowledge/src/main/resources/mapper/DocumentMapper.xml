@@ -4,6 +4,7 @@
 <mapper namespace="com.yangaobo.servicedesk.knowledge.mapper.DocumentMapper">
   <resultMap id="entityMap" type="com.yangaobo.servicedesk.knowledge.model.entity.DocumentEntity" autoMapping="true">
     <id column="id" property="id"/>
+    <result column="procedure_definition" property="procedureDefinition" typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
   </resultMap>
 
   <select id="lock" resultMap="entityMap">
@@ -26,7 +27,15 @@
       revision_label,
       issued_on,
       applicability_note,
+      procedure_definition,
+      procedure_sha256,
+      procedure_validated_sha256,
+      procedure_validated_at,
+      procedure_validated_by,
       publication_status,
+      access_status,
+      access_reason,
+      withdrawal_reason,
       current_job_id,
       replaces_document_id,
       published_at,
@@ -64,7 +73,15 @@
     revision_label,
     issued_on,
     applicability_note,
+    procedure_definition,
+    procedure_sha256,
+    procedure_validated_sha256,
+    procedure_validated_at,
+    procedure_validated_by,
     publication_status,
+    access_status,
+    access_reason,
+    withdrawal_reason,
     current_job_id,
     replaces_document_id,
     published_at,
@@ -75,6 +92,16 @@
     updated_at,
     row_version
   </sql>
+
+  <select id="latestPublished" resultMap="entityMap">
+    SELECT
+      <include refid="entityColumns"/>
+    FROM kb_document
+    WHERE series_id = #{seriesId}
+      AND published_at IS NOT NULL
+    ORDER BY revision_number DESC
+    LIMIT 1
+  </select>
 
   <sql id="countDocumentsFromWhere">
     FROM kb_document

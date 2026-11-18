@@ -2,6 +2,10 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
   "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.yangaobo.servicedesk.ticket.mapper.TicketEventMapper">
+  <update id="bindReceipt">
+    UPDATE sd_ticket_event SET action_receipt_id=#{receipt}
+    WHERE id=#{id} AND ticket_id=#{ticket} AND action_receipt_id IS NULL
+  </update>
   <resultMap id="entityMap" type="com.yangaobo.servicedesk.ticket.model.entity.TicketEventEntity" autoMapping="true">
     <id column="id" property="id"/>
     <result column="metadata" property="metadata"
@@ -21,6 +25,7 @@
       client_action_id,
       source_draft_id,
       action_request_hash,
+    action_receipt_id,
       visibility,
       from_status,
       to_status,
@@ -30,12 +35,6 @@
     FROM sd_ticket_event
     WHERE id = #{id}
     FOR UPDATE
-  </select>
-
-  <select id="lastSequence" resultType="int">
-    SELECT COALESCE(MAX(sequence_number), 0)
-    FROM sd_ticket_event
-    WHERE ticket_id = #{ticket}
   </select>
 
   <sql id="entityColumns">
@@ -49,6 +48,7 @@
     client_action_id,
     source_draft_id,
     action_request_hash,
+    action_receipt_id,
     visibility,
     from_status,
     to_status,

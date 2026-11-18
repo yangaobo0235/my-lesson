@@ -24,9 +24,18 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @TableName(value = "sd_ticket", autoResultMap = true)
 public class TicketEntity implements Serializable {
-
     @Serial
     private static final long serialVersionUID = 1L;
+
+    /**
+     * 分类、设备或关键环境变化递增，不随普通时间线变化。
+     */
+    private Long diagnosisContextVersion;
+
+    /**
+     * 工单锁内分配的当前已提交事件序号。
+     */
+    private Long eventSequence;
 
     /**
      * 主键，由所属后端生成。
@@ -215,4 +224,27 @@ public class TicketEntity implements Serializable {
      * 非负，更新比较旧值后加一。
      */
     private Long rowVersion;
+
+    /**
+     * 当前等待原因，退出等待清空。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String waitReason;
+
+    /**
+     * 本轮跟进期限，非等待为空。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime followUpAt;
+
+    /**
+     * 等待和续期轮次，退出后保留。
+     */
+    private Integer waitCycle;
+
+    /**
+     * 本轮已提醒时刻，续期清空。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime followUpNotifiedAt;
 }

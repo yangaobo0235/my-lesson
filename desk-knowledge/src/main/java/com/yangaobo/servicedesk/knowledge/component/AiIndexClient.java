@@ -84,7 +84,7 @@ public class AiIndexClient implements AutoCloseable {
     }
 
     /**
-     * 核对历史实际引用关系，不让任意generationId扩大原件范围。
+     * 核对历史实际引用关系，不让任意runId扩大原件范围。
      */
     public SourceQuery resolve(SourceQuery query) {
         try {
@@ -95,7 +95,7 @@ public class AiIndexClient implements AutoCloseable {
                     .resolveContext(
                             EvidenceContextRequest.newBuilder()
                                     .setActor(query.getActor())
-                                    .setGenerationId(query.getGenerationId())
+                                    .setRunId(query.getRunId())
                                     .setSourceUsageId(query.getSourceUsageId())
                                     .build());
         } catch (StatusRuntimeException failure) {

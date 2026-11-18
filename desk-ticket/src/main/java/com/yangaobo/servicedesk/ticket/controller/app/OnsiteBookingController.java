@@ -6,6 +6,8 @@ import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.ticket.model.dto.onsite.OnsiteBookingResult;
 import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteBookingForm;
 import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteFinishForm;
+import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteCancelForm;
+import com.yangaobo.servicedesk.ticket.model.form.onsite.OnsiteAssignmentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.OnsiteEligibilityForm;
 import com.yangaobo.servicedesk.ticket.model.vo.onsite.OnsiteBookingVO;
 import com.yangaobo.servicedesk.ticket.model.vo.onsite.OnsiteSlotVO;
@@ -108,9 +110,9 @@ public class OnsiteBookingController {
      */
     @PostMapping("/onsite-bookings/{bookingId}/cancel")
     @Operation(summary = "取消预约")
-    public Result<OnsiteBookingVO> cancel(@PathVariable String id, @PathVariable String bookingId) {
-        OnsiteBookingVO data =
-                onsiteBookingService.end(currentActor.requireIdentity(), id, bookingId, null);
+    public Result<TicketActionReceiptVO> cancel(@PathVariable String id, @PathVariable String bookingId, @Valid @RequestBody OnsiteCancelForm form) {
+        TicketActionReceiptVO data =
+                onsiteBookingService.cancel(currentActor.requireIdentity(), id, bookingId, form);
         return Result.success(data);
     }
 
@@ -119,13 +121,23 @@ public class OnsiteBookingController {
      */
     @PostMapping("/onsite-bookings/{bookingId}/finish")
     @Operation(summary = "登记实际履约")
-    public Result<OnsiteBookingVO> finish(
+    public Result<TicketActionReceiptVO> finish(
             @PathVariable String id,
             @PathVariable String bookingId,
             @Valid @RequestBody OnsiteFinishForm form) {
-        OnsiteBookingVO data =
-                onsiteBookingService.end(
-                        currentActor.requireIdentity(), id, bookingId, form.getFinishResult());
+        TicketActionReceiptVO data =
+                onsiteBookingService.finish(currentActor.requireIdentity(), id, bookingId, form);
+        return Result.success(data);
+    }
+
+    /**
+     * 预约出勤责任独立于工单处理责任，当前有权服务人员显式调整。
+     */
+    @PostMapping("/onsite-bookings/{bookingId}/assign")
+    @Operation(summary = "调整现场负责人")
+    public Result<TicketActionReceiptVO> assign(@PathVariable String id, @PathVariable String bookingId,
+                                                @Valid @RequestBody OnsiteAssignmentForm form) {
+        TicketActionReceiptVO data = onsiteBookingService.assign(currentActor.requireIdentity(), id, bookingId, form);
         return Result.success(data);
     }
 }

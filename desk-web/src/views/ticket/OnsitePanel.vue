@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElAlert, ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import {
   bookingHistory,
@@ -7,8 +7,9 @@ import {
   bookOnsite,
   bookingReceipt,
   queryBooking,
-  cancelBooking,
-  finishBooking,
+  changeBooking,
+  unifiedReceipt,
+  type BookingAction,
   setOnsiteEligibility,
   type OnsiteBooking,
   type OnsiteSlot,
@@ -31,7 +32,30 @@ const slotPage = ref(1),
   historyTotal = ref('0')
 const selected = ref(''),
   reason = ref('')
-const pending = ref<{ slotId: string; clientRequestId: string } | null>(null)
+const pending = ref<{
+  slotId: string
+  clientRequestId: string
+  rowVersion: string
+} | null>(null)
+const actionReason = ref(''),
+  performedBy = ref(''),
+  technicianId = ref(''),
+  notice = ref('')
+const pendingAction = ref<{ bookingId: string; action: BookingAction } | null>(
+  null,
+)
+const pendingEligibility = ref<{
+  rowVersion: string
+  clientActionId: string
+  onsiteEligible: boolean
+  reason: string
+} | null>(null)
+watch(
+  () => props.ticket.rowVersion,
+  () => {
+    void run(load)
+  },
+)
 function verifyBooking(value: OnsiteBooking) {
   void run(async () => {
     const latest = await queryBooking(value.id, await auth.token(), signal)
@@ -67,6 +91,7 @@ function reserve() {
     if (!pending.value)
       pending.value = {
         slotId: selected.value,
+        rowVersion: props.ticket.rowVersion,
         clientRequestId: newRequestId(),
       }
     await bookOnsite(props.ticket.id, pending.value, await auth.token())
@@ -85,24 +110,90 @@ function check() {
   })
 }
 function end(value: OnsiteBooking, result?: 'VISITED' | 'NOT_PERFORMED') {
+  if (pendingAction.value) return
+  const base = { clientActionId: newRequestId(), rowVersion: value.rowVersion }
+  pendingAction.value = {
+    bookingId: value.id,
+    action: result
+      ? {
+          name: 'finish',
+          body: {
+            ...base,
+            finishResult: result,
+            performedBy: performedBy.value,
+            finishNote: actionReason.value,
+          },
+        }
+      : { name: 'cancel', body: { ...base, reason: actionReason.value } },
+  }
+  submitAction()
+}
+function assign(value: OnsiteBooking) {
+  if (pendingAction.value) return
+  pendingAction.value = {
+    bookingId: value.id,
+    action: {
+      name: 'assign',
+      body: {
+        clientActionId: newRequestId(),
+        rowVersion: value.rowVersion,
+        technicianId: technicianId.value,
+        reason: actionReason.value,
+      },
+    },
+  }
+  submitAction()
+}
+function submitAction() {
   void run(async () => {
-    if (result)
-      await finishBooking(props.ticket.id, value.id, result, await auth.token())
-    else await cancelBooking(props.ticket.id, value.id, await auth.token())
+    if (!pendingAction.value) return
+    const receipt = await changeBooking(
+      props.ticket.id,
+      pendingAction.value.bookingId,
+      pendingAction.value.action,
+      await auth.token(),
+    )
+    notice.value = `原动作已提交：${receipt.actionType}，预约版本 ${receipt.bookingRowVersion}。下方展示当前预约状态。`
+    pendingAction.value = null
+    await load()
+    emit('changed')
+  })
+}
+function recoverAction() {
+  void run(async () => {
+    if (!pendingAction.value) return
+    await unifiedReceipt(pendingAction.value.action.body.clientActionId, signal)
+    pendingAction.value = null
     await load()
     emit('changed')
   })
 }
 function eligibility() {
   void run(async () => {
+    pendingEligibility.value ??= {
+      rowVersion: props.ticket.rowVersion,
+      clientActionId: newRequestId(),
+      onsiteEligible: !props.ticket.onsiteEligible,
+      reason: reason.value,
+    }
+    const input = pendingEligibility.value
     await setOnsiteEligibility(
       props.ticket.id,
-      props.ticket.rowVersion,
-      newRequestId(),
-      !props.ticket.onsiteEligible,
-      reason.value,
+      input.rowVersion,
+      input.clientActionId,
+      input.onsiteEligible,
+      input.reason,
       await auth.token(),
     )
+    pendingEligibility.value = null
+    emit('changed')
+  })
+}
+function recoverEligibility() {
+  void run(async () => {
+    if (!pendingEligibility.value) return
+    await unifiedReceipt(pendingEligibility.value.clientActionId, signal)
+    pendingEligibility.value = null
     emit('changed')
   })
 }
@@ -115,6 +206,7 @@ onMounted(() => {
   <section class="panel">
     <h2>现场服务</h2>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
+    <ElAlert v-if="notice" :title="notice" type="info" :closable="false" />
     <p>
       现场资格：{{
         ticket.onsiteEligible ? '已人工核对' : '尚未开放'
@@ -128,10 +220,17 @@ onMounted(() => {
     >
       <ElInput
         v-model="reason"
+        :disabled="!!pendingEligibility"
         aria-label="现场资格核对原因"
         placeholder="填写区域、地点和现场能力核对结果"
         maxlength="500"
       />
+      <ElButton
+        v-if="pendingEligibility"
+        :disabled="busy"
+        @click="recoverEligibility"
+        >查询原资格动作</ElButton
+      >
       <ElButton :disabled="!reason || busy" @click="eligibility">{{
         ticket.onsiteEligible ? '撤回现场资格' : '开放现场资格'
       }}</ElButton>
@@ -164,10 +263,44 @@ onMounted(() => {
         >下一页时段</ElButton
       >
     </div>
+    <ElInput
+      v-model="actionReason"
+      :disabled="!!pendingAction"
+      aria-label="预约动作说明"
+      placeholder="填写取消、更换人员或实际履约的具体原因"
+      maxlength="500"
+    />
+    <template v-if="auth.has('SERVICE_AGENT') || auth.has('TECHNICIAN')">
+      <ElInput
+        v-model="technicianId"
+        :disabled="!!pendingAction"
+        aria-label="现场负责人账号标识"
+        placeholder="新的现场负责人账号标识"
+      />
+      <ElInput
+        v-model="performedBy"
+        :disabled="!!pendingAction"
+        aria-label="实际执行人账号标识"
+        placeholder="实际执行人账号标识（履约登记必填）"
+      />
+    </template>
+    <template v-if="pendingAction">
+      <ElButton :disabled="busy" @click="submitAction">沿原动作键重试</ElButton>
+      <ElButton :disabled="busy" @click="recoverAction"
+        >查询原动作回执</ElButton
+      >
+    </template>
     <ul>
       <li v-for="b in bookings" :key="b.id">
         {{ b.status }} {{ b.resultCode }} {{ b.finishResult }} ·
-        {{ b.visitAddress }}
+        {{ b.visitAddress }} · 预约版本 {{ b.rowVersion }}
+        <p v-if="b.assignedTechnicianId">
+          现场负责人：{{ b.assignedTechnicianId }}
+        </p>
+        <p v-if="b.finishNote">
+          执行人：{{ b.performedBy }}；{{ b.finishNote }}
+        </p>
+        <p v-if="b.cancelReason">取消原因：{{ b.cancelReason }}</p>
         <ElButton
           v-if="auth.has('SERVICE_AGENT') || auth.has('TECHNICIAN')"
           :disabled="busy"
@@ -175,16 +308,40 @@ onMounted(() => {
           >核对原预约</ElButton
         >
         <template v-if="b.status === 'CONFIRMED'">
-          <ElButton :disabled="busy" @click="end(b)">到访前取消</ElButton>
+          <ElButton
+            v-if="
+              auth.has('SERVICE_AGENT') ||
+              (auth.has('TECHNICIAN') &&
+                ticket.assigneeId === auth.user?.ownerId)
+            "
+            :disabled="
+              busy || !!pendingAction || !actionReason || !technicianId
+            "
+            @click="assign(b)"
+            >调整现场负责人</ElButton
+          >
+          <ElButton
+            :disabled="busy || !!pendingAction || !actionReason"
+            @click="end(b)"
+            >到访前取消</ElButton
+          >
           <template
             v-if="
               auth.has('TECHNICIAN') && ticket.assigneeId === auth.user?.ownerId
             "
           >
-            <ElButton :disabled="busy" @click="end(b, 'VISITED')"
+            <ElButton
+              :disabled="
+                busy || !!pendingAction || !actionReason || !performedBy
+              "
+              @click="end(b, 'VISITED')"
               >登记已到访</ElButton
             >
-            <ElButton :disabled="busy" @click="end(b, 'NOT_PERFORMED')"
+            <ElButton
+              :disabled="
+                busy || !!pendingAction || !actionReason || !performedBy
+              "
+              @click="end(b, 'NOT_PERFORMED')"
               >登记未履约</ElButton
             >
           </template>

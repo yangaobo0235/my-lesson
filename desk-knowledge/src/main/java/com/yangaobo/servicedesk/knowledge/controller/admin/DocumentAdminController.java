@@ -4,6 +4,9 @@ import com.yangaobo.servicedesk.common.base.IdVersionForm;
 import com.yangaobo.servicedesk.common.base.PageVO;
 import com.yangaobo.servicedesk.common.base.Result;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentPublishForm;
+import com.yangaobo.servicedesk.knowledge.model.form.DocumentSafetyForm;
+import com.yangaobo.servicedesk.knowledge.model.form.DocumentProcedureForm;
+import com.yangaobo.servicedesk.knowledge.model.enums.DocumentSafetyActionEnum;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentUpdateForm;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentUploadForm;
 import com.yangaobo.servicedesk.knowledge.model.form.KnowledgeQueryForm;
@@ -40,6 +43,46 @@ import org.springframework.web.multipart.MultipartFile;
 public class DocumentAdminController {
     private final CurrentActor currentActor;
     private final IDocumentService documentService;
+
+    /**
+     * 核对不可变规程的结构、定位和有限安全前置条件。
+     */
+    @PostMapping("/validate-procedure")
+    @Operation(summary = "校验修订内审核规程")
+    public Result<DocumentVO> validateProcedure(@Valid @RequestBody DocumentProcedureForm form) {
+        DocumentVO data = documentService.validateProcedure(currentActor.requireIdentity(), form);
+        return Result.success(data);
+    }
+
+    /**
+     * 风险撤回已发布过的修订，纠错必须另建修订。
+     */
+    @PostMapping("/withdraw")
+    @Operation(summary = "风险撤回资料修订")
+    public Result<DocumentVO> withdraw(@Valid @RequestBody DocumentSafetyForm form) {
+        DocumentVO data = documentService.safety(currentActor.requireIdentity(), form, DocumentSafetyActionEnum.WITHDRAWN);
+        return Result.success(data);
+    }
+
+    /**
+     * 撤销访问，同时停止历史正文读取。
+     */
+    @PostMapping("/revoke-access")
+    @Operation(summary = "撤销资料访问权限")
+    public Result<DocumentVO> revokeAccess(@Valid @RequestBody DocumentSafetyForm form) {
+        DocumentVO data = documentService.safety(currentActor.requireIdentity(), form, DocumentSafetyActionEnum.ACCESS_REVOKED);
+        return Result.success(data);
+    }
+
+    /**
+     * 恢复访问不恢复已撤回资料的指导资格。
+     */
+    @PostMapping("/restore-access")
+    @Operation(summary = "恢复资料访问权限")
+    public Result<DocumentVO> restoreAccess(@Valid @RequestBody DocumentSafetyForm form) {
+        DocumentVO data = documentService.safety(currentActor.requireIdentity(), form, DocumentSafetyActionEnum.ACCESS_RESTORED);
+        return Result.success(data);
+    }
 
     /**
      * 分页查看资料修订。

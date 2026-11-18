@@ -55,7 +55,7 @@ class MapperXmlTest {
      */
     @Test
     void everyCustomMethodHasBoundStatement() {
-        assertEquals(12, configuration.getMapperRegistry().getMappers().size());
+        assertEquals(14, configuration.getMapperRegistry().getMappers().size());
         for (Class<?> mapper : configuration.getMapperRegistry().getMappers()) {
             for (var method : mapper.getDeclaredMethods()) {
                 assertTrue(configuration.hasStatement(mapper.getName() + "." + method.getName()),
@@ -65,6 +65,7 @@ class MapperXmlTest {
                 }
             }
         }
+        jsonMapping("ActionReceiptMapper.byAction", "resultSnapshot");
         jsonMapping("TicketMapper.lock", "supportContext");
         jsonMapping("TicketEventMapper.listReadable", "metadata");
         jsonMapping("ServiceEventMapper.listEvents", "details");

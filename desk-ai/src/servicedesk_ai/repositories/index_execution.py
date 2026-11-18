@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 async def chunk_count(db: AsyncConnection, parameters: Mapping[str, object]) -> int:
     """统计分块数量，沿调用方连接执行，不开启或提交事务。"""
     return (
-        await db.execute(text("SELECT COUNT(*) FROM ai_chunk WHERE index_job_id=:id"), parameters)
+        await db.execute(
+            text("SELECT COUNT(*) FROM ai_chunk WHERE index_job_id=:id AND node_kind='LEAF'"),
+            parameters,
+        )
     ).scalar_one()
 
 

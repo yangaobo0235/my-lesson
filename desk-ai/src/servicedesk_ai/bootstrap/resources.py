@@ -6,6 +6,7 @@ import ssl
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from typing import Literal
 
 import httpx
 from opentelemetry.sdk.trace import TracerProvider
@@ -38,7 +39,7 @@ async def close_observability(provider: TracerProvider, handler: logging.Handler
         await asyncio.to_thread(provider.shutdown)
     finally:
         logging.getLogger("servicedesk_ai").removeHandler(handler)
-        handler.close()
+        await asyncio.to_thread(handler.close)
 
 
 def http_client(
@@ -60,10 +61,12 @@ def http_client(
 
 
 @asynccontextmanager
-async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
+async def open_resources(
+    settings: Settings, *, process: Literal["api", "worker", "receiver"] = "api"
+) -> AsyncIterator[Resources]:
     """在同一事件循环创建和逆序关闭资源，不执行DDL或健康付费调用。"""
     async with AsyncExitStack() as stack:
-        provider, handler = open_observability(settings)
+        provider, handler = open_observability(settings, process)
         stack.push_async_callback(close_observability, provider, handler)
         mysql = settings.mysql
         engine = create_async_engine(

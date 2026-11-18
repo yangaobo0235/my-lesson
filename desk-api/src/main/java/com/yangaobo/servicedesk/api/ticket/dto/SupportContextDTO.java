@@ -62,9 +62,24 @@ public class SupportContextDTO implements java.io.Serializable {
     private String assigneeId;
 
     /**
-     * 技术工单输入版本。
+     * 技术工单写版本，只用于正式动作乐观并发。
      */
-    private Long ticketVersion;
+    private Long ticketRowVersion;
+
+    /**
+     * 分类、设备和关键环境的诊断版本。
+     */
+    private Long diagnosisContextVersion;
+
+    /**
+     * 当前已提交时间线游标。
+     */
+    private Long ticketEventSequence;
+
+    /**
+     * 已尝试操作的用户记录，不当作工具观测。
+     */
+    private String attemptedActions;
 
     /**
      * 有来源的问题环境。

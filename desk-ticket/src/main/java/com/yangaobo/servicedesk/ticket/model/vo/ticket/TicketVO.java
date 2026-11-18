@@ -20,9 +20,20 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 public class TicketVO implements Serializable {
-
     @Serial
     private static final long serialVersionUID = 1L;
+
+    /**
+     * 关键诊断环境版本，与普通写版本分开。
+     */
+    @JsonSerialize(using = DecimalStringSerializer.class)
+    private Long diagnosisContextVersion;
+
+    /**
+     * 当前已提交事件游标。
+     */
+    @JsonSerialize(using = DecimalStringSerializer.class)
+    private Long eventSequence;
 
     /**
      * 主键，由所属后端生成。
@@ -224,4 +235,28 @@ public class TicketVO implements Serializable {
             example = "1")
     @JsonSerialize(using = DecimalStringSerializer.class)
     private Long rowVersion;
+
+    /**
+     * 当前等待原因，退出等待清空。
+     */
+    @Schema(description = "当前等待原因，退出等待清空")
+    private String waitReason;
+
+    /**
+     * 本轮跟进期限，非等待为空。
+     */
+    @Schema(description = "本轮跟进期限，非等待为空")
+    private Instant followUpAt;
+
+    /**
+     * 等待和续期轮次，退出后保留。
+     */
+    @Schema(description = "等待和续期轮次，退出后保留")
+    private Integer waitCycle;
+
+    /**
+     * 本轮已提醒时刻，续期清空。
+     */
+    @Schema(description = "本轮已提醒时刻，续期清空")
+    private Instant followUpNotifiedAt;
 }

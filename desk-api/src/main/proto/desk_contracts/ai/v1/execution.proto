@@ -29,12 +29,14 @@ message ValidateDraftRequest {
   optional string service_item_id = 5;
   optional string device_id = 6;
   optional string ticket_id = 7;
-  optional int64 ticket_version = 8;
+  optional int64 ticket_row_version = 8;
+  string content_sha256 = 9;
 }
 // 草稿仅返回最小确认事实；不保存消费结果或第二份工单事实。
 message ValidatedDraft {
   string id = 1;
-  string source_generation_id = 2;
+  // 确认事实建单及已有交接回执的预约可以没有来源Run；技术建议必须有来源Run。
+  optional string source_run_id = 2;
   string purpose = 3;
   string title = 4;
   string symptom = 5;
@@ -42,9 +44,20 @@ message ValidatedDraft {
   string content = 7;
   optional string resolution_type = 8;
   optional string referral_target = 9;
+  string draft_root_id = 10;
+  string content_sha256 = 11;
+  string validation_id = 12;
+  // UTC Unix毫秒；ticket只接受本次RPC返回且未过期的短时证明。
+  int64 validated_at_epoch_ms = 13;
+  int64 valid_until_epoch_ms = 14;
+  string task_id = 15;
+  int64 task_state_version = 16;
+  int64 diagnosis_context_version = 17;
+  optional string follow_up_at = 18;
+  optional string slot_id = 19;
 }
 message EvidenceContextRequest {
   servicedesk.common.v1.ActorRef actor = 1;
-  string generation_id = 2;
+  string run_id = 2;
   string source_usage_id = 3;
 }

@@ -11,13 +11,13 @@ from pydantic import ValidationError
 from servicedesk_ai.infrastructure.mineru import parse_artifact
 from servicedesk_ai.schemas.diagnosis import (
     ConversationCreate,
-    FactChange,
-    FeedbackHandle,
-    GenerationCreate,
+    FeedbackInput,
     ReadTicketEvents,
     SearchKnowledge,
 )
 from servicedesk_ai.schemas.indexing import IndexCommand, ProcessingConfig, canonical_hash
+from servicedesk_ai.schemas.runs import RunCreate
+from servicedesk_ai.schemas.tasks import TaskFactChange
 from servicedesk_ai.services.parsing import parse_markdown
 
 
@@ -144,6 +144,25 @@ def test_pdf_physical_count_includes_blank_pages() -> None:
         parse_artifact(artifact(pages, count=1), "a" * 32, ProcessingConfig())
 
 
+def test_mineru_417_titles_keep_section_and_physical_page() -> None:
+    """4.1.7真实flash结果使用doc_title/paragraph_title，标题同正文保留原物理页。"""
+    pages = [
+        {
+            "page_idx": 0,
+            "blocks": [
+                {"type": "doc_title", "content": [{"type": "text", "content": "网络排障"}]},
+                {"type": "paragraph_title", "content": [{"type": "text", "content": "停止条件"}]},
+                {"type": "text", "content": [{"type": "text", "content": "先记录现场证据。"}]},
+            ],
+        }
+    ]
+    chunks, count = parse_artifact(artifact(pages, count=1), "a" * 32, ProcessingConfig())
+    assert count == 1 and len(chunks) == 3
+    assert chunks[0].section_path == "网络排障"
+    assert chunks[-1].section_path == "停止条件"
+    assert all(c.source_locations.pages[0].page_number == 1 for c in chunks)
+
+
 @pytest.mark.parametrize("name", ["../outside", "/outside", "C:/outside", "a\\outside"])
 def test_parser_archive_never_accepts_path_escape(name: str) -> None:
     """即使当前只读取JSON，整个包的越界路径仍被拒绝。"""
@@ -173,11 +192,15 @@ def test_model_cannot_choose_customer_or_another_ticket() -> None:
         ReadTicketEvents(after_sequence=1, event_ids=["a" * 32])
     with pytest.raises(ValidationError):
         ConversationCreate(
-            mode="TECHNICIAN_ASSIST", title="我的助手", ticket_id="a" * 32, service_item_id="b" * 32
+            mode="TECHNICIAN_ASSIST",
+            title="我的助手",
+            client_request_id="c" * 32,
+            ticket_id="a" * 32,
+            service_item_id="b" * 32,
         )
     with pytest.raises(ValidationError):
-        FactChange(
-            state_version="1",
+        TaskFactChange(
+            task_state_version="1",
             client_action_id="a" * 32,
             action="ASSERT",
             statement="反馈",
@@ -189,21 +212,29 @@ def test_model_cannot_choose_customer_or_another_ticket() -> None:
 def test_version_cannot_overflow_java_or_database(version: str) -> None:
     """跨端版本不能因字符串传输绕过Java long范围或标准十进制合同。"""
     with pytest.raises(ValidationError):
-        GenerationCreate(question="反馈", client_request_id="a" * 32, state_version=version)
+        RunCreate(
+            message="反馈", client_request_id="a" * 32, task_id="b" * 32, task_state_version=version
+        )
 
 
 def test_blank_question_is_not_a_paid_generation() -> None:
     """空白输入在HTTP受理之前失败，不占用额度或worker。"""
     with pytest.raises(ValidationError):
-        GenerationCreate(question=" \n\t", client_request_id="a" * 32, state_version="1")
+        RunCreate(
+            message=" \n\t", client_request_id="a" * 32, task_id="b" * 32, task_state_version="1"
+        )
 
 
-def test_feedback_handle_requires_versioned_nonblank_human_note() -> None:
-    """反馈处置必须携带当前行版本和人工说明，不能静默改变共享状态。"""
-    value = FeedbackHandle(row_version="3", action="RESOLVE", handling_note="已核对来源")
-    assert value.row_version == "3"
+def test_private_feedback_requires_adoption_and_matching_category() -> None:
+    """采纳由本人明确填写，不能把满意度推断为已执行。"""
+    value = FeedbackInput(rating="HELPFUL", adoption="NOT_USED")
+    assert value.row_version is None
     with pytest.raises(ValidationError):
-        FeedbackHandle(row_version="3", action="DISMISS", handling_note=" \t")
+        FeedbackInput(rating="HELPFUL")
+    with pytest.raises(ValidationError):
+        FeedbackInput(rating="UNHELPFUL", adoption="REJECTED")
+    with pytest.raises(ValidationError):
+        FeedbackInput(rating="HELPFUL", adoption="ACCEPTED", issue_category="OTHER")
 
 
 @pytest.mark.parametrize(

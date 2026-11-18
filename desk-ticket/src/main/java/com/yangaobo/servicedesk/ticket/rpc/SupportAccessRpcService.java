@@ -13,6 +13,12 @@ import com.yangaobo.servicedesk.api.ticket.v1.TicketEvents;
 import com.yangaobo.servicedesk.api.ticket.v1.TicketEventsRequest;
 import com.yangaobo.servicedesk.api.ticket.v1.TicketRequest;
 import com.yangaobo.servicedesk.api.ticket.v1.VerifyTicketRequest;
+import com.yangaobo.servicedesk.api.ticket.v1.DraftReceiptRequest;
+import com.yangaobo.servicedesk.api.ticket.v1.DraftReceipt;
+import com.yangaobo.servicedesk.api.ticket.v1.DraftReconcileRequest;
+import com.yangaobo.servicedesk.api.ticket.v1.DraftReconcileResult;
+import com.yangaobo.servicedesk.ticket.model.vo.ticket.TicketActionReceiptVO;
+import com.yangaobo.servicedesk.ticket.service.IActionReceiptService;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.ticket.component.IdentityVerificationClient;
@@ -39,6 +45,48 @@ public class SupportAccessRpcService extends SupportAccessServiceGrpc.SupportAcc
     private final ISupportAccessService supportAccessService;
     private final IdentityVerificationClient identities;
     private final TicketEventMapper events;
+    private final IActionReceiptService receipts;
+
+    /**
+     * 以原账号和当前工单读取权查询正式回执，不返回私有对话或推断执行结果。
+     */
+    @Override
+    public void readDraftReceipt(DraftReceiptRequest request, StreamObserver<DraftReceipt> observer) {
+        RpcResponses.respond(observer, () -> {
+            if (!request.getDraftRootId().matches("[0-9a-f]{32}"))
+                throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+            var actor = identities.verifySession(form(request.getActor()));
+            var value = receipts.byDraft(actor, request.getDraftRootId());
+            return draftReceipt(value);
+        });
+    }
+
+    /**
+     * 独立服务认证已由拦截器校验；只返回精确拥有者及根的最小已提交事实。
+     */
+    @Override
+    public void reconcileDraftReceipt(DraftReconcileRequest request, StreamObserver<DraftReconcileResult> observer) {
+        RpcResponses.respond(observer, () -> {
+            if (!request.getOwnerId().matches("[0-9a-f]{32}") || !request.getDraftRootId().matches("[0-9a-f]{32}"))
+                throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+            var value = receipts.reconcileDraft(request.getOwnerId(), request.getDraftRootId());
+            var result = DraftReconcileResult.newBuilder();
+            if (value != null) result.setReceipt(draftReceipt(value));
+            return result.build();
+        });
+    }
+
+    /**
+     * 只序列化采用身份和结果，不向系统对账提供工单正文或用户权限。
+     */
+    private DraftReceipt draftReceipt(TicketActionReceiptVO value) {
+        var result = DraftReceipt.newBuilder().setReceiptId(value.getReceiptId())
+                .setDraftRootId(value.getSourceDraftRootId()).setDraftId(value.getSourceDraftId())
+                .setActionType(value.getActionType()).setTicketId(value.getTicketId())
+                .setResultCode(value.getResultCode()).setTicketRowVersion(value.getTicketRowVersion());
+        if (value.getBookingId() != null) result.setBookingId(value.getBookingId());
+        return result.build();
+    }
 
     /**
      * 客户自助按固定项目与可选设备取得当前资格。
@@ -50,9 +98,14 @@ public class SupportAccessRpcService extends SupportAccessServiceGrpc.SupportAcc
                 () -> {
                     var form = form(request.getActor());
                     form.setPurpose(request.getPurpose());
-                    form.setServiceItemId(request.getServiceItemId());
+                    form.setServiceItemId(request.hasServiceItemId() ? request.getServiceItemId() : null);
                     form.setDeviceId(request.hasDeviceId() ? request.getDeviceId() : null);
                     form.setEnvironment(environment(request.getEnvironment()));
+                    if (request.hasTicketId()) {
+                        if (!"HISTORY".equals(request.getPurpose()) || !request.getTicketId().matches("[0-9a-f]{32}"))
+                            throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+                        form.setTicketId(request.getTicketId());
+                    }
                     return context(supportAccessService.check(form));
                 });
     }
@@ -61,7 +114,7 @@ public class SupportAccessRpcService extends SupportAccessServiceGrpc.SupportAcc
      * 技术助手固定当前有权工单，客户端不能覆盖客户或环境。
      */
     @Override
-    public void readTicketContext(TicketRequest request, StreamObserver<SupportContext> observer) {
+    public void readDiagnosisContext(TicketRequest request, StreamObserver<SupportContext> observer) {
         RpcResponses.respond(
                 observer, () -> context(ticket(request.getActor(), request.getTicketId())));
     }
@@ -76,17 +129,15 @@ public class SupportAccessRpcService extends SupportAccessServiceGrpc.SupportAcc
     }
 
     /**
-     * 提交输出及采用草稿前复核版本与全部实际事件。
+     * 核验当前访问权和全部实际事件；返回环境版本，由执行用例判断过时。
      */
     @Override
-    public void verifyTicketContext(
+    public void verifyTicketAccess(
             VerifyTicketRequest request, StreamObserver<SupportContext> observer) {
         RpcResponses.respond(
                 observer,
                 () -> {
                     var value = ticket(request.getActor(), request.getTicketId());
-                    if (value.getTicketVersion() != request.getTicketVersion())
-                        throw new BusinessException(CommonErrorCode.CONFLICT);
                     if (!request.getEventIdsList().isEmpty()) {
                         var checked =
                                 readEvents(
@@ -125,6 +176,7 @@ public class SupportAccessRpcService extends SupportAccessServiceGrpc.SupportAcc
         if (request.getLimit() < 1
                 || request.getLimit() > 20
                 || request.getEventIdsCount() > 20
+                || request.getAfterSequence() < 0
                 || (request.getEventIdsCount() > 0 && request.hasAfterSequence()))
             throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
         var rows = events.readForDiagnosis(request.getTicketId(), request.getEventIdsList(),
@@ -201,7 +253,11 @@ public class SupportAccessRpcService extends SupportAccessServiceGrpc.SupportAcc
         if (value.getDeviceId() != null) result.setDeviceId(value.getDeviceId());
         if (value.getProductModelId() != null) result.setProductModelId(value.getProductModelId());
         if (value.getTicketId() != null) result.setTicketId(value.getTicketId());
-        if (value.getTicketVersion() != null) result.setTicketVersion(value.getTicketVersion());
+        if (value.getTicketRowVersion() != null) result.setTicketRowVersion(value.getTicketRowVersion());
+        if (value.getDiagnosisContextVersion() != null)
+            result.setDiagnosisContextVersion(value.getDiagnosisContextVersion());
+        if (value.getTicketEventSequence() != null) result.setTicketEventSequence(value.getTicketEventSequence());
+        if (value.getAttemptedActions() != null) result.setAttemptedActions(value.getAttemptedActions());
         if (value.getAssigneeId() != null) result.setAssigneeId(value.getAssigneeId());
         if (value.getSupportScope() != null) result.setSupportScope(value.getSupportScope());
         if (value.getTitle() != null) result.setTitle(value.getTitle());

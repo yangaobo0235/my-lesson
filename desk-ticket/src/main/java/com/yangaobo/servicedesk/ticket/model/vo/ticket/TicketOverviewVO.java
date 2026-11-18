@@ -44,6 +44,13 @@ public class TicketOverviewVO implements Serializable {
     private Long waitingCustomer;
 
     /**
+     * 等待外部反馈的工单数量。
+     */
+    @Schema(description = "等待外部反馈数量", type = "string")
+    @JsonSerialize(using = DecimalStringSerializer.class)
+    private Long waitingExternal;
+
+    /**
      * 待客户确认数量。
      */
     @Schema(description = "待客户确认数量。", type = "string", pattern = "^(0|[1-9][0-9]*)$", example = "1")

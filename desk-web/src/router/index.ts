@@ -43,11 +43,6 @@ export const router = createRouter({
           meta: { role: 'KNOWLEDGE_ADMIN' },
         },
         {
-          path: 'administration/knowledge/feedback',
-          component: () => import('../views/knowledge/FeedbackQueueView.vue'),
-          meta: { role: 'KNOWLEDGE_ADMIN' },
-        },
-        {
           path: 'tickets',
           component: () => import('../views/ticket/TicketListView.vue'),
         },

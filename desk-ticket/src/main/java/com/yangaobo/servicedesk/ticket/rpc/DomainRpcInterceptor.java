@@ -38,9 +38,13 @@ public final class DomainRpcInterceptor implements ServerInterceptor {
     private static final Set<String> METHODS =
             Set.of(
                     "servicedesk.ticket.v1.SupportAccessService/CheckContext",
-                    "servicedesk.ticket.v1.SupportAccessService/ReadTicketContext",
+                    "servicedesk.ticket.v1.SupportAccessService/ReadDiagnosisContext",
                     "servicedesk.ticket.v1.SupportAccessService/ReadTicketEvents",
-                    "servicedesk.ticket.v1.SupportAccessService/VerifyTicketContext");
+                    "servicedesk.ticket.v1.SupportAccessService/VerifyTicketAccess",
+                    "servicedesk.ticket.v1.SupportAccessService/ReadDraftReceipt",
+                    "servicedesk.ticket.v1.SupportAccessService/ReconcileDraftReceipt",
+                    "servicedesk.ticket.v1.DiagnosticAttachmentService/ReadRedacted",
+                    "servicedesk.ticket.v1.DiagnosticAttachmentService/ListRedacted");
 
     /**
      * metadata中的独立服务凭据。

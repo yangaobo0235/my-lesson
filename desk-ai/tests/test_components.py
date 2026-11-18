@@ -14,6 +14,7 @@ from servicedesk_ai.infrastructure.models import (
     ModelClient,
     ModelMessage,
     ModelProtocolError,
+    ModelProviderError,
     ModelRequest,
     ModelTool,
 )
@@ -31,6 +32,57 @@ def connected_settings(**overrides: object) -> Settings:
         "rocketmq": {"access_key": "fake-key", "secret_key": "fake-key"},
     }
     return Settings(**(values | overrides))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["chat", "embed"])
+@pytest.mark.parametrize(
+    "status,code,reason,rejected",
+    [
+        (400, "Arrearage", "ACCOUNT_UNAVAILABLE", True),
+        (401, "invalid_api_key", "AUTHENTICATION_REJECTED", True),
+        (429, "rate_limit", "RATE_LIMITED", True),
+        (503, "service_error", "SERVICE_UNAVAILABLE", False),
+        (408, "timeout", "REQUEST_REJECTED", False),
+        (None, None, "TRANSPORT_UNAVAILABLE", False),
+    ],
+)
+async def test_provider_errors_are_safe_distinct_and_never_retried(
+    operation, status, code, reason, rejected
+):
+    """实际SDK错误只保留受控原因，明确拒绝和未知结果区分，单次请求不重试。"""
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if status is None:
+            raise httpx.ReadError("private-transport-detail", request=request)
+        return httpx.Response(
+            status,
+            json={
+                "error": {
+                    "code": code,
+                    "message": "private-provider-payload",
+                    "type": "provider_error",
+                }
+            },
+        )
+
+    client = ModelClient(ModelSettings(api_key=SecretStr("fake-key")), httpx.MockTransport(respond))
+    try:
+        with pytest.raises(ModelProviderError) as failure:
+            if operation == "embed":
+                await client.embed(["测试文本"])
+            else:
+                await client.chat(
+                    ModelRequest(messages=(ModelMessage(role="user", content="测试"),))
+                )
+        assert failure.value.reason == reason
+        assert failure.value.rejected is rejected
+        assert "private" not in str(failure.value)
+        assert len(requests) == 1
+    finally:
+        await client.close()
 
 
 def test_missing_credentials_and_cross_environment_fail_closed() -> None:
@@ -290,7 +342,7 @@ async def test_truncated_model_response_keeps_confirmed_usage() -> None:
     )
     model = ModelClient(ModelSettings(api_key=SecretStr("fake-key")), transport)
     try:
-        with pytest.raises(ModelProtocolError, match="未正常完成") as error:
+        with pytest.raises(ModelProtocolError, match="输出达到上限") as error:
             await model.chat(ModelRequest(messages=(ModelMessage(role="user", content="test"),)))
         assert error.value.usage.input_tokens == 100
         assert error.value.usage.output_tokens == 2048
@@ -298,3 +350,61 @@ async def test_truncated_model_response_keeps_confirmed_usage() -> None:
         assert "private-partial-answer" not in str(error.value)
     finally:
         await model.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("respond_with_tool", [True, False])
+async def test_required_tool_is_enforced_in_provider_request_and_response(respond_with_tool):
+    """阶段只收窄白名单并核验供应商实际响应，不能把自由回答当作已取证。"""
+
+    def respond(request):
+        payload = json.loads(request.content)
+        assert payload["tool_choice"] == {
+            "type": "function",
+            "function": {"name": "load_procedure"},
+        }
+        return httpx.Response(
+            200,
+            json={
+                "id": "test",
+                "created": 1,
+                "model": "qwen3.8-flash",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "tool_calls" if respond_with_tool else "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": None if respond_with_tool else "自行回答",
+                            "tool_calls": [
+                                {
+                                    "id": "tool",
+                                    "type": "function",
+                                    "function": {"name": "load_procedure", "arguments": "{}"},
+                                }
+                            ]
+                            if respond_with_tool
+                            else None,
+                        },
+                    }
+                ],
+            },
+        )
+
+    client = ModelClient(ModelSettings(api_key=SecretStr("fake-key")), httpx.MockTransport(respond))
+    try:
+        request = ModelRequest(
+            messages=(ModelMessage(role="user", content="读取规程"),),
+            tools=(ModelTool(name="load_procedure", description="读取", parameters={}),),
+            required_tool="load_procedure",
+        )
+        if respond_with_tool:
+            assert (await client.chat(request)).message.tool_calls[0].name == "load_procedure"
+        else:
+            with pytest.raises(ModelProtocolError):
+                await client.chat(request)
+        with pytest.raises(ValidationError):
+            ModelRequest(messages=request.messages, required_tool="load_procedure")
+    finally:
+        await client.close()

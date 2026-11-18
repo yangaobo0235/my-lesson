@@ -7,6 +7,7 @@ import re
 import unicodedata
 from collections import Counter
 
+from servicedesk_ai.diagnosis.budget import estimate_text_tokens
 from servicedesk_ai.schemas.indexing import (
     MarkdownSegment,
     ParsedChunk,
@@ -23,6 +24,69 @@ def error_codes(content: str) -> list[str]:
 def chunk_identifier(job_id: str, number: int) -> str:
     """任务内稳定ID，用于MySQL、ES及无损UUID向量点。"""
     return hashlib.sha256(f"{job_id}:{number}".encode()).hexdigest()[:32]
+
+
+def build_manifest(
+    chunks: list[ParsedChunk], job_id: str, config: ProcessingConfig
+) -> list[ParsedChunk]:
+    """按相邻真实章节合并父正文；超预算显式分段，父先子后且叶片ID不变。"""
+    manifest: list[ParsedChunk] = []
+    pending: list[ParsedChunk] = []
+
+    def flush() -> None:
+        """章节只复制实际叶片正文及定位，不补写推断内容。"""
+        if not pending:
+            return
+        content = "\n".join(chunk.content for chunk in pending)
+        identifier = hashlib.sha256(f"{job_id}:section:{pending[0].id}".encode()).hexdigest()[:32]
+        pages = {page.page_number: page for c in pending for page in c.source_locations.pages}
+        locations = SourceLocations(
+            kind=pending[0].source_locations.kind,
+            pages=[pages[number] for number in sorted(pages)],
+            segments=[s for c in pending for s in c.source_locations.segments],
+        )
+        manifest.append(
+            ParsedChunk(
+                id=identifier,
+                section_path=pending[0].section_path,
+                content=content,
+                source_locations=locations,
+                node_kind="SECTION",
+                token_estimate=estimate_text_tokens(content),
+                error_codes=error_codes(content),
+            )
+        )
+        manifest.extend(
+            c.model_copy(
+                update={
+                    "parent_chunk_id": identifier,
+                    "token_estimate": estimate_text_tokens(c.content),
+                }
+            )
+            for c in pending
+        )
+        pending.clear()
+
+    for chunk in chunks:
+        if chunk.node_kind != "LEAF" or chunk.parent_chunk_id is not None:
+            raise ValueError("解析输入不能携带预建章节关系")
+        size = sum(len(c.content.encode()) + 1 for c in pending) + len(chunk.content.encode())
+        changed_anchor = bool(
+            pending
+            and pending[-1].source_locations.segments
+            and chunk.source_locations.segments
+            and pending[-1].source_locations.segments[0].anchor
+            != chunk.source_locations.segments[0].anchor
+        )
+        if pending and (
+            pending[-1].section_path != chunk.section_path or changed_anchor or size > 48 * 1024
+        ):
+            flush()
+        pending.append(chunk)
+    flush()
+    if not manifest or len(manifest) > config.max_chunks:
+        raise ValueError("包含父章节的完整清单超过片段预算")
+    return manifest
 
 
 def parse_markdown(data: bytes, job_id: str, config: ProcessingConfig) -> list[ParsedChunk]:

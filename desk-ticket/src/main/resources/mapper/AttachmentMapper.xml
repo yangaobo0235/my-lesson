@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yangaobo.servicedesk.ticket.mapper.AttachmentMapper">
+  <sql id="columns">
+    id, ticket_id, uploaded_by, client_upload_id, request_hash,
+    original_file_name, content_format, visibility, status,
+    storage_bucket, storage_key, storage_version_id, file_size_bytes,
+    file_sha256, redacted_text, redaction_version, redacted_sha256,
+    ai_use_allowed, confirmed_by, confirmed_at, retain_until, deleted_at,
+    error_code, created_at, updated_at, row_version
+  </sql>
+  <select id="byRequest" resultType="com.yangaobo.servicedesk.ticket.model.entity.AttachmentEntity">
+    SELECT <include refid="columns"/>
+    FROM sd_attachment
+    WHERE uploaded_by=#{actor} AND client_upload_id=#{key}
+  </select>
+  <select id="lock" resultType="com.yangaobo.servicedesk.ticket.model.entity.AttachmentEntity" useCache="false" flushCache="true">
+    SELECT <include refid="columns"/>
+    FROM sd_attachment
+    WHERE id=#{id}
+    FOR UPDATE
+  </select>
+  <sql id="readable">
+    FROM sd_attachment
+    WHERE ticket_id=#{ticket} AND status&lt;&gt;'DELETED'
+    <if test="customer">AND visibility='PUBLIC'</if>
+  </sql>
+  <select id="listReadable" resultType="com.yangaobo.servicedesk.ticket.model.entity.AttachmentEntity">
+    SELECT
+      id, ticket_id, uploaded_by, client_upload_id, original_file_name,
+      content_format, visibility, status, file_size_bytes, file_sha256,
+      redaction_version, redacted_sha256, ai_use_allowed, confirmed_by,
+      confirmed_at, deleted_at, error_code, created_at, updated_at, row_version
+    <include refid="readable"/>
+    ORDER BY created_at DESC,id DESC
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+  <select id="countReadable" resultType="long">
+    SELECT COUNT(*)
+    <include refid="readable"/>
+  </select>
+  <select id="listRedacted" resultType="com.yangaobo.servicedesk.ticket.model.entity.AttachmentEntity">
+    SELECT
+      id,
+      original_file_name,
+      content_format,
+      redaction_version,
+      redacted_sha256
+    FROM sd_attachment
+    WHERE ticket_id=#{ticket}
+      AND status='READY'
+      AND ai_use_allowed=TRUE
+      AND redacted_sha256 IS NOT NULL
+      AND redaction_version&gt;0
+    <if test="customer">AND visibility='PUBLIC'</if>
+    <if test="after != null">AND id&gt;#{after}</if>
+    ORDER BY id
+    LIMIT 21
+  </select>
+  <update id="saveState">
+    UPDATE sd_attachment
+    SET status=#{value.status},
+      storage_version_id=#{value.storageVersionId},
+      redacted_text=#{value.redactedText},
+      redaction_version=#{value.redactionVersion},
+      redacted_sha256=#{value.redactedSha256},
+      ai_use_allowed=#{value.aiUseAllowed},
+      confirmed_by=#{value.confirmedBy},
+      confirmed_at=#{value.confirmedAt},
+      deleted_at=#{value.deletedAt},
+      error_code=#{value.errorCode},
+      updated_at=#{value.updatedAt},
+      row_version=#{value.rowVersion}
+    WHERE id=#{value.id} AND row_version=#{expected}
+  </update>
+</mapper>

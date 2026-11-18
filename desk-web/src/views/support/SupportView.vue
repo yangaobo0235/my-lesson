@@ -32,6 +32,8 @@ const form = ref<TicketCreateForm>({
   serviceAreaCode: null,
   serviceLocation: null,
   sourceDraftId: null,
+  sourceDraftRootId: null,
+  contentSha256: null,
 })
 const pending = ref<TicketCreateForm | null>(null)
 const auth = useAuthStore(),

@@ -50,7 +50,8 @@ public final class RpcContract {
             case 1002 -> Status.NOT_FOUND;
             case 1003, 2004 -> Status.PERMISSION_DENIED;
             case 2001, 2002, 2003 -> Status.UNAUTHENTICATED;
-            case 1004, 1005, 2102, 2201, 3001, 3101, 3102, 3201, 3301, 4001, 4201, 5201 -> Status.FAILED_PRECONDITION;
+            case 1004, 1005, 2102, 2201, 3001, 3101, 3102, 3201, 3301, 4001, 4201, 5003, 5103, 5201 ->
+                    Status.FAILED_PRECONDITION;
             case 1010, 2006, 5001, 5002 -> Status.RESOURCE_EXHAUSTED;
             case 1011, 5101, 5102 -> Status.UNAVAILABLE;
             case 1013 -> Status.DEADLINE_EXCEEDED;

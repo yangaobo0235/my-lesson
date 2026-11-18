@@ -18,27 +18,33 @@ from servicedesk_ai.schemas.diagnosis import (
     ConversationChange,
     ConversationCreate,
     DraftCreate,
-    FactChange,
-    FeedbackHandle,
+    DraftRevision,
+    DraftWithdraw,
     FeedbackInput,
-    FeedbackShare,
-    GenerationCreate,
 )
 from servicedesk_ai.schemas.diagnosis_views import (
     CallsView,
     ConversationView,
     DraftView,
-    FactView,
-    FeedbackQueueItem,
     FeedbackView,
-    GenerationView,
     PageView,
-    SharedFeedbackCase,
 )
 from servicedesk_ai.schemas.result import Result
+from servicedesk_ai.schemas.run_views import MessagePage, RunView
+from servicedesk_ai.schemas.runs import RunCreate
+from servicedesk_ai.schemas.task_views import CheckView, TaskEventPage, TaskFactView, TaskView
+from servicedesk_ai.schemas.tasks import (
+    CheckAnswerInput,
+    TaskAction,
+    TaskClose,
+    TaskContextChange,
+    TaskCreate,
+    TaskFactChange,
+    TaskOutcome,
+    TaskReceipt,
+)
 
 router = APIRouter(prefix="/api/v1/ai", tags=["私有辅助排障"])
-admin_router = APIRouter(prefix="/api/v1/admin", tags=["知识反馈处置"])
 BusinessId = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 PageNumber = Annotated[int, Query(alias="pageNum", ge=1)]
 PageSize = Annotated[int, Query(alias="pageSize", ge=1, le=100)]
@@ -65,6 +71,135 @@ async def identity(request: Request) -> VerifiedIdentity:
 Actor = Annotated[VerifiedIdentity, Depends(identity)]
 
 
+@router.post("/conversations/{identifier}/tasks", status_code=201)
+async def create_task(
+    request: Request, actor: Actor, identifier: BusinessId, form: TaskCreate
+) -> Result[TaskReceipt]:
+    """创建一个明确诊断目标及原始反馈，不隐式发起模型。"""
+    return success(request, await services(request).tasks.create(actor, identifier, form))
+
+
+@router.get("/conversations/{identifier}/tasks")
+async def list_tasks(
+    request: Request,
+    actor: Actor,
+    identifier: BusinessId,
+    page_num: PageNumber = 1,
+    page_size: PageSize = 10,
+) -> Result[PageView[TaskView]]:
+    """同会话多个目标各自保留任务身份与历史。"""
+    return success(
+        request, await services(request).task_reads.list(actor, identifier, page_num, page_size)
+    )
+
+
+@router.get("/tasks/{identifier}")
+async def get_task(request: Request, actor: Actor, identifier: BusinessId) -> Result[TaskView]:
+    """返回当前任务版本、状态和来源化假设。"""
+    return success(request, await services(request).task_reads.get(actor, identifier))
+
+
+@router.get("/tasks/{identifier}/facts")
+async def facts(
+    request: Request,
+    actor: Actor,
+    identifier: BusinessId,
+    page_num: PageNumber = 1,
+    page_size: PageSize = 10,
+) -> Result[PageView[TaskFactView]]:
+    """原始事实与更正链区分展示，模型假设不冒充观测。"""
+    return success(
+        request, await services(request).task_reads.facts(actor, identifier, page_num, page_size)
+    )
+
+
+@router.post("/tasks/{identifier}/facts")
+async def change_fact(
+    request: Request, actor: Actor, identifier: BusinessId, form: TaskFactChange
+) -> Result[TaskReceipt]:
+    """按原动作键和任务版本追加、更正或撤回事实。"""
+    return success(request, await services(request).tasks.change_fact(actor, identifier, form))
+
+
+@router.post("/tasks/{identifier}/context")
+async def change_context(
+    request: Request, actor: Actor, identifier: BusinessId, form: TaskContextChange
+) -> Result[TaskReceipt]:
+    """技术任务只同步可信工单环境，自助环境保存本人来源。"""
+    return success(
+        request, await services(request).tasks.synchronize_context(actor, identifier, form)
+    )
+
+
+@router.get("/tasks/{identifier}/checks")
+async def checks(
+    request: Request,
+    actor: Actor,
+    identifier: BusinessId,
+    page_num: PageNumber = 1,
+    page_size: PageSize = 10,
+) -> Result[PageView[CheckView]]:
+    """检查、实际反馈和是否执行分开显示。"""
+    return success(
+        request, await services(request).task_reads.checks(actor, identifier, page_num, page_size)
+    )
+
+
+@router.post("/tasks/{identifier}/checks/{check_id}/answer")
+async def answer_check(
+    request: Request,
+    actor: Actor,
+    identifier: BusinessId,
+    check_id: BusinessId,
+    form: CheckAnswerInput,
+) -> Result[TaskReceipt]:
+    """先持久化反馈再返回输入消息身份，下一轮由用户明确发起。"""
+    return success(request, await services(request).tasks.answer(actor, identifier, check_id, form))
+
+
+@router.get("/tasks/{identifier}/events")
+async def task_events(
+    request: Request,
+    actor: Actor,
+    identifier: BusinessId,
+    after_state_version: Annotated[int, Query(alias="afterStateVersion", ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> Result[TaskEventPage]:
+    """按任务版本获取有界事件历史，重复读取不改变状态。"""
+    return success(
+        request,
+        await services(request).task_reads.events(actor, identifier, after_state_version, limit),
+    )
+
+
+@router.post("/tasks/{identifier}/close")
+async def close_task(
+    request: Request, actor: Actor, identifier: BusinessId, form: TaskClose
+) -> Result[TaskReceipt]:
+    """结束诊断任务，不自动关闭正式工单。"""
+    return success(request, await services(request).tasks.close(actor, identifier, form, "CLOSED"))
+
+
+@router.post("/tasks/{identifier}/cancel")
+async def cancel_task(
+    request: Request, actor: Actor, identifier: BusinessId, form: TaskClose
+) -> Result[TaskReceipt]:
+    """取消任务须无活动Run，剩余检查和草稿同步撤回。"""
+    return success(
+        request, await services(request).tasks.close(actor, identifier, form, "CANCELLED")
+    )
+
+
+@router.post("/tasks/{identifier}/report-outcome")
+async def report_outcome(
+    request: Request, actor: Actor, identifier: BusinessId, form: TaskOutcome
+) -> Result[TaskReceipt]:
+    """明确登记人工报告恢复，不冒充工具实测。"""
+    return success(
+        request, await services(request).tasks.close(actor, identifier, form, "RESOLVED_REPORTED")
+    )
+
+
 def success[T](request: Request, value: T) -> Result[T]:
     """普通JSON统一成功0并保留当前追踪号。"""
     return Result[T](code=0, message="成功", data=value, trace_id=request.state.trace_id)
@@ -85,7 +220,7 @@ async def list_conversations(
     page_num: PageNumber = 1,
     page_size: PageSize = 10,
     mode: Annotated[
-        str | None, Query(pattern="^(CUSTOMER_SELF_SERVICE|TECHNICIAN_ASSIST)$")
+        str | None, Query(pattern="^(CONSULT|CUSTOMER_SELF_SERVICE|TECHNICIAN_ASSIST)$")
     ] = None,
     ticket_id: Annotated[str | None, Query(alias="ticketId", pattern="^[0-9a-f]{32}$")] = None,
 ) -> Result[PageView[ConversationView]]:
@@ -124,88 +259,75 @@ async def delete(
     return success(request, None)
 
 
-@router.get("/conversations/{identifier}/facts")
-async def facts(
+@router.post("/conversations/{identifier}/runs", status_code=202)
+async def create_run(
+    request: Request, actor: Actor, identifier: BusinessId, form: RunCreate
+) -> Result[RunView]:
+    """只持久受理，反馈消息不因排队失败丢失。"""
+    value = await services(request).runs.create(actor, identifier, form)
+    return success(request, await services(request).run_reads.get(actor, value.id))
+
+
+@router.get("/conversations/{identifier}/messages")
+async def messages(
+    request: Request,
+    actor: Actor,
+    identifier: BusinessId,
+    after_sequence: Annotated[int, Query(alias="afterSequence", ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> Result[MessagePage]:
+    """按不可变序号增量获取消息，重连不发新模型请求。"""
+    return success(
+        request,
+        await services(request).run_reads.messages(actor, identifier, after_sequence, limit),
+    )
+
+
+@router.get("/conversations/{identifier}/runs")
+async def list_runs(
     request: Request,
     actor: Actor,
     identifier: BusinessId,
     page_num: PageNumber = 1,
     page_size: PageSize = 10,
-) -> Result[PageView[FactView]]:
-    """事实更正和撤回历史保留来源标签。"""
+) -> Result[PageView[RunView]]:
+    """只读执行历史，不重新受理模型请求。"""
     return success(
-        request, await services(request).conversations.facts(actor, identifier, page_num, page_size)
+        request, await services(request).run_reads.list(actor, identifier, page_num, page_size)
     )
 
 
-@router.post("/conversations/{identifier}/facts")
-async def change_fact(
-    request: Request, actor: Actor, identifier: BusinessId, form: FactChange
-) -> Result[ConversationView]:
-    """无活跃轮时按事实版本追加确认、更正、撤回或环境变更。"""
-    return success(
-        request, await services(request).conversations.fact_change(actor, identifier, form)
-    )
-
-
-@router.post("/conversations/{identifier}/generations", status_code=202)
-async def generate(
-    request: Request, actor: Actor, identifier: BusinessId, form: GenerationCreate
-) -> Result[GenerationView]:
-    """只持久受理，不在HTTP进程运行模型。"""
-    return success(request, await services(request).conversations.generate(actor, identifier, form))
-
-
-@router.get("/conversations/{identifier}/turns")
-async def turns(
-    request: Request,
-    actor: Actor,
-    identifier: BusinessId,
-    page_num: PageNumber = 1,
-    page_size: PageSize = 10,
-) -> Result[PageView[GenerationView]]:
-    """每轮历史交付前重核全部实际来源。"""
-    return success(
-        request, await services(request).conversations.turns(actor, identifier, page_num, page_size)
-    )
-
-
-@router.get("/generations/by-request/{key}")
-async def generation_receipt(
-    request: Request, actor: Actor, key: BusinessId
-) -> Result[GenerationView]:
+@router.get("/runs/by-request/{key}")
+async def run_receipt(request: Request, actor: Actor, key: BusinessId) -> Result[RunView]:
     """响应未知沿拥有者原键核对，不自动换键或重跑。"""
-    return success(request, await services(request).conversations.by_request(actor, key))
+    return success(request, await services(request).run_reads.by_request(actor, key))
 
 
-@router.get("/generations/{identifier}")
-async def get_generation(
-    request: Request, actor: Actor, identifier: BusinessId
-) -> Result[GenerationView]:
+@router.get("/runs/{identifier}")
+async def get_run(request: Request, actor: Actor, identifier: BusinessId) -> Result[RunView]:
     """来源失效时只显示拥有者问题和安全状态。"""
-    return success(request, await services(request).conversations.get_generation(actor, identifier))
+    return success(request, await services(request).run_reads.get(actor, identifier))
 
 
-@router.post("/generations/{identifier}/cancel")
-async def cancel(request: Request, actor: Actor, identifier: BusinessId) -> Result[GenerationView]:
+@router.post("/runs/{identifier}/cancel")
+async def cancel(request: Request, actor: Actor, identifier: BusinessId) -> Result[RunView]:
     """先持久取消并撤销执行权，再由worker结束外部等待。"""
-    return success(request, await services(request).conversations.cancel(actor, identifier))
+    await services(request).runs.cancel(actor, identifier)
+    return success(request, await services(request).run_reads.get(actor, identifier))
 
 
-@router.get("/generations/{identifier}/calls")
+@router.get("/runs/{identifier}/calls")
 async def calls(request: Request, actor: Actor, identifier: BusinessId) -> Result[CallsView]:
     """当前有权逐次模型与只读工具调用摘要，未知计量保持null。"""
-    return success(request, await services(request).conversations.calls(actor, identifier))
+    return success(request, await services(request).run_reads.calls(actor, identifier))
 
 
 @router.post(
-    "/generations/{identifier}/stream",
+    "/runs/{identifier}/stream",
     response_class=StreamingResponse,
     responses={
         200: {
-            "description": (
-                "订阅既有运行；JSON事件含generationId、sequence及data，断流后查询原运行。"
-            ),
+            "description": ("订阅既有运行；JSON事件含runId、sequence及data，断流后查询原运行。"),
             "content": {"text/event-stream": {"schema": {"type": "string"}}},
             "headers": {
                 "Cache-Control": {"schema": {"type": "string"}, "description": "no-store"},
@@ -217,7 +339,7 @@ async def calls(request: Request, actor: Actor, identifier: BusinessId) -> Resul
 async def stream(request: Request, actor: Actor, identifier: BusinessId) -> StreamingResponse:
     """只订阅已存在运行；断流不判成功，不触发付费重试。"""
     application = services(request)
-    await application.conversations.get_generation(actor, identifier)
+    await application.run_reads.get(actor, identifier)
 
     async def events() -> AsyncIterator[str]:
         """心跳和连接序号有界，身份与来源在每次交付重新核验。"""
@@ -233,7 +355,7 @@ async def stream(request: Request, actor: Actor, identifier: BusinessId) -> Stre
             return (
                 f"event: {kind}\ndata: "
                 + json.dumps(
-                    {"generationId": identifier, "sequence": sequence, "data": data},
+                    {"runId": identifier, "sequence": sequence, "data": data},
                     ensure_ascii=False,
                 )
                 + "\n\n"
@@ -244,11 +366,11 @@ async def stream(request: Request, actor: Actor, identifier: BusinessId) -> Stre
                 if await request.is_disconnected():
                     return
                 current_actor = await application.rpc.identity.verify_ref(actor.actor)
-                value = await application.conversations.get_generation(current_actor, identifier)
+                value = await application.run_reads.get(current_actor, identifier)
                 if value.status != previous:
                     yield event("stage", {"status": value.status})
                     previous = value.status
-                calls = await application.conversations.calls(current_actor, identifier)
+                calls = await application.run_reads.calls(current_actor, identifier)
                 for tool in calls.tool_calls:
                     if tool_versions.get(tool.number) != tool.status:
                         tool_versions[tool.number] = tool.status
@@ -284,7 +406,7 @@ async def stream(request: Request, actor: Actor, identifier: BusinessId) -> Stre
     )
 
 
-@router.post("/conversations/{identifier}/action-drafts", status_code=201)
+@router.post("/tasks/{identifier}/action-drafts", status_code=201)
 async def draft(
     request: Request, actor: Actor, identifier: BusinessId, form: DraftCreate
 ) -> Result[DraftView]:
@@ -304,48 +426,41 @@ async def get_draft(request: Request, actor: Actor, identifier: BusinessId) -> R
     return success(request, await services(request).drafts.get(actor, identifier))
 
 
-@router.put("/generations/{identifier}/feedback")
+@router.put("/runs/{identifier}/feedback")
 async def feedback(
     request: Request, actor: Actor, identifier: BusinessId, form: FeedbackInput
 ) -> Result[FeedbackView]:
-    """成功运行本人反馈，技术无帮助结果为RECORDED。"""
+    """保存本人终态运行评价，失败、中断和取消同样可评价。"""
     return success(request, await services(request).feedback.put(actor, identifier, form))
 
 
-@router.patch("/generations/{identifier}/feedback/share")
-async def feedback_share(
-    request: Request, actor: Actor, identifier: BusinessId, form: FeedbackShare
-) -> Result[FeedbackView]:
-    """仅客户会话显式共享，撤销不抹去已有处理结论。"""
-    return success(request, await services(request).feedback.share(actor, identifier, form))
-
-
-@admin_router.get("/feedback")
-async def shared_feedback(
-    request: Request,
-    actor: Actor,
-    page_num: PageNumber = 1,
-    page_size: PageSize = 10,
-    status: Annotated[str | None, Query(pattern="^(PENDING|RESOLVED|DISMISSED)$")] = None,
-) -> Result[PageView[FeedbackQueueItem]]:
-    """知识管理员分页查看已共享反馈的处置状态，不返回私有正文。"""
-    return success(
-        request,
-        await services(request).feedback.list_shared(actor, page_num, page_size, status),
-    )
-
-
-@admin_router.get("/feedback/{identifier}")
-async def shared_feedback_case(
+@router.get("/runs/{identifier}/feedback")
+async def get_feedback(
     request: Request, actor: Actor, identifier: BusinessId
-) -> Result[SharedFeedbackCase]:
-    """展开前重新核验客户共享和全部来源授权。"""
-    return success(request, await services(request).feedback.shared_case(actor, identifier))
+) -> Result[FeedbackView | None]:
+    """读取本人的原评价；未提交过评价时返回null。"""
+    return success(request, await services(request).feedback.get(actor, identifier))
 
 
-@admin_router.post("/feedback/{identifier}/handle")
-async def handle_shared_feedback(
-    request: Request, actor: Actor, identifier: BusinessId, form: FeedbackHandle
-) -> Result[FeedbackQueueItem]:
-    """知识管理员用行版本记录解决或驳回，不把反馈自动变成知识。"""
-    return success(request, await services(request).feedback.handle(actor, identifier, form))
+@router.post("/action-drafts/{identifier}/revisions", status_code=201)
+async def revise_draft(
+    request: Request, actor: Actor, identifier: BusinessId, form: DraftRevision
+) -> Result[DraftView]:
+    """编辑创建不可变修订，原内容不覆盖。"""
+    return success(request, await services(request).drafts.revise(actor, identifier, form))
+
+
+@router.post("/action-drafts/{identifier}/withdraw")
+async def withdraw_draft(
+    request: Request, actor: Actor, identifier: BusinessId, form: DraftWithdraw
+) -> Result[DraftView]:
+    """撤回不替代Java的正式动作对账。"""
+    return success(request, await services(request).drafts.withdraw(actor, identifier, form))
+
+
+@router.post("/action-drafts/{identifier}/synchronize")
+async def synchronize_draft(
+    request: Request, actor: Actor, identifier: BusinessId, form: TaskAction
+) -> Result[TaskReceipt]:
+    """用户明确核对正式动作结果，AI只读取Java回执并更新任务投影。"""
+    return success(request, await services(request).drafts.synchronize(actor, identifier, form))

@@ -7,6 +7,7 @@
       COALESCE(SUM(status = 'SUBMITTED'), 0) submitted,
       COALESCE(SUM(status = 'PROCESSING'), 0) processing,
       COALESCE(SUM(status = 'WAITING_CUSTOMER'), 0) waiting_customer,
+      COALESCE(SUM(status = 'WAITING_EXTERNAL'), 0) waiting_external,
       COALESCE(SUM(status = 'RESOLVED'), 0) resolved,
       COALESCE(SUM(
         status = 'SUBMITTED'
@@ -14,7 +15,7 @@
       ), 0) overdue,
       COALESCE(SUM(
         service_item_id IS NULL
-          AND status IN ('SUBMITTED', 'PROCESSING', 'WAITING_CUSTOMER')
+          AND status IN ('SUBMITTED', 'PROCESSING', 'WAITING_CUSTOMER', 'WAITING_EXTERNAL')
       ), 0) triage,
       COALESCE(SUM(closure_reason = 'CUSTOMER_CONFIRMED'), 0) customer_confirmed,
       COALESCE(SUM(closure_reason = 'CONFIRMATION_TIMEOUT'), 0) confirmation_timeout

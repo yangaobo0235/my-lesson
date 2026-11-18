@@ -1,6 +1,5 @@
 package com.yangaobo.servicedesk.ticket.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yangaobo.servicedesk.api.ticket.dto.CatalogEntryDTO;
 import com.yangaobo.servicedesk.api.ticket.dto.SupportContextDTO;
 import com.yangaobo.servicedesk.api.ticket.dto.SupportEnvironment;
@@ -41,7 +40,6 @@ public class SupportAccessServiceImpl implements ISupportAccessService {
     private final DeviceMapper devices;
     private final ServiceItemMapper items;
     private final ProductModelMapper models;
-    private final ObjectMapper json;
 
     /**
      * {@inheritDoc}
@@ -64,7 +62,10 @@ public class SupportAccessServiceImpl implements ISupportAccessService {
                             ? null
                             : ticket.getDeviceSnapshot().path("product_model_id").asText(null));
             result.setTicketId(ticket.getId());
-            result.setTicketVersion(ticket.getRowVersion());
+            result.setTicketRowVersion(ticket.getRowVersion());
+            result.setDiagnosisContextVersion(ticket.getDiagnosisContextVersion());
+            result.setTicketEventSequence(ticket.getEventSequence());
+            result.setAttemptedActions(ticket.getAttemptedActions());
             result.setTitle(ticket.getTitle());
             result.setSymptom(ticket.getSymptom());
             result.setStatus(ticket.getStatus());
@@ -84,7 +85,7 @@ public class SupportAccessServiceImpl implements ISupportAccessService {
             return result;
         }
         SupportAuthorization.role(actor, "CUSTOMER_USER");
-        identifier(form.getServiceItemId());
+        if (form.getServiceItemId() != null) identifier(form.getServiceItemId());
         return transactions.execute(
                 () -> {
                     var admission =
@@ -93,7 +94,8 @@ public class SupportAccessServiceImpl implements ISupportAccessService {
                     result.setCustomerId(actor.getOrganizationId());
                     result.setServiceItemId(form.getServiceItemId());
                     result.setEnvironment(form.getEnvironment());
-                    result.setSupportScope(admission.getItem().getSupportScope());
+                    result.setSupportScope(form.getServiceItemId() == null
+                            ? "待分类，仅允许澄清与人工分流" : admission.getItem().getSupportScope());
                     if (form.getDeviceId() != null) {
                         identifier(form.getDeviceId());
                         var device = devices.selectById(form.getDeviceId());

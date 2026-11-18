@@ -149,6 +149,12 @@ public final class TicketViews {
      */
     public static TicketVO of(TicketEntity entity) {
         TicketVO result = new TicketVO();
+        result.setDiagnosisContextVersion(entity.getDiagnosisContextVersion());
+        result.setEventSequence(entity.getEventSequence());
+        result.setWaitReason(entity.getWaitReason());
+        result.setWaitCycle(entity.getWaitCycle());
+        result.setFollowUpAt(entity.getFollowUpAt() == null ? null : entity.getFollowUpAt().toInstant(ZoneOffset.UTC));
+        result.setFollowUpNotifiedAt(entity.getFollowUpNotifiedAt() == null ? null : entity.getFollowUpNotifiedAt().toInstant(ZoneOffset.UTC));
         result.setId(entity.getId());
         result.setTicketNo(entity.getTicketNo());
         result.setCustomerId(entity.getCustomerId());

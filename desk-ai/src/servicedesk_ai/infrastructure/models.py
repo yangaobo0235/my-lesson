@@ -3,15 +3,64 @@
 import json
 import math
 import ssl
-from typing import Literal, cast
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Literal, Self, cast
 
 import httpx
-from openai import AsyncOpenAI, omit
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI, omit
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from servicedesk_ai.bootstrap.components import ModelSettings
+
+
+def compact_schema(value: dict[str, object]) -> dict[str, object]:
+    """移除展示注解及根合同不可达的定义，保留实际引用的类型、描述和约束。"""
+
+    def visit(item: object) -> object:
+        """字段名即使叫title/default也保留，只清理schema节点的注解。"""
+        if isinstance(item, dict):
+            return {
+                key: {name: visit(child) for name, child in child_value.items()}
+                if key in {"properties", "$defs"} and isinstance(child_value, dict)
+                else visit(child_value)
+                for key, child_value in item.items()
+                if key not in {"title", "default"}
+            }
+        if isinstance(item, list):
+            return [visit(child) for child in item]
+        return item
+
+    result = cast(dict[str, object], visit(value))
+    definitions = result.get("$defs")
+    if not isinstance(definitions, dict):
+        return result
+    reachable: set[str] = set()
+
+    def references(item: object) -> None:
+        """沿本地引用闭包遍历，先标记再递归以支持循环定义。"""
+        if isinstance(item, list):
+            for child in item:
+                references(child)
+        elif isinstance(item, dict):
+            reference = item.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/$defs/"):
+                name = reference.removeprefix("#/$defs/").split("/", 1)[0]
+                name = name.replace("~1", "/").replace("~0", "~")
+                if name in definitions and name not in reachable:
+                    reachable.add(name)
+                    references(definitions[name])
+            for child in item.values():
+                references(child)
+
+    references({key: item for key, item in result.items() if key != "$defs"})
+    if reachable:
+        result["$defs"] = {name: item for name, item in definitions.items() if name in reachable}
+    else:
+        result.pop("$defs")
+    return result
 
 
 class ModelContract(BaseModel):
@@ -62,6 +111,20 @@ class ModelRequest(ModelContract):
     messages: tuple[ModelMessage, ...] = Field(min_length=1, repr=False)
     tools: tuple[ModelTool, ...] = ()
     result_schema: dict[str, object] | None = Field(default=None, repr=False)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    max_output_tokens: int | None = Field(default=None, ge=1, le=8192)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    required_tool: str | None = Field(default=None, pattern=r"^[a-z_][a-z0-9_]{0,63}$")
+    parallel_tool_calls: bool = True
+
+    @model_validator(mode="after")
+    def required_tool_is_available(self) -> Self:
+        """阶段约束只能收窄当前工具白名单，不能凭名称新增工具。"""
+        if self.required_tool is not None and self.required_tool not in {
+            tool.name for tool in self.tools
+        }:
+            raise ValueError("阶段要求的工具不在本轮白名单")
+        return self
 
 
 class ModelUsage(ModelContract):
@@ -87,6 +150,8 @@ class EmbeddingResponse(ModelContract):
 
     vectors: list[list[float]] = Field(repr=False)
     usage: ModelUsage | None = None
+    provider_request_id: str | None = None
+    model: str | None = None
 
 
 class ModelProtocolError(ValueError):
@@ -104,6 +169,44 @@ class ModelProtocolError(ValueError):
         self.usage = usage
         self.provider_request_id = provider_request_id
         self.model = model
+
+
+class ToolProposalRejected(ModelProtocolError):
+    """整批工具提议未通过本次白名单；没有工具被执行，可终止取证而不能重试该提议。"""
+
+
+class ModelProviderError(RuntimeError):
+    """供应商明确拒绝或传输不可用；不携带SDK正文、请求头和认证信息。"""
+
+    def __init__(self, reason: str, *, rejected: bool) -> None:
+        """明确拒绝可记FAILED，连接/服务端故障仍保留结果未知及未知计量。"""
+        super().__init__("模型服务暂不可用")
+        self.reason = reason
+        self.rejected = rejected
+
+
+@contextmanager
+def provider_boundary() -> Iterator[None]:
+    """将SDK错误收敛为受控原因，不重试，不向用例传播供应商原始响应。"""
+    try:
+        yield
+    except APIStatusError as error:
+        reason = (
+            "ACCOUNT_UNAVAILABLE"
+            if error.code in {"Arrearage", "InsufficientBalance", "insufficient_quota"}
+            else "AUTHENTICATION_REJECTED"
+            if error.status_code in {401, 403}
+            else "RATE_LIMITED"
+            if error.status_code == 429
+            else "REQUEST_REJECTED"
+            if 400 <= error.status_code < 500
+            else "SERVICE_UNAVAILABLE"
+        )
+        raise ModelProviderError(
+            reason, rejected=400 <= error.status_code < 500 and error.status_code != 408
+        ) from None
+    except APIConnectionError:
+        raise ModelProviderError("TRANSPORT_UNAVAILABLE", rejected=False) from None
 
 
 class ModelClient:
@@ -156,15 +259,22 @@ class ModelClient:
             cast(ChatCompletionToolParam, {"type": "function", "function": tool.model_dump()})
             for tool in request.tools
         ]
-        with self._tracer.start_as_current_span(
-            "model.chat",
-            record_exception=False,
-            set_status_on_exception=False,
+        with (
+            provider_boundary(),
+            self._tracer.start_as_current_span(
+                "model.chat",
+                record_exception=False,
+                set_status_on_exception=False,
+            ),
         ):
             response = await self._client.chat.completions.create(
-                model=self.settings.chat_model,
+                model=request.model or self.settings.chat_model,
                 messages=messages,
                 tools=tools if tools else omit,
+                parallel_tool_calls=request.parallel_tool_calls if tools else omit,
+                tool_choice={"type": "function", "function": {"name": request.required_tool}}
+                if request.required_tool is not None
+                else omit,
                 response_format=(
                     {
                         "type": "json_schema",
@@ -177,8 +287,10 @@ class ModelClient:
                     if request.result_schema is not None
                     else omit
                 ),
-                temperature=self.settings.temperature,
-                max_tokens=self.settings.max_output_tokens,
+                temperature=self.settings.temperature
+                if request.temperature is None
+                else request.temperature,
+                max_tokens=request.max_output_tokens or self.settings.max_output_tokens,
                 extra_body={"enable_thinking": self.settings.enable_thinking},
             )
         usage = response.usage
@@ -198,6 +310,8 @@ class ModelClient:
             """失败结果不能丢弃已确认的供应商计量。"""
             return ModelProtocolError(message, metering, response.id, response.model)
 
+        if len(response.choices) == 1 and response.choices[0].finish_reason == "length":
+            raise invalid("模型输出达到上限，未正常完成生成")
         if len(response.choices) != 1 or response.choices[0].finish_reason not in {
             "stop",
             "tool_calls",
@@ -208,7 +322,9 @@ class ModelClient:
         allowed = {tool.name for tool in request.tools}
         for call in choice.message.tool_calls or []:
             if call.type != "function" or call.function.name not in allowed:
-                raise invalid("模型提出未授权工具")
+                raise ToolProposalRejected(
+                    "模型提出未授权工具", metering, response.id, response.model
+                )
             try:
                 arguments = json.loads(call.function.arguments)
             except json.JSONDecodeError:
@@ -220,6 +336,12 @@ class ModelClient:
             raise invalid("模型结束原因与工具调用不一致")
         if len({call.id for call in calls}) != len(calls):
             raise invalid("模型工具调用标识重复")
+        if not request.parallel_tool_calls and len(calls) > 1:
+            raise invalid("当前付费取证阶段只允许一个工具提议")
+        if request.required_tool is not None and (
+            not calls or any(call.name != request.required_tool for call in calls)
+        ):
+            raise invalid("模型未遵循当前取证阶段约束")
         if not calls and not (choice.message.content and choice.message.content.strip()):
             raise invalid("模型返回空正文")
         return ModelResponse(
@@ -238,10 +360,13 @@ class ModelClient:
             not text.strip() for text in texts
         ):
             raise ValueError("Embedding批次必须包含1至10条非空文本")
-        with self._tracer.start_as_current_span(
-            "model.embedding",
-            record_exception=False,
-            set_status_on_exception=False,
+        with (
+            provider_boundary(),
+            self._tracer.start_as_current_span(
+                "model.embedding",
+                record_exception=False,
+                set_status_on_exception=False,
+            ),
         ):
             response = await self._client.embeddings.create(
                 model=self.settings.embedding_model,
@@ -253,7 +378,7 @@ class ModelClient:
         metering = (
             None
             if response.usage is None
-            else ModelUsage(input_tokens=response.usage.prompt_tokens)
+            else ModelUsage(input_tokens=response.usage.prompt_tokens, output_tokens=0)
         )
         if [item.index for item in ordered] != list(range(len(texts))):
             raise ModelProtocolError("Embedding响应数量或索引不匹配", metering)
@@ -268,6 +393,7 @@ class ModelClient:
         return EmbeddingResponse(
             vectors=vectors,
             usage=metering,
+            model=response.model,
         )
 
     async def close(self) -> None:

@@ -68,6 +68,11 @@ spring:
     baseline-on-migrate: false
     validate-on-migrate: true
     validate-migration-naming: true
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 2MB
+      file-size-threshold: 2MB
   profiles:
     default: dev
   web:
@@ -123,6 +128,13 @@ springdoc:
   paths-to-match: /api/v1/**
 
 desk:
+  attachment-storage:
+    region: ${DESK_TICKET_OSS_REGION}
+    endpoint: ${DESK_TICKET_OSS_ENDPOINT}
+    bucket: ${DESK_TICKET_OSS_BUCKET}
+    object-prefix: ticket/${DESK_RESOURCE_ENV}/attachments/
+    access-key-id: ${DESK_TICKET_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${DESK_TICKET_OSS_ACCESS_KEY_SECRET}
   support:
     ai-token: ${DESK_AI_SERVICE_TOKEN}
     knowledge-token: ${DESK_KNOWLEDGE_TICKET_TOKEN}

@@ -5,6 +5,9 @@ import com.yangaobo.servicedesk.api.user.dto.IdentityDTO;
 import com.yangaobo.servicedesk.common.base.CommonErrorCode;
 import com.yangaobo.servicedesk.common.exception.BusinessException;
 import com.yangaobo.servicedesk.knowledge.model.entity.DocumentRuleEntity;
+import com.yangaobo.servicedesk.knowledge.model.entity.DocumentEntity;
+import com.yangaobo.servicedesk.knowledge.model.enums.DocumentAccessStatusEnum;
+import com.yangaobo.servicedesk.knowledge.model.enums.PublicationStatusEnum;
 import com.yangaobo.servicedesk.knowledge.model.form.DocumentRuleForm;
 
 import java.util.Objects;
@@ -19,6 +22,19 @@ public final class KnowledgeRules {
      * 禁止创建无状态规则实例。
      */
     private KnowledgeRules() {
+    }
+
+    /**
+     * 只有已核验实际引用的历史读取可审阅停用或普通退役资料。
+     */
+    public static boolean readable(DocumentEntity document, boolean referencedHistory) {
+        if (document == null || !DocumentAccessStatusEnum.ALLOWED.getValue().equals(document.getAccessStatus())) {
+            return false;
+        }
+        String status = document.getPublicationStatus();
+        return PublicationStatusEnum.PUBLISHED.getValue().equals(status)
+                || (referencedHistory && (PublicationStatusEnum.DISABLED.getValue().equals(status)
+                || PublicationStatusEnum.RETIRED.getValue().equals(status)));
     }
 
     /**

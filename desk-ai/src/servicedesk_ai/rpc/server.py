@@ -24,15 +24,16 @@ from servicedesk_ai.bootstrap.application import ApplicationServices
 from servicedesk_ai.bootstrap.components import RpcSettings
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
 from servicedesk_ai.errors.draft import DraftErrorCode
-from servicedesk_ai.errors.generation import GenerationErrorCode
+from servicedesk_ai.errors.evidence import EvidenceErrorCode
 from servicedesk_ai.errors.retrieval import RetrievalErrorCode
+from servicedesk_ai.errors.run import RunErrorCode
 from servicedesk_ai.infrastructure.identity import IdentityFailure
 from servicedesk_ai.infrastructure.rpc_contract import (
     maximum_seconds,
     request_budget,
     status_for_code,
 )
-from servicedesk_ai.repositories import diagnosis as store
+from servicedesk_ai.repositories import runs as store
 from servicedesk_ai.repositories.index_jobs import read_chunks
 from servicedesk_ai.services.evidence import source_query
 
@@ -104,7 +105,8 @@ class RpcSecurity(grpc.aio.ServerInterceptor):
 async def failure(context: grpc.aio.ServicerContext, error: Exception) -> NoReturn:
     """标准数字详情不替代传输状态，未知错误不暴露内部文本。"""
     if isinstance(error, BusinessError) and isinstance(
-        error.error, (CommonErrorCode, GenerationErrorCode, RetrievalErrorCode, DraftErrorCode)
+        error.error,
+        (CommonErrorCode, RunErrorCode, RetrievalErrorCode, DraftErrorCode, EvidenceErrorCode),
     ):
         code, message = error.error.code, error.error.message
     elif isinstance(error, TimeoutError):
@@ -202,11 +204,11 @@ class EvidenceRpc(stubs.EvidenceContextServiceServicer):
         try:
             actor = await self.services.rpc.identity.verify_ref(request.actor)
             async with self.services.index.engine.connect() as db:
-                run = await store.generation(db, request.generation_id)
+                run = await store.run(db, request.run_id)
             await self.services.conversations.authorized(actor, run.conversation_id)
             items = await self.services.evidence.list_items(run.id)
             item = next((value for value in items if value.id == request.source_usage_id), None)
-            if item is None or item.source_type != "KNOWLEDGE_CHUNK":
+            if item is None or item.source_type not in {"CHUNK", "PROCEDURE_CHECK"}:
                 raise BusinessError(CommonErrorCode.NOT_FOUND)
             result = source_query(run, actor.actor)
             source = item.source_version["knowledge_source"]

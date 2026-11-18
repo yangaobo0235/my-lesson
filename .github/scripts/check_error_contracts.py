@@ -25,8 +25,9 @@ def check_error_contracts() -> None:
         "TicketErrorCode": (3200, 3299),
         "BookingErrorCode": (3300, 3399),
         "DocumentErrorCode": (4000, 4299),
-        "GenerationErrorCode": (5000, 5099),
+        "RunErrorCode": (5000, 5099),
         "RetrievalErrorCode": (5100, 5199),
+        "EvidenceErrorCode": (5103, 5103),
         "DraftErrorCode": (5200, 5299),
     }
     actual: dict[tuple[str, str], int] = {}

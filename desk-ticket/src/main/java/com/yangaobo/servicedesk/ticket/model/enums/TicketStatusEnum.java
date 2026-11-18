@@ -21,6 +21,10 @@ public enum TicketStatusEnum implements BaseEnum<String> {
      */
     WAITING_CUSTOMER("WAITING_CUSTOMER", "待补充"),
     /**
+     * 等待外部反馈。
+     */
+    WAITING_EXTERNAL("WAITING_EXTERNAL", "等待外部反馈"),
+    /**
      * 待客户确认。
      */
     RESOLVED("RESOLVED", "待客户确认"),

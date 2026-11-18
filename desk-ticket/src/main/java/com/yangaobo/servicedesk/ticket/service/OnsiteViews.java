@@ -73,6 +73,12 @@ public final class OnsiteViews {
         result.setStatus(value.getStatus());
         result.setResultCode(value.getResultCode());
         result.setFinishResult(value.getFinishResult());
+        result.setRowVersion(value.getRowVersion());
+        result.setAssignedTechnicianId(value.getAssignedTechnicianId());
+        result.setPerformedBy(value.getPerformedBy());
+        result.setFinishNote(value.getFinishNote());
+        result.setCancelReason(value.getCancelReason());
+
         result.setConfirmedAt(
                 value.getConfirmedAt() == null
                         ? null

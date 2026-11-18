@@ -7,9 +7,70 @@ option java_multiple_files = true;
 // AI只读支持范围与当前工单，不允许内部RPC执行业务写入。
 service SupportAccessService {
   rpc CheckContext(ContextRequest) returns (SupportContext);
-  rpc ReadTicketContext(TicketRequest) returns (SupportContext);
+  rpc ReadDiagnosisContext(TicketRequest) returns (SupportContext);
   rpc ReadTicketEvents(TicketEventsRequest) returns (TicketEvents);
-  rpc VerifyTicketContext(VerifyTicketRequest) returns (SupportContext);
+  rpc VerifyTicketAccess(VerifyTicketRequest) returns (SupportContext);
+  rpc ReadDraftReceipt(DraftReceiptRequest) returns (DraftReceipt);
+  // 仅AI维护器使用服务认证核对原拥有者及根；不提供正文或业务写入。
+  rpc ReconcileDraftReceipt(DraftReconcileRequest) returns (DraftReconcileResult);
+}
+message DraftReconcileRequest {
+  string owner_id = 1;
+  string draft_root_id = 2;
+}
+// 缺失仅表示本次查询尚无已提交回执，不证明没有在途事务。
+message DraftReconcileResult { optional DraftReceipt receipt = 1; }
+// 原身份只能读取本人实际采用的草稿；缺失与无权均为NOT_FOUND。
+message DraftReceiptRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string draft_root_id = 2;
+}
+message DraftReceipt {
+  string receipt_id = 1;
+  string draft_root_id = 2;
+  string draft_id = 3;
+  string action_type = 4;
+  string ticket_id = 5;
+  string result_code = 6;
+  optional string booking_id = 7;
+  int64 ticket_row_version = 8;
+}
+// 仅传输原上传者明确允许AI使用的固定脱敏版本，不读取原件。
+service DiagnosticAttachmentService {
+  rpc ListRedacted(AttachmentListRequest) returns (AttachmentList);
+  rpc ReadRedacted(RedactedRequest) returns (stream RedactedPart);
+}
+// 只返回当前可供AI读取的元信息，游标按附件ID稳定排序，不读取正文。
+message AttachmentListRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string ticket_id = 2;
+  optional string after_id = 3;
+}
+message AttachmentReference {
+  string id = 1;
+  string name = 2;
+  string content_format = 3;
+  int64 redaction_version = 4;
+  string sha256 = 5;
+}
+message AttachmentList {
+  repeated AttachmentReference items = 1;
+  optional string next_after_id = 2;
+}
+message RedactedRequest {
+  servicedesk.common.v1.ActorRef actor = 1;
+  string ticket_id = 2;
+  string attachment_id = 3;
+  int64 redaction_version = 4;
+}
+// 首帧仅元信息，后续连续offset字节块至多64KiB，最终成功后才可使用。
+message RedactedPart {
+  int64 offset = 1;
+  bytes data = 2;
+  optional int64 total_bytes = 3;
+  optional string sha256 = 4;
+  optional string content_format = 5;
+  optional int64 redaction_version = 6;
 }
 // 用户明确报告的环境，不作为遥测实证。
 message Environment {
@@ -24,9 +85,11 @@ message Environment {
 message ContextRequest {
   servicedesk.common.v1.ActorRef actor = 1;
   string purpose = 2;
-  string service_item_id = 3;
+  optional string service_item_id = 3;
   optional string device_id = 4;
   Environment environment = 5;
+  // 仅HISTORY允许读取已有本人有权工单；不扩展新自助受理权限。
+  optional string ticket_id = 6;
 }
 message TicketRequest {
   servicedesk.common.v1.ActorRef actor = 1;
@@ -40,23 +103,28 @@ message SupportContext {
   optional string product_model_id = 4;
   Environment environment = 5;
   optional string ticket_id = 6;
-  optional int64 ticket_version = 7;
+  optional int64 ticket_row_version = 7;
   string support_scope = 8;
   string title = 9;
   string symptom = 10;
   string status = 11;
   optional string assignee_id = 12;
+  // 分类、设备或关键环境变化；普通备注和分派不递增。
+  optional int64 diagnosis_context_version = 13;
+  // 已提交时间线游标，不与写版本混用。
+  optional int64 ticket_event_sequence = 14;
+  optional string attempted_actions = 15;
 }
 message TicketEventsRequest {
   servicedesk.common.v1.ActorRef actor = 1;
   string ticket_id = 2;
   repeated string event_ids = 3;
-  optional int32 after_sequence = 4;
+  optional int64 after_sequence = 4;
   int32 limit = 5;
 }
 message TicketEvent {
   string id = 1;
-  int32 sequence = 2;
+  int64 sequence = 2;
   string event_type = 3;
   string visibility = 4;
   string content = 5;
@@ -66,6 +134,7 @@ message TicketEvents { repeated TicketEvent events = 1; }
 message VerifyTicketRequest {
   servicedesk.common.v1.ActorRef actor = 1;
   string ticket_id = 2;
-  int64 ticket_version = 3;
+  reserved 3;
+  reserved "ticket_version";
   repeated string event_ids = 4;
 }

@@ -1,29 +1,31 @@
-"""私有会话、来源撤权、反馈竞争与执行权丢失的用例回归。作者：yangaobo。"""
+"""私有任务、来源撤权及当前执行权回归；数据库原子提交另作真实MySQL验收。作者：yangaobo。"""
 
-import json
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import grpc
 import pytest
+from google.protobuf.any_pb2 import Any
+from google.rpc.status_pb2 import Status
 
-from desk_contracts.common.v1.common_pb2 import ActorRef
+from desk_contracts.common.v1.common_pb2 import ActorRef, RpcErrorDetail
+from desk_contracts.ticket.v1.support_pb2 import SupportContext
 from desk_contracts.user.v1.identity_pb2 import VerifiedIdentity
-from servicedesk_ai.diagnosis.execution import GenerationWorker
+from servicedesk_ai.diagnosis.execution import RunWorker
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
-from servicedesk_ai.repositories import diagnosis as store
-from servicedesk_ai.schemas.diagnosis import DiagnosisResult, FeedbackHandle, FeedbackShare
-from servicedesk_ai.schemas.execution import GenerationContext, GenerationPipeline
-from servicedesk_ai.services.conversations import ConversationService
+from servicedesk_ai.errors.evidence import EvidenceErrorCode
+from servicedesk_ai.infrastructure.identity import IdentityFailure
+from servicedesk_ai.repositories import tasks
+from servicedesk_ai.schemas.runs import RunContext, RunPipeline, RunResult
+from servicedesk_ai.schemas.tasks import TaskEnvironment
 from servicedesk_ai.services.evidence import Evidence, EvidenceService
-from servicedesk_ai.services.feedback import FeedbackService
 from servicedesk_ai.services.indexing import IndexWorker
+from servicedesk_ai.services.task_access import TaskAccess
 
 
 class Engine:
-    """记录事务是否正常提交；仓储替身不接触任何外部数据库。"""
+    """明确隔离数据库传输；不把本替身当真实事务验收。"""
 
     def __init__(self):
         self.committed = False
@@ -43,40 +45,67 @@ def actor(role="CUSTOMER_USER", owner="a" * 32):
 
 
 def run_snapshot():
-    """固定本轮预算与环境，保持快照可序列化且不授予权限。"""
     return SimpleNamespace(
         id="d" * 32,
         conversation_id="b" * 32,
+        task_id="9" * 32,
         owner_id="a" * 32,
         session_ref="session",
         auth_version=1,
         input_state_version=1,
-        ticket_version=None,
-        context_snapshot=GenerationContext(
-            schema_version=1,
+        diagnosis_context_version=2,
+        ticket_row_version=None,
+        context_manifest=RunContext(
             mode="CUSTOMER_SELF_SERVICE",
             customer_id="c" * 32,
             service_item_id="e" * 32,
             device_id=None,
             product_model_id=None,
             ticket_id=None,
-            environment={},
-            ticket_title="",
-            ticket_symptom="",
+            support_context=TaskEnvironment(field_sources={}),
+            messages=[],
         ),
-        pipeline_config=GenerationPipeline(
-            schema_version=1,
-            prompt_version="v1",
-            tool_version="v1",
-            model="model",
+        pipeline_config=RunPipeline(prompt_version="v2", tool_version="v2", model="model"),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("current", [2, 3])
+async def test_current_environment_controls_paid_continuation(monkeypatch, current):
+    """工单普通写版本不打断诊断；环境改变在模型外调前拒绝。"""
+    run = run_snapshot()
+    worker = object.__new__(RunWorker)
+    worker.engine = Engine()
+    worker.rpc = SimpleNamespace(
+        identity=SimpleNamespace(verify_ref=AsyncMock(return_value=actor()))
+    )
+    worker.access = SimpleNamespace(
+        conversation=AsyncMock(return_value=SimpleNamespace(ticket_id="1" * 32)),
+        authorize=AsyncMock(
+            return_value=(
+                None,
+                SupportContext(ticket_row_version=99, diagnosis_context_version=current),
+            )
         ),
     )
+    worker.evidence = SimpleNamespace(verify=AsyncMock())
+    monkeypatch.setattr(
+        tasks,
+        "task",
+        AsyncMock(return_value=SimpleNamespace(task_state_version=1, diagnosis_context_version=2)),
+    )
+    if current == 2:
+        await worker.verify(run)
+        worker.evidence.verify.assert_awaited_once()
+    else:
+        with pytest.raises(BusinessError):
+            await worker.verify(run)
+        worker.evidence.verify.assert_not_awaited()
 
 
 @pytest.mark.parametrize("change", ["owner", "customer", "role"])
 def test_private_conversation_does_not_follow_ticket_permission(change):
-    """管理员及其他技术人员不能因工单权限取得他人私有对话。"""
-    service = object.__new__(ConversationService)
+    service = object.__new__(TaskAccess)
     identity = actor()
     conversation = SimpleNamespace(
         owner_id=identity.actor.owner_id,
@@ -94,25 +123,38 @@ def test_private_conversation_does_not_follow_ticket_permission(change):
 
 
 @pytest.mark.asyncio
-async def test_transitive_fact_cannot_bypass_revoked_knowledge(monkeypatch):
-    """历史助手事实传递依赖被撤权时，正文和草稿都不能经factId绕过。"""
+@pytest.mark.parametrize(
+    "code,transport,expected",
+    [
+        (1003, grpc.StatusCode.PERMISSION_DENIED, CommonErrorCode.FORBIDDEN),
+        (5103, grpc.StatusCode.FAILED_PRECONDITION, EvidenceErrorCode.SOURCE_WITHDRAWN),
+        (None, grpc.StatusCode.PERMISSION_DENIED, None),
+    ],
+)
+async def test_transitive_fact_cannot_bypass_revoked_knowledge(
+    monkeypatch, code, transport, expected
+):
+    """工具观测的知识依赖撤权，不能经事实摘要绕过。"""
     run = run_snapshot()
+    detail = Any()
+    detail.Pack(RpcErrorDetail(code=code or 0))
+    status = Status(code=transport.value[0], details=[detail])
     rpc = SimpleNamespace(
         verify_sources=AsyncMock(
             side_effect=grpc.aio.AioRpcError(
-                grpc.StatusCode.PERMISSION_DENIED,
+                transport,
                 (),
-                (),
+                (("grpc-status-details-bin", status.SerializeToString()),) if code else (),
                 "denied",
             )
         )
     )
     service = EvidenceService(Engine(), rpc)
-    fact = Evidence("fact-usage", 1, "DIAGNOSTIC_FACT", "事实", "摘要", {}, {}, fact_id="fact")
+    fact = Evidence("fact-usage", 1, "FACT", "事实", "摘要", {}, {}, fact_id="fact")
     source = Evidence(
         "knowledge-usage",
         2,
-        "KNOWLEDGE_CHUNK",
+        "CHUNK",
         "知识",
         "摘录",
         {},
@@ -126,154 +168,39 @@ async def test_transitive_fact_cannot_bypass_revoked_knowledge(monkeypatch):
         AsyncMock(
             return_value={
                 "conversation_id": run.conversation_id,
-                "source_type": "ASSISTANT_PROPOSAL",
-                "source_generation_id": "parent",
-            },
+                "task_id": run.task_id,
+                "source_type": "TOOL_OBSERVATION",
+                "source_run_id": "parent",
+            }
         ),
     )
-    monkeypatch.setattr(store, "generation", AsyncMock(return_value=parent))
-    with pytest.raises(BusinessError) as denied:
-        await service.verify(run)
-    assert denied.value.error == CommonErrorCode.FORBIDDEN
-    rpc.verify_sources.assert_awaited_once()
+    monkeypatch.setattr("servicedesk_ai.services.evidence.read_run", AsyncMock(return_value=parent))
+    if expected is None:
+        with pytest.raises(IdentityFailure) as failure:
+            await service.verify(run)
+        assert failure.value.code == 1011
+    else:
+        with pytest.raises(BusinessError) as denied:
+            await service.verify(run)
+        assert denied.value.error == expected
+    query, sources = rpc.verify_sources.call_args.args
+    assert query.run_id == parent.id and query.source_usage_id == source.id
 
 
 @pytest.mark.asyncio
-async def test_revocation_during_source_check_blocks_shared_body(monkeypatch):
-    """网络复核期间撤销共享，最后交付前重查，不能继续返回旧正文。"""
-    conversations = SimpleNamespace(evidence=SimpleNamespace(verify=AsyncMock(return_value=[])))
-    service = FeedbackService(Engine(), conversations)
-    row = {"generation_id": "run", "generation_status": "SUCCEEDED", "answer_text": "private"}
-    monkeypatch.setattr(
-        "servicedesk_ai.services.feedback.queries.shared_case", AsyncMock(side_effect=[row, None])
+async def test_final_commit_failure_is_not_reported_as_success():
+    """worker必须等待最终事务成功，不能因模型已返回就结束为成功。"""
+    worker = object.__new__(RunWorker)
+    worker.verify = AsyncMock()
+    worker.rpc = SimpleNamespace(
+        identity=SimpleNamespace(verify_ref=AsyncMock(return_value=actor()))
     )
-    monkeypatch.setattr(store, "generation", AsyncMock(return_value=run_snapshot()))
-    with pytest.raises(BusinessError) as denied:
-        await service.shared_case(actor("KNOWLEDGE_ADMIN"), "feedback")
-    assert denied.value.error == CommonErrorCode.NOT_FOUND
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("change", ["revoke", "version", "handled", "deleted", "private"])
-async def test_feedback_handling_rechecks_locked_state(monkeypatch, change):
-    """外部复核后必须重核共享、版本、删除及私有模式，竞争失败不写处理结论。"""
-    service = FeedbackService(Engine(), None)
-    service.shared_case = AsyncMock()
-    row = {
-        "share_with_knowledge_admin": True,
-        "mode": "CUSTOMER_SELF_SERVICE",
-        "deleted_at": None,
-        "status": "PENDING",
-        "row_version": 1,
-    }
-    row.update(
-        {
-            "revoke": {"share_with_knowledge_admin": False},
-            "version": {"row_version": 2},
-            "handled": {"status": "RESOLVED"},
-            "deleted": {"deleted_at": datetime.now(UTC)},
-            "private": {"mode": "TECHNICIAN_ASSIST"},
-        }[change]
+    worker.completion = SimpleNamespace(
+        commit=AsyncMock(side_effect=BusinessError(CommonErrorCode.CONFLICT))
     )
-    monkeypatch.setattr(
-        "servicedesk_ai.services.feedback.queries.lock_feedback_case", AsyncMock(return_value=row)
-    )
-    write = AsyncMock()
-    monkeypatch.setattr("servicedesk_ai.services.feedback.queries.handle_feedback", write)
     with pytest.raises(BusinessError):
-        await service.handle(
-            actor("KNOWLEDGE_ADMIN"),
-            "feedback",
-            FeedbackHandle(
-                row_version="1",
-                action="RESOLVE",
-                handling_note="已核对",
-            ),
-        )
-    write.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_hidden_sources_still_allow_withdrawing_sharing(monkeypatch):
-    """来源失权不阻止本人撤销共享，且不生成另一份反馈。"""
-    conversations = SimpleNamespace(
-        get_generation=AsyncMock(
-            return_value=SimpleNamespace(conversation_id="conversation", sources_hidden=True)
-        ),
-        authorized=AsyncMock(return_value=SimpleNamespace(mode="CUSTOMER_SELF_SERVICE")),
-    )
-    service = FeedbackService(Engine(), conversations)
-    service.view = AsyncMock(return_value="receipt")
-    monkeypatch.setattr(
-        "servicedesk_ai.services.feedback.queries.lock_feedback_sharing",
-        AsyncMock(return_value=("feedback", 1, "RESOLVED", "UNHELPFUL")),
-    )
-    write = AsyncMock()
-    monkeypatch.setattr("servicedesk_ai.services.feedback.queries.change_feedback_sharing", write)
-    assert (
-        await service.share(actor(), "run", FeedbackShare(row_version="1", share=False))
-        == "receipt"
-    )
-    assert write.await_args.args[1] == {"id": "feedback", "share": False}
-
-
-@pytest.mark.asyncio
-async def test_old_execution_token_cannot_commit_late_answer(monkeypatch):
-    """完整来源复核也不能替代最后事务内的执行权检查。"""
-    worker = object.__new__(GenerationWorker)
-    worker.engine = Engine()
-    worker.rpc = SimpleNamespace(identity=SimpleNamespace(verify_ref=AsyncMock()))
-    worker.verify_ticket = AsyncMock()
-    worker.evidence = SimpleNamespace(verify=AsyncMock(return_value=[]))
-    monkeypatch.setattr(
-        store, "conversation", AsyncMock(return_value=SimpleNamespace(state_version=1))
-    )
-    monkeypatch.setattr(
-        store, "owned", AsyncMock(side_effect=BusinessError(CommonErrorCode.CONFLICT))
-    )
-    write = AsyncMock()
-    monkeypatch.setattr("servicedesk_ai.diagnosis.execution.queries.complete_generation", write)
-    with pytest.raises(BusinessError):
-        await worker.finish(
-            run_snapshot(), DiagnosisResult(answer_type="CLARIFICATION", text="请补充"), None
-        )
-    write.assert_not_awaited()
-    assert not worker.engine.committed
-
-
-@pytest.mark.asyncio
-async def test_typed_environment_and_unknown_metering_survive_commit(monkeypatch):
-    """类型化环境仍可写入JSON；缺失计量保持未知，不能改为零。"""
-    worker = object.__new__(GenerationWorker)
-    worker.engine = Engine()
-    worker.rpc = SimpleNamespace(identity=SimpleNamespace(verify_ref=AsyncMock()))
-    worker.verify_ticket = AsyncMock()
-    worker.evidence = SimpleNamespace(verify=AsyncMock(return_value=[]))
-    monkeypatch.setattr(
-        store, "conversation", AsyncMock(return_value=SimpleNamespace(state_version=1))
-    )
-    monkeypatch.setattr(store, "owned", AsyncMock())
-    writes = {}
-    for name in ("insert_generated_fact", "complete_generation", "advance_state"):
-        writes[name] = AsyncMock()
-        monkeypatch.setattr("servicedesk_ai.diagnosis.execution.queries." + name, writes[name])
-    monkeypatch.setattr(
-        "servicedesk_ai.diagnosis.execution.queries.call_usage",
-        AsyncMock(return_value=[(None, None)]),
-    )
-    await worker.finish(
-        run_snapshot(),
-        DiagnosisResult(
-            answer_type="CLARIFICATION",
-            text="请补充",
-            open_questions=["使用哪个系统？"],
-        ),
-        None,
-    )
-    locator = writes["insert_generated_fact"].await_args.args[1]["locator"]
-    assert isinstance(json.loads(locator)["environment"], dict)
-    assert writes["complete_generation"].await_args.args[1]["input"] is None
-    assert worker.engine.committed
+        await worker.finish(run_snapshot(), RunResult(answer_type="CLARIFICATION", text="请补充"))
+    worker.completion.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -293,3 +220,70 @@ async def test_unknown_parser_creation_is_committed_without_new_remote_task(monk
     update.assert_awaited_once()
     assert worker.engine.committed
     worker.mineru.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cyclic_source_chain_is_rejected_before_visited_shortcut(monkeypatch):
+    """共享祖先可复核，环形Run依赖不能被已访问集合伪装成验证成功。"""
+    current, parent = run_snapshot(), run_snapshot()
+    parent.id = "f" * 32
+    service = EvidenceService(Engine(), SimpleNamespace())
+    first = Evidence("first", 1, "FACT", "事实", "摘要", {}, {}, fact_id="first")
+    second = Evidence("second", 1, "FACT", "事实", "摘要", {}, {}, fact_id="second")
+    service.list_items = AsyncMock(side_effect=[[first], [second], [first]])
+    monkeypatch.setattr(
+        "servicedesk_ai.services.evidence.queries.fact_dependency",
+        AsyncMock(
+            side_effect=[
+                {
+                    "conversation_id": current.conversation_id,
+                    "task_id": current.task_id,
+                    "source_type": "TOOL_OBSERVATION",
+                    "source_run_id": parent.id,
+                },
+                {
+                    "conversation_id": current.conversation_id,
+                    "task_id": current.task_id,
+                    "source_type": "TOOL_OBSERVATION",
+                    "source_run_id": current.id,
+                },
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "servicedesk_ai.services.evidence.read_run", AsyncMock(side_effect=[parent, current])
+    )
+    with pytest.raises(BusinessError) as error:
+        await service.verify(current)
+    assert error.value.error == CommonErrorCode.CONFLICT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [CommonErrorCode.FORBIDDEN, EvidenceErrorCode.SOURCE_WITHDRAWN])
+async def test_answer_checks_source_before_opening_write_transaction(monkeypatch, error):
+    """页面隐藏不是授权边界，直接提交被撤回指引的答复也不能写入任务。"""
+    from servicedesk_ai.schemas.tasks import CheckAnswerInput
+    from servicedesk_ai.services.tasks import TaskService
+
+    service = object.__new__(TaskService)
+    service.engine = Engine()
+    identity = actor()
+    original = SimpleNamespace(id="9" * 32)
+    conversation = SimpleNamespace(id="b" * 32)
+    service.authorized = AsyncMock(return_value=(original, conversation, None))
+    service.evidence = SimpleNamespace(verify=AsyncMock(side_effect=BusinessError(error)))
+    monkeypatch.setattr(tasks, "action_receipt", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        tasks, "check", AsyncMock(return_value=SimpleNamespace(proposed_run_id="d" * 32))
+    )
+    monkeypatch.setattr(
+        "servicedesk_ai.services.tasks.runs.run", AsyncMock(return_value=run_snapshot())
+    )
+    form = CheckAnswerInput(
+        client_action_id="e" * 32, task_state_version="1", answer={"value": "反馈"}
+    )
+    with pytest.raises(BusinessError) as rejected:
+        await service.answer(identity, original.id, "f" * 32, form)
+    assert rejected.value.error == error
+    assert not service.engine.committed
+    service.evidence.verify.assert_awaited_once()

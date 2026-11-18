@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 import pymysql
 
@@ -23,8 +24,11 @@ def verify_constraints(connection: dict) -> int:
                 "actor",
                 "ticket",
                 "conversation",
-                "generation",
-                "other_generation",
+                "run",
+                "other_run",
+                "task",
+                "message",
+                "task_event",
                 "fact",
                 "model",
                 "source",
@@ -56,16 +60,16 @@ def verify_constraints(connection: dict) -> int:
                 checks += 1
 
             db.select_db("desk_ticket_ci")
-            item = dict(
-                id=ids["service"],
-                service_code="OFFICE_NETWORK",
-                category="NETWORK",
-                service_name="办公网络",
-                support_scope="指定办公网络连接问题",
-                created_by=ids["actor"],
-                updated_by=ids["actor"],
-                change_reason="CI夹具",
-            )
+            item = {
+                "id": ids["service"],
+                "service_code": "OFFICE_NETWORK",
+                "category": "NETWORK",
+                "service_name": "办公网络",
+                "support_scope": "指定办公网络连接问题",
+                "created_by": ids["actor"],
+                "updated_by": ids["actor"],
+                "change_reason": "CI夹具",
+            }
             insert("it_service_item", item)
             insert(
                 "it_service_item",
@@ -78,43 +82,47 @@ def verify_constraints(connection: dict) -> int:
             )
             rejects(
                 lambda: cursor.execute(
-                    "UPDATE it_service_item SET category='UNKNOWN' WHERE id=%s", (ids["service"],)
+                    "UPDATE it_service_item SET category='UNKNOWN' WHERE id=%s",
+                    (ids["service"],),
                 ),
                 3819,
             )
-            entitlement = dict(
-                id=ids["entitlement"],
-                customer_id=ids["customer"],
-                service_item_id=ids["service"],
-                starts_on="2026-01-01",
-                ends_on="2026-12-31",
-                granted_by=ids["actor"],
-                updated_by=ids["actor"],
-                change_reason="CI夹具",
-            )
+            entitlement = {
+                "id": ids["entitlement"],
+                "customer_id": ids["customer"],
+                "service_item_id": ids["service"],
+                "starts_on": "2026-01-01",
+                "ends_on": "2026-12-31",
+                "granted_by": ids["actor"],
+                "updated_by": ids["actor"],
+                "change_reason": "CI夹具",
+            }
             insert("it_service_entitlement", entitlement)
-            rejects(lambda: insert("it_service_entitlement", entitlement | {"id": "f" * 32}), 1062)
+            rejects(
+                lambda: insert("it_service_entitlement", entitlement | {"id": "f" * 32}),
+                1062,
+            )
             rejects(
                 lambda: cursor.execute("UPDATE it_service_entitlement SET ends_on='2025-01-01'"),
                 3819,
             )
-            ticket = dict(
-                id=ids["ticket"],
-                ticket_no="CI-1",
-                customer_id=ids["customer"],
-                requester_id=ids["actor"],
-                client_request_id="a" * 32,
-                request_hash="a" * 64,
-                service_item_id=ids["service"],
-                entitlement_id=ids["entitlement"],
-                service_scope_snapshot=json.dumps(
+            ticket = {
+                "id": ids["ticket"],
+                "ticket_no": "CI-1",
+                "customer_id": ids["customer"],
+                "requester_id": ids["actor"],
+                "client_request_id": "a" * 32,
+                "request_hash": "a" * 64,
+                "service_item_id": ids["service"],
+                "entitlement_id": ids["entitlement"],
+                "service_scope_snapshot": json.dumps(
                     {"schema_version": 1, "admission_type": "COVERED"}
                 ),
-                support_context=version,
-                title="网络连接问题",
-                symptom="办公网络无法连接",
-                acceptance_due_at="2099-01-01 00:00:00",
-            )
+                "support_context": version,
+                "title": "网络连接问题",
+                "symptom": "办公网络无法连接",
+                "acceptance_due_at": "2099-01-01 00:00:00",
+            }
             insert("sd_ticket", ticket)
             rejects(
                 lambda: cursor.execute(
@@ -129,16 +137,16 @@ def verify_constraints(connection: dict) -> int:
                 3819,
             )
             rejects(lambda: cursor.execute("UPDATE sd_ticket SET entitlement_id=NULL"), 3819)
-            event = dict(
-                id="e" * 32,
-                service_item_id=ids["other_service"],
-                entitlement_id=ids["entitlement"],
-                actor_id=ids["actor"],
-                event_type="ENTITLEMENT_GRANTED",
-                client_action_id="e" * 32,
-                request_hash="e" * 64,
-                details=version,
-            )
+            event = {
+                "id": "e" * 32,
+                "service_item_id": ids["other_service"],
+                "entitlement_id": ids["entitlement"],
+                "actor_id": ids["actor"],
+                "event_type": "ENTITLEMENT_GRANTED",
+                "client_action_id": "e" * 32,
+                "request_hash": "e" * 64,
+                "details": version,
+            }
             rejects(lambda: insert("it_service_event", event), 1452)
             rejects(
                 lambda: insert(
@@ -149,102 +157,160 @@ def verify_constraints(connection: dict) -> int:
             )
 
             db.select_db("desk_ai_ci")
-            conversation = dict(
-                id=ids["conversation"],
-                owner_id=ids["actor"],
-                customer_id=ids["customer"],
-                mode="CUSTOMER_SELF_SERVICE",
-                service_item_id=ids["service"],
-                support_context=version,
-                title="连接问题",
-            )
+            conversation = {
+                "id": ids["conversation"],
+                "owner_id": ids["actor"],
+                "customer_id": ids["customer"],
+                "mode": "CUSTOMER_SELF_SERVICE",
+                "client_request_id": "b" * 32,
+                "request_hash": "b" * 64,
+                "title": "连接问题",
+            }
             insert("ai_conversation", conversation)
-            generation = dict(
-                id=ids["generation"],
-                conversation_id=ids["conversation"],
-                owner_id=ids["actor"],
-                round_number=1,
-                input_state_version=1,
-                question_text="网络无法连接",
-                client_request_id="b" * 32,
-                request_hash="b" * 64,
-                session_ref="12345678-1234-1234-1234-123456789012",
-                auth_version=1,
-                pipeline_config=version,
-                context_snapshot=version,
+            insert(
+                "ai_diagnosis_task",
+                {
+                    "id": ids["task"],
+                    "conversation_id": ids["conversation"],
+                    "create_action_id": "c" * 32,
+                    "create_request_hash": "c" * 64,
+                    "goal": "核对办公网络连接",
+                    "support_context": version,
+                    "hypothesis_state": json.dumps({"schema_version": 1, "items": []}),
+                    "budget_policy": version,
+                },
             )
-            insert("ai_generation", generation)
+            insert(
+                "ai_task_event",
+                {
+                    "id": ids["task_event"],
+                    "task_id": ids["task"],
+                    "state_version": 1,
+                    "actor_id": ids["actor"],
+                    "actor_type": "USER",
+                    "event_type": "TASK_CREATED",
+                    "client_action_id": "d" * 32,
+                    "request_hash": "d" * 64,
+                    "details": version,
+                },
+            )
+            insert(
+                "ai_message",
+                {
+                    "id": ids["message"],
+                    "conversation_id": ids["conversation"],
+                    "task_id": ids["task"],
+                    "sequence_number": 1,
+                    "role": "USER",
+                    "content": "网络无法连接",
+                    "content_sha256": "a" * 64,
+                    "client_request_id": "a" * 32,
+                    "request_hash": "a" * 64,
+                },
+            )
+            run = {
+                "id": ids["run"],
+                "conversation_id": ids["conversation"],
+                "task_id": ids["task"],
+                "owner_id": ids["actor"],
+                "input_state_version": 1,
+                "diagnosis_context_version": 1,
+                "input_message_id": ids["message"],
+                "client_request_id": "b" * 32,
+                "request_hash": "b" * 64,
+                "session_ref": "12345678-1234-1234-1234-123456789012",
+                "auth_version": 1,
+                "pipeline_config": version,
+                "context_manifest": version,
+                "deadline_at": datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=3),
+            }
+            insert("ai_run", run)
             rejects(
                 lambda: insert(
-                    "ai_generation",
-                    generation
+                    "ai_run",
+                    run
                     | {
-                        "id": ids["other_generation"],
-                        "round_number": 2,
+                        "id": ids["other_run"],
                         "client_request_id": "c" * 32,
                     },
                 ),
                 1062,
             )
-            fact = dict(
-                id=ids["fact"],
-                conversation_id=ids["conversation"],
-                state_version=1,
-                fact_kind="OBSERVATION",
-                operation="ASSERT",
-                source_type="USER_REPORT",
-                reported_by=ids["actor"],
-                statement="用户报告网络无法连接",
-                source_locator=version,
-            )
+            fact = {
+                "id": ids["fact"],
+                "task_id": ids["task"],
+                "state_version": 1,
+                "fact_kind": "OBSERVATION",
+                "operation": "ASSERT",
+                "source_type": "USER_REPORT",
+                "reported_by": ids["actor"],
+                "statement": "用户报告网络无法连接",
+                "source_locator": version,
+                "environment_snapshot": version,
+                "message_id": ids["message"],
+            }
             insert("ai_diagnostic_fact", fact)
             rejects(
                 lambda: cursor.execute(
                     "UPDATE ai_diagnostic_fact SET source_type='ASSISTANT_PROPOSAL',"
-                    "reported_by=NULL,source_generation_id=%s,fact_kind='PERFORMED_ACTION'",
-                    (ids["generation"],),
+                    "reported_by=NULL WHERE id=%s",
+                    (ids["fact"],),
                 ),
                 3819,
             )
             rejects(
-                lambda: cursor.execute("UPDATE ai_diagnostic_fact SET operation='RETRACT'"), 3819
+                lambda: cursor.execute("UPDATE ai_diagnostic_fact SET operation='RETRACT'"),
+                3819,
             )
-            source = dict(
-                id=ids["source"],
-                generation_id=ids["generation"],
-                conversation_id=ids["conversation"],
-                source_number=1,
-                source_type="DIAGNOSTIC_FACT",
-                fact_id=ids["fact"],
-                source_version=version,
-                locator_snapshot=version,
-                excerpt_snapshot="用户报告无法联网",
-            )
+            source = {
+                "id": ids["source"],
+                "run_id": ids["run"],
+                "source_number": 1,
+                "source_type": "FACT",
+                "fact_id": ids["fact"],
+                "source_version": version,
+                "locator_snapshot": version,
+                "excerpt_snapshot": "用户报告无法联网",
+                "title_snapshot": "用户原始反馈",
+                "usage_kind": "CONTENT",
+            }
             insert("ai_source_usage", source)
             rejects(
-                lambda: cursor.execute("UPDATE ai_source_usage SET first_model_call_number=1"), 1452
+                lambda: cursor.execute(
+                    "UPDATE ai_source_usage SET first_model_call_id=%s WHERE id=%s",
+                    (ids["model"], ids["source"]),
+                ),
+                1452,
             )
             insert(
                 "ai_model_call",
-                dict(
-                    id=ids["model"],
-                    generation_id=ids["generation"],
-                    call_number=1,
-                    purpose="DECISION",
-                    provider="CI",
-                    requested_model="CI",
-                    input_manifest=version,
-                    started_at="2026-01-01 00:00:00",
-                ),
+                {
+                    "id": ids["model"],
+                    "run_id": ids["run"],
+                    "call_number": 1,
+                    "purpose": "CHAT",
+                    "claim_token": "12345678-1234-1234-1234-123456789012",
+                    "provider": "CI",
+                    "requested_model": "CI",
+                    "input_manifest": version,
+                    "reserved_tokens": 10,
+                    "pricing_snapshot": version,
+                },
             )
-            cursor.execute("UPDATE ai_source_usage SET first_model_call_number=1")
+            cursor.execute(
+                "UPDATE ai_source_usage SET first_model_call_id=%s WHERE id=%s",
+                (ids["model"], ids["source"]),
+            )
             rejects(
                 lambda: cursor.execute(
                     "UPDATE ai_model_call SET input_tokens=3,cached_input_tokens=4"
                 ),
                 3819,
             )
-            rejects(lambda: cursor.execute("UPDATE ai_model_call SET status='SUCCEEDED'"), 3819)
+            rejects(
+                lambda: cursor.execute("UPDATE ai_model_call SET status='SUCCEEDED'"),
+                3819,
+            )
             checks += 5  # 资格、无设备工单、用户事实、无模型来源及真实模型关联的合法写入。
         return checks
     finally:

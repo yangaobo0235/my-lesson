@@ -17,6 +17,11 @@ import org.apache.ibatis.annotations.Param;
  */
 public interface TicketMapper extends BaseMapper<TicketEntity> {
     /**
+     * 在调用者工单事务中比较并推进事件游标，不改变业务写版本。
+     */
+    int advanceEventSequence(@Param("id") String id, @Param("expected") long expected);
+
+    /**
      * 取得当前行锁并映射JSON字段。
      */
     TicketEntity lock(@Param("id") String id);

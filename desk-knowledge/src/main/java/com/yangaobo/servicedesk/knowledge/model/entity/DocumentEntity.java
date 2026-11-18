@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -123,9 +125,48 @@ public class DocumentEntity implements Serializable {
     private String applicabilityNote;
 
     /**
-     * DRAFT / PUBLISHED / DISABLED / RETIRED / DELETED。
+     * 修订内不可变人工规程；无规程资料为空。
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private JsonNode procedureDefinition;
+    /**
+     * 规范化规程摘要，随上传固定。
+     */
+    private String procedureSha256;
+    /**
+     * 校验通过的定义摘要，发布必须匹配当前定义。
+     */
+    private String procedureValidatedSha256;
+    /**
+     * 校验成功的数据库UTC时间。
+     */
+    private LocalDateTime procedureValidatedAt;
+    /**
+     * 执行校验的知识管理员账号。
+     */
+    private String procedureValidatedBy;
+
+    /**
+     * DRAFT / PUBLISHED / DISABLED / RETIRED / WITHDRAWN / DELETED。
      */
     private String publicationStatus;
+
+    /**
+     * ALLOWED / REVOKED；撤权同时禁止历史正文读取。
+     */
+    private String accessStatus;
+
+    /**
+     * 最近访问权限变更的人工依据。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String accessReason;
+
+    /**
+     * 风险撤回原因，撤回后不可清空或恢复发布。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String withdrawalReason;
 
     /**
      * 本地复合 FK(current_job_id,id) → kb_index_job(id,document_id)，外部 AI 任务使用同一 ID。

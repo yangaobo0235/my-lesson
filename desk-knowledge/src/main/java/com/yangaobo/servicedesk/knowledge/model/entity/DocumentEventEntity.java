@@ -45,9 +45,19 @@ public class DocumentEventEntity implements Serializable {
 
     /**
      * UPLOADED / METADATA_CHANGED / INDEX_REQUESTED / INDEX_CANCEL_REQUESTED / INDEX_REQUEUED /
-     * PUBLISHED / DISABLED / RESTORED / RETIRED / DELETED。
+     * PUBLISHED / DISABLED / RESTORED / RETIRED / WITHDRAWN / ACCESS_REVOKED / ACCESS_RESTORED / DELETED。
      */
     private String eventType;
+
+    /**
+     * 用户直接动作的幂等键；系统派生事件为空。
+     */
+    private String clientActionId;
+
+    /**
+     * 规范动作、参数和预期版本摘要，与动作键同空同有。
+     */
+    private String requestHash;
 
     /**
      * 本地 FK → kb_document，替换对应的另一修订。
