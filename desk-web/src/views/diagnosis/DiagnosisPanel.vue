@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   ElAlert,
   ElButton,
@@ -13,59 +12,43 @@ import {
   listConversations,
   createConversation,
   getConversation,
+  deleteConversation,
+  renameConversation,
+  listMessages,
+  type Conversation,
+} from '../../api/diagnosis/conversationApi'
+import {
   listRuns,
   createRun,
   runReceipt,
   getRun,
   cancelRun,
-  createDraft,
-  reviseDraft,
-  withdrawDraft,
-  draftReceipt,
+  runCalls,
+  type Run,
+  type RunCalls,
+} from '../../api/diagnosis/runApi'
+import {
   putFeedback,
   getFeedback,
-  runCalls,
-  type RunCalls,
-  deleteConversation,
-  renameConversation,
-  type Conversation,
-  type Run,
-  type Fact,
-  type Draft,
   type Feedback,
-  type RunInput,
-  type ConversationInput,
-  type DraftPurpose,
-  type SafetyCondition,
-  safetyConditionNames,
-} from '../../api/diagnosis/diagnosisApi'
+} from '../../api/diagnosis/feedbackApi'
+import type {
+  ConversationInput,
+  FactInput,
+  RunInput,
+  SafetyCondition,
+  TaskAction,
+  TaskInput,
+} from '../../api/diagnosis/types'
 import { listServices, listDevices } from '../../api/support/supportApi'
 import {
   blankContext,
   type EntitledService,
   type Device,
 } from '../../api/support/types'
-import {
-  createTicket,
-  creationReceipt,
-  act,
-  actionReceipt,
-} from '../../api/ticket/ticketApi'
-import type {
-  Ticket,
-  TicketCreateForm,
-  TicketAction,
-} from '../../api/ticket/types'
+import type { Ticket } from '../../api/ticket/types'
 import { originalLink } from '../../api/knowledge/knowledgeApi'
-import {
-  bookOnsite,
-  bookingReceipt,
-  ticketSlots,
-  type OnsiteSlot,
-} from '../../api/onsite/onsiteApi'
-import { synchronizeDraft } from '../../api/diagnosis/taskApi'
 import { ApiError, newRequestId } from '../../api/http'
-import { RESULT_CODES } from '../../api/resultCodes'
 import { useAuthStore } from '../../stores/authStore'
 import { useOperation } from '../../composables/useOperation'
 import { useRunSubscription } from '../../composables/useRunSubscription'
@@ -77,14 +60,12 @@ import {
   changeFacts,
   changeContext,
   closeTask,
-  listMessages,
   type DiagnosisTask,
-  type TaskInput,
   type TaskReceipt,
-  type FactInput,
-  type TaskAction,
+  type Fact,
 } from '../../api/diagnosis/taskApi'
 import TaskChecks from './TaskChecks.vue'
+import { useActionDraft } from './useActionDraft'
 import SupportContextFields from '../support/SupportContextFields.vue'
 
 /** 本人私有会话；断流查询原运行，建议必须人工编辑确认后进入正式工单。 @author yangaobo */
@@ -92,7 +73,6 @@ const props = defineProps<{ ticket?: Ticket }>()
 const emit = defineEmits<{ changed: [] }>()
 const calls = ref<RunCalls | null>(null)
 const auth = useAuthStore(),
-  router = useRouter(),
   { run, busy, error, signal } = useOperation()
 const selectedMode = ref<'CUSTOMER_SELF_SERVICE' | 'CONSULT'>(
   'CUSTOMER_SELF_SERVICE',
@@ -176,112 +156,6 @@ const factAction = ref<'ASSERT' | 'CORRECT' | 'RETRACT'>('ASSERT'),
   statement = ref(''),
   reportedConditions = ref<SafetyCondition[]>([]),
   confirmed = ref<string[]>([])
-const draft = ref<Draft | null>(null),
-  draftContent = ref({
-    title: '',
-    symptom: '',
-    attemptedActions: '',
-    content: '',
-    resolutionType: 'GUIDANCE' as 'RESTORED' | 'GUIDANCE' | 'REFERRED',
-    referralTarget: '',
-    followUpAt: '',
-    slotId: '',
-  })
-const draftFollowUp = ref(''),
-  selectedSlot = ref('')
-const availableSlots = ref<OnsiteSlot[]>([]),
-  slotPage = ref(1),
-  slotTotal = ref('0')
-const pendingSync = ref<{
-  id: string
-  body: { clientActionId: string; taskStateVersion: string }
-} | null>(null)
-const adoptedRoot = ref<string | null>(null)
-const pendingDraft = ref<
-  (Parameters<typeof createDraft>[1] & { taskId: string }) | null
->(null)
-const pendingRevision = ref<{
-  id: string
-  body: Parameters<typeof reviseDraft>[1]
-} | null>(null)
-/** 显示控件中的默认选择仅用于编辑，对无关用途保持规范空值。 */
-function editedContent(): Draft['content'] {
-  return {
-    title: draftContent.value.title,
-    symptom: draftContent.value.symptom,
-    attemptedActions: draftContent.value.attemptedActions,
-    content: draftContent.value.content,
-    resolutionType:
-      draft.value?.purpose === 'RESOLVE_TICKET'
-        ? draftContent.value.resolutionType
-        : null,
-    referralTarget:
-      draft.value?.purpose === 'RESOLVE_TICKET'
-        ? draftContent.value.referralTarget || null
-        : null,
-    ...(draft.value?.purpose === 'REQUEST_INFORMATION'
-      ? { followUpAt: draftContent.value.followUpAt }
-      : {}),
-    ...(draft.value?.purpose === 'BOOK_ONSITE'
-      ? { slotId: draftContent.value.slotId }
-      : {}),
-  }
-}
-const draftChanged = computed(
-  () =>
-    !!draft.value &&
-    JSON.stringify(editedContent()) !== JSON.stringify(draft.value.content),
-)
-function saveDraftRevision() {
-  void run(async () => {
-    if (!draft.value || adoption.value) return
-    pendingRevision.value ??= {
-      id: draft.value.id,
-      body: {
-        clientRequestId: newRequestId(),
-        contentSha256: draft.value.contentSha256,
-        content: editedContent(),
-      },
-    }
-    const value = await reviseDraft(
-      pendingRevision.value.id,
-      pendingRevision.value.body,
-      await auth.token(),
-    )
-    pendingRevision.value = null
-    showDraft(value)
-  })
-}
-function recoverRevision() {
-  void run(async () => {
-    if (!pendingRevision.value) return
-    const value = await draftReceipt(
-      pendingRevision.value.body.clientRequestId,
-      signal,
-    )
-    pendingRevision.value = null
-    showDraft(value)
-  })
-}
-function withdrawCurrentDraft() {
-  void run(async () => {
-    if (!draft.value || adoption.value || pendingRevision.value) return
-    showDraft(
-      await withdrawDraft(
-        draft.value.id,
-        draft.value.contentSha256,
-        await auth.token(),
-      ),
-    )
-    notice.value = '已停止新的草稿校验；已在途的工单请求仍需查询正式动作回执。'
-  })
-}
-const adoption = ref<
-  | { kind: 'CREATE'; form: TicketCreateForm }
-  | { kind: 'ACTION'; action: TicketAction }
-  | { kind: 'BOOK'; ticketId: string; form: Parameters<typeof bookOnsite>[1] }
-  | null
->(null)
 const feedback = ref<Feedback | null>(null),
   feedbackComment = ref(''),
   notice = ref(''),
@@ -295,14 +169,50 @@ const pendingFeedback = ref<{
 } | null>(null)
 let selection = 0
 const {
-  streaming,
-  follow: followRun,
-  stop: stopSubscription,
-} = useRunSubscription({
+  draft,
+  draftContent,
+  draftChanged,
+  draftFollowUp,
+  selectedSlot,
+  availableSlots,
+  slotPage,
+  slotTotal,
+  pendingSync,
+  adoptedRoot,
+  pendingDraft,
+  pendingRevision,
+  adoption,
+  clearSelection: clearDraftSelection,
+  reset: resetDrafts,
+  saveDraftRevision,
+  recoverRevision,
+  withdrawCurrentDraft,
+  makeDraft,
+  readSlots,
+  syncAdoption,
+  recoverDraft,
+  adopt,
+  recoverAdoption,
+} = useActionDraft({
+  task,
+  current,
+  confirmed,
+  pendingCheck,
+  notice,
+  ticket: computed(() => props.ticket),
+  hasConversation: () => conversation.value !== null,
+  selection: () => selection,
+  signal,
+  run,
+  token: () => auth.token(),
+  reload: () => loadCurrent(),
+  changed: () => emit('changed'),
+})
+const { follow: followRun, stop: stopSubscription } = useRunSubscription({
   signal,
   csrf: () => auth.token(),
-  status: (id, status) => {
-    if (current.value?.id === id) current.value = { ...current.value, status }
+  stage: (id, value) => {
+    if (current.value?.id === id) current.value = { ...current.value, ...value }
   },
   notice: (message) => {
     notice.value = message
@@ -326,6 +236,12 @@ const {
 const active = computed(
   () => !!current.value && ['QUEUED', 'RUNNING'].includes(current.value.status),
 )
+const phaseNames: Record<Run['executionPhase'], string> = {
+  CONTEXT: '准备上下文',
+  MODEL: '调用模型',
+  TOOL: '读取证据',
+  COMMIT: '提交结果',
+}
 const statusNames: Record<Run['status'], string> = {
   QUEUED: '已持久受理，等待执行',
   RUNNING: '正在执行有界排障',
@@ -359,6 +275,15 @@ const failureExplanation = computed(() => {
       return '本轮未能生成通过校验的回答。请核对已保存的任务和调用记录，必要时转人工处理。'
   }
 })
+/** 明确人工报告，不代表工具实测；需更正或撤回原事实才能解除。 */
+const safetyConditionNames: Record<SafetyCondition, string> = {
+  SAFETY_HAZARD_REPORTED: '发现电气或人身安全风险',
+  DATA_LOSS_RISK_REPORTED: '有数据丢失风险',
+  ADMIN_PRIVILEGE_REQUIRED: '需要管理员权限',
+  OUT_OF_SERVICE_SCOPE: '已超出支持范围',
+  NO_PROGRESS_LIMIT: '反复检查仍无进展',
+  EVIDENCE_CONFLICT: '观察或资料相互矛盾',
+}
 const sourceNames = {
   USER_REPORT: '用户反馈',
   HUMAN_RECORD: '人工记录',
@@ -481,16 +406,6 @@ async function loadCurrent(version = selection) {
 }
 function syncTaskContext() {
   if (task.value) context.value = { ...task.value.supportContext }
-}
-/** 任务或会话切换后清理已展示的选择，不丢弃任何未决提交身份。 */
-function clearDraftSelection() {
-  draft.value = null
-  adoptedRoot.value = null
-  selectedSlot.value = ''
-  draftFollowUp.value = ''
-  availableSlots.value = []
-  slotPage.value = 1
-  slotTotal.value = '0'
 }
 function selectTask(value: DiagnosisTask) {
   if (selectionLocked.value || active.value) return
@@ -763,7 +678,6 @@ function cancel() {
     if (!current.value) return
     current.value = await cancelRun(current.value.id, await auth.token())
     stopSubscription()
-    streaming.value = false
     await loadCurrent()
   })
 }
@@ -821,271 +735,6 @@ function recordFact(environmentOnly = false) {
       reportedConditions.value = []
     }
     await loadCurrent()
-  })
-}
-function showDraft(value: Draft) {
-  if (draft.value?.draftRootId !== value.draftRootId) adoptedRoot.value = null
-  draft.value = value
-  draftContent.value = {
-    ...value.content,
-    resolutionType: value.content.resolutionType ?? 'GUIDANCE',
-    referralTarget: value.content.referralTarget ?? '',
-    followUpAt: value.content.followUpAt ?? '',
-    slotId: value.content.slotId ?? '',
-  }
-  adoption.value = null
-}
-function makeDraft(purpose: DraftPurpose) {
-  void run(async () => {
-    if (
-      !task.value ||
-      (!['CREATE_TICKET', 'BOOK_ONSITE'].includes(purpose) && !current.value)
-    )
-      return
-    if (pendingRevision.value || adoption.value || pendingCheck.value)
-      throw new Error('请先查询未确认结果的原请求')
-    pendingDraft.value ??= {
-      taskId: task.value.id,
-      sourceRunId: ['CREATE_TICKET', 'BOOK_ONSITE'].includes(purpose)
-        ? null
-        : (current.value?.id ?? null),
-      purpose,
-      clientRequestId: newRequestId(),
-      confirmedFactIds: [...confirmed.value],
-      ...(purpose === 'REQUEST_INFORMATION'
-        ? { followUpAt: new Date(draftFollowUp.value).toISOString() }
-        : {}),
-      ...(purpose === 'BOOK_ONSITE' ? { slotId: selectedSlot.value } : {}),
-    }
-    const { taskId, ...form } = pendingDraft.value
-    showDraft(await createDraft(taskId, form, await auth.token()))
-    pendingDraft.value = null
-  })
-}
-
-/** 预约时段按已交接工单分页读取，选择不会预占容量。 */
-function readSlots(page = 1) {
-  void run(async () => {
-    if (!task.value?.handoverTicketId) return
-    const taskId = task.value.id,
-      ticketId = task.value.handoverTicketId,
-      version = selection
-    const value = await ticketSlots(ticketId, page, signal)
-    if (
-      signal.aborted ||
-      version !== selection ||
-      task.value?.id !== taskId ||
-      task.value.handoverTicketId !== ticketId
-    )
-      return
-    availableSlots.value = value.records
-    slotTotal.value = value.total
-    slotPage.value = page
-  })
-}
-/** 未知结果保留原同步键；明确版本冲突后刷新版本，下一次点击仅重试同步。 */
-async function syncAdoption() {
-  if (!draft.value || !task.value) return
-  pendingSync.value ??= {
-    id: draft.value.id,
-    body: {
-      clientActionId: newRequestId(),
-      taskStateVersion: task.value.taskStateVersion,
-    },
-  }
-  try {
-    await synchronizeDraft(
-      pendingSync.value.id,
-      pendingSync.value.body,
-      await auth.token(),
-    )
-  } catch (failure) {
-    if (failure instanceof ApiError && failure.code === RESULT_CODES.CONFLICT) {
-      const currentTaskId = task.value.id,
-        currentDraftId = draft.value.id,
-        version = selection
-      const latest = await getTask(currentTaskId, signal)
-      if (
-        signal.aborted ||
-        version !== selection ||
-        task.value?.id !== currentTaskId ||
-        draft.value?.id !== currentDraftId
-      )
-        return
-      task.value = latest
-      pendingSync.value = {
-        id: currentDraftId,
-        body: {
-          clientActionId: newRequestId(),
-          taskStateVersion: latest.taskStateVersion,
-        },
-      }
-      throw new Error(
-        '正式动作已提交，任务版本已刷新。请再次点击核对同步；不会重复执行正式动作。',
-        { cause: failure },
-      )
-    }
-    throw failure
-  }
-  adoptedRoot.value = draft.value.draftRootId
-  pendingSync.value = null
-  await loadCurrent()
-}
-function recoverDraft() {
-  void run(async () => {
-    if (!pendingDraft.value) return
-    showDraft(await draftReceipt(pendingDraft.value.clientRequestId, signal))
-    pendingDraft.value = null
-  })
-}
-function adopt() {
-  void run(async () => {
-    if (!draft.value || !conversation.value || !task.value) return
-    if (pendingSync.value || adoptedRoot.value === draft.value.draftRootId)
-      throw new Error('正式动作已提交，请核对任务同步结果')
-    if (
-      !adoption.value &&
-      (draftChanged.value ||
-        pendingRevision.value ||
-        draft.value.status !== 'PENDING')
-    )
-      throw new Error('请先保存并核对当前草稿修订，再确认采用')
-    if (!adoption.value) {
-      if (draft.value.purpose === 'CREATE_TICKET')
-        adoption.value = {
-          kind: 'CREATE',
-          form: {
-            clientRequestId: newRequestId(),
-            title: draftContent.value.title,
-            symptom: draftContent.value.symptom,
-            attemptedActions: draftContent.value.attemptedActions || null,
-            serviceItemId: task.value.serviceItemId,
-            deviceId: task.value.deviceId,
-            supportContext: { ...task.value.supportContext },
-            serviceAreaCode: null,
-            serviceLocation: null,
-            sourceDraftId: draft.value.id,
-            sourceDraftRootId: draft.value.draftRootId,
-            contentSha256: draft.value.contentSha256,
-          },
-        }
-      else if (draft.value.purpose === 'BOOK_ONSITE') {
-        if (!draft.value.ticketId || draft.value.ticketRowVersion === null)
-          throw new Error('预约草稿缺少工单版本')
-        adoption.value = {
-          kind: 'BOOK',
-          ticketId: draft.value.ticketId,
-          form: {
-            clientRequestId: newRequestId(),
-            rowVersion: draft.value.ticketRowVersion,
-            slotId: draftContent.value.slotId,
-            sourceDraftId: draft.value.id,
-            sourceDraftRootId: draft.value.draftRootId,
-            contentSha256: draft.value.contentSha256,
-          },
-        }
-      } else {
-        if (!props.ticket || draft.value.ticketRowVersion === null)
-          throw new Error('处理草稿缺少工单版本')
-        const base = {
-          clientActionId: newRequestId(),
-          rowVersion: draft.value.ticketRowVersion,
-          content: draftContent.value.content,
-          sourceDraftId: draft.value.id,
-          sourceDraftRootId: draft.value.draftRootId,
-          contentSha256: draft.value.contentSha256,
-        }
-        adoption.value = {
-          kind: 'ACTION',
-          action:
-            draft.value.purpose === 'ADD_RECORD'
-              ? { name: 'comments', form: { ...base, visibility: 'PUBLIC' } }
-              : draft.value.purpose === 'REQUEST_INFORMATION'
-                ? {
-                    name: 'request-information',
-                    form: {
-                      ...base,
-                      followUpAt: draftContent.value.followUpAt,
-                    },
-                  }
-                : {
-                    name: 'resolve',
-                    form: {
-                      ...base,
-                      resolutionType: draftContent.value.resolutionType,
-                      referralTarget: draftContent.value.referralTarget || null,
-                    },
-                  },
-        }
-      }
-    }
-    if (adoption.value.kind === 'CREATE') {
-      const value = await createTicket(
-        adoption.value.form,
-        await auth.token(),
-        signal,
-      )
-      adoption.value = null
-      await syncAdoption()
-      await router.push(`/tickets/${value.id}`)
-    } else if (adoption.value.kind === 'BOOK') {
-      const value = await bookOnsite(
-        adoption.value.ticketId,
-        adoption.value.form,
-        await auth.token(),
-      )
-      adoption.value = null
-      await syncAdoption()
-      notice.value =
-        value.status === 'CONFIRMED'
-          ? '上门预约已确认。'
-          : `预约未成功：${value.resultCode}，请重新选择时段。`
-    } else {
-      if (!props.ticket) return
-      await act(
-        props.ticket.id,
-        adoption.value.action,
-        await auth.token(),
-        signal,
-      )
-      adoption.value = null
-      await syncAdoption()
-      notice.value = '人工确认动作已提交，请以工单时间线为准。'
-      emit('changed')
-    }
-  })
-}
-function recoverAdoption() {
-  void run(async () => {
-    if (!adoption.value) return
-    if (adoption.value.kind === 'CREATE') {
-      const value = await creationReceipt(
-        adoption.value.form.clientRequestId,
-        signal,
-      )
-      adoption.value = null
-      await syncAdoption()
-      await router.push(`/tickets/${value.id}`)
-    } else if (adoption.value.kind === 'BOOK') {
-      const value = await bookingReceipt(
-        adoption.value.ticketId,
-        adoption.value.form.clientRequestId,
-        signal,
-      )
-      adoption.value = null
-      await syncAdoption()
-      notice.value = `已核对预约结果：${value.status}`
-    } else if (props.ticket) {
-      await actionReceipt(
-        props.ticket.id,
-        adoption.value.action.form.clientActionId,
-        signal,
-      )
-      adoption.value = null
-      await syncAdoption()
-      notice.value = '已查到原工单动作回执。'
-      emit('changed')
-    }
   })
 }
 function rate(helpful: boolean) {
@@ -1208,11 +857,8 @@ watch(
     current.value = null
     turns.value = []
     facts.value = []
-    clearDraftSelection()
+    resetDrafts()
     pending.value = null
-    pendingDraft.value = null
-    pendingRevision.value = null
-    adoption.value = null
     pendingCheck.value = false
     pendingCreate.value = null
     pendingTask.value = null
@@ -1504,7 +1150,10 @@ function factPageNext() {
       </form>
       <article v-if="current" class="panel" aria-live="polite">
         <h3>{{ statusNames[current.status] }}</h3>
-        <p v-if="streaming">正在订阅真实阶段，关闭页面只结束订阅。</p>
+        <p v-if="current.status === 'RUNNING'">
+          {{ phaseNames[current.executionPhase] }} · 迭代
+          {{ current.iterationNumber }}
+        </p>
         <p>{{ current.question }}</p>
         <ElAlert
           v-if="current.stale && !current.sourcesHidden"

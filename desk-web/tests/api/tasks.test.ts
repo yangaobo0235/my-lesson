@@ -5,11 +5,9 @@ import {
   createTask,
   taskReceipt,
 } from '../../src/api/diagnosis/taskApi'
-import {
-  conversation,
-  createRun,
-  draft,
-} from '../../src/api/diagnosis/diagnosisApi'
+import { conversation } from '../../src/api/diagnosis/conversationApi'
+import { createRun } from '../../src/api/diagnosis/runApi'
+import { draft } from '../../src/api/diagnosis/draftApi'
 
 /** 固定回执与严格值域防止保存反馈时隐式生成新运行。 @author yangaobo */
 const id = 'a'.repeat(32),

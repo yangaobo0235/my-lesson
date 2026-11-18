@@ -53,6 +53,25 @@ public class ServiceItemServiceImpl extends ServiceImpl<ServiceItemMapper, Servi
         if (!actor.getRoles().contains("SERVICE_AGENT")
                 && !actor.getRoles().contains("KNOWLEDGE_ADMIN"))
             SupportAuthorization.administrator(actor);
+        return listCatalog(form);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public PageVO<ServiceItemVO> listKnowledgeItems(IdentityDTO actor, SupportQueryForm form) {
+        SupportAuthorization.role(actor, "KNOWLEDGE_ADMIN");
+        return listCatalog(form);
+    }
+
+    /**
+     * 为已通过授权的目录用例执行相同的分页查询和投影。
+     *
+     * @param form 目录筛选与分页参数
+     * @return 服务项目分页
+     */
+    private PageVO<ServiceItemVO> listCatalog(SupportQueryForm form) {
         long total = baseMapper.countItems(form);
         var records = baseMapper.listItems(form, form.getPageSize(), form.offset())
                 .stream().map(TicketViews::of).toList();

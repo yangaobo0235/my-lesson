@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onScopeDispose, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -38,6 +38,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { useOperation } from '../../composables/useOperation'
 import RuleEditor from './RuleEditor.vue'
 import ProcedureEditor from './ProcedureEditor.vue'
+import { isIndexSettled, useIndexPolling } from './useIndexPolling'
 import type { ProcedureInput } from '../../api/knowledge/procedures'
 
 /** 原件、索引事务、AI执行和发布分别显示，超时沿原键查证。 @author yangaobo */
@@ -93,9 +94,7 @@ const safetyPending = ref<{
   body: DocumentSafetyInput
 } | null>(null)
 const safetyReason = ref('')
-let timer: ReturnType<typeof setTimeout> | undefined,
-  pollingUntil = 0,
-  selectionVersion = 0
+let selectionVersion = 0
 const frozen = computed(
   () =>
     busy.value ||
@@ -106,20 +105,31 @@ const frozen = computed(
 const canIndex = computed(
   () =>
     selected.value?.publicationStatus === 'DRAFT' &&
-    (!job.value ||
-      job.value.submitState === 'ABORTED' ||
-      (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(
-        job.value.aiStatus ?? '',
-      ) &&
-        ['NOT_REQUIRED', 'NOT_SUBMITTED', 'SETTLED'].includes(
-          job.value.parserState ?? '',
-        ) &&
-        job.value.cancelState !== 'PREPARING')),
+    (!job.value || isIndexSettled(job.value)),
 )
-function stopPolling() {
-  if (timer) clearTimeout(timer)
-  timer = undefined
-}
+
+const { start: pollIndex, stop: stopPolling } = useIndexPolling({
+  signal,
+  readJob: async (id, owned) => getIndex({ id }, await auth.token(), owned),
+  readDocument: async (id, owned) => getDocument(id, await auth.token(), owned),
+  updateJob: (value) => {
+    job.value = value
+  },
+  updateDocument: (value) => {
+    if (
+      selected.value?.id === value.id &&
+      BigInt(value.rowVersion) >= BigInt(selected.value.rowVersion)
+    )
+      selected.value = value
+  },
+  failed: (failure) => {
+    error.value =
+      failure instanceof Error
+        ? failure.message
+        : '索引状态查询失败，请沿原任务重新核对'
+  },
+})
+
 async function loadList() {
   const value = await listDocuments(
     seriesId.value,
@@ -130,51 +140,19 @@ async function loadList() {
   docs.value = value.records
   total.value = value.total
 }
-async function readSelected() {
-  if (selected.value)
-    selected.value = await getDocument(
-      selected.value.id,
-      await auth.token(),
-      signal,
-    )
+/** 刷新明确的资料身份后开启新的索引轮询。 */
+async function refreshIndexStatus() {
+  const id = selected.value?.id
+  const version = selectionVersion
+  if (!id) return
+  const document = await getDocument(id, await auth.token(), signal)
+  if (signal.aborted || version !== selectionVersion) return
+  selected.value = document
+  pollIndex(document)
 }
-async function poll(version: number) {
-  if (
-    !selected.value?.currentJobId ||
-    version !== selectionVersion ||
-    signal.aborted
-  )
-    return
-  try {
-    const value = await getIndex(
-      { id: selected.value.currentJobId },
-      await auth.token(),
-      signal,
-    )
-    if (version !== selectionVersion || signal.aborted) return
-    job.value = value
-    const settled =
-      value.submitState === 'ABORTED' ||
-      (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(value.aiStatus ?? '') &&
-        ['NOT_REQUIRED', 'NOT_SUBMITTED', 'SETTLED'].includes(
-          value.parserState ?? '',
-        ) &&
-        value.cancelState !== 'PREPARING')
-    if (!settled && Date.now() < pollingUntil)
-      timer = setTimeout(() => {
-        void poll(version)
-      }, 3000)
-    else await readSelected()
-  } catch (failure) {
-    if (!signal.aborted && version === selectionVersion)
-      error.value =
-        failure instanceof Error
-          ? failure.message
-          : '索引状态查询失败，请沿原任务重新核对'
-  }
-}
+
 function select(value: KnowledgeDocument) {
-  if (procedurePending.value) return
+  if (busy.value || procedurePending.value) return
   stopPolling()
   selectionVersion++
   const version = selectionVersion
@@ -185,7 +163,7 @@ function select(value: KnowledgeDocument) {
       await auth.token(),
       signal,
     )
-    if (version !== selectionVersion) return
+    if (signal.aborted || version !== selectionVersion) return
     selectedSeries.value = source
     selected.value = document
     procedureDefinition.value = document.procedureDefinition
@@ -199,8 +177,7 @@ function select(value: KnowledgeDocument) {
       applicabilityNote: document.applicabilityNote,
       rules: document.rules.map((rule) => ({ ...rule })),
     }
-    pollingUntil = Date.now() + 300000
-    if (document.currentJobId) void poll(version)
+    pollIndex(document)
   })
 }
 function newRevision() {
@@ -335,6 +312,7 @@ function save() {
 function index() {
   void run(async () => {
     if (!selected.value) return
+    stopPolling()
     indexPending.value ??= {
       document: { ...selected.value },
       key: newRequestId(),
@@ -347,13 +325,12 @@ function index() {
       indexPending.value.parserTier,
     )
     indexPending.value = null
-    await readSelected()
-    pollingUntil = Date.now() + 300000
-    void poll(selectionVersion)
+    await refreshIndexStatus()
   })
 }
 function checkIndex() {
   void run(async () => {
+    stopPolling()
     if (indexPending.value) {
       job.value = await getIndex(
         { clientRequestId: indexPending.value.key },
@@ -367,24 +344,23 @@ function checkIndex() {
         await auth.token(),
         signal,
       )
-    await readSelected()
-    pollingUntil = Date.now() + 300000
-    void poll(selectionVersion)
+    await refreshIndexStatus()
   })
 }
 function cancel() {
   void run(async () => {
     if (!selected.value) return
+    stopPolling()
     job.value = await cancelIndex(selected.value, await auth.token())
-    await readSelected()
-    pollingUntil = Date.now() + 300000
-    void poll(selectionVersion)
+    await refreshIndexStatus()
   })
 }
 function replay() {
   void run(async () => {
-    if (job.value)
-      job.value = await replayIndex(job.value.id, await auth.token())
+    if (!job.value) return
+    stopPolling()
+    job.value = await replayIndex(job.value.id, await auth.token())
+    await refreshIndexStatus()
   })
 }
 function publication(action: 'publish' | 'replace' | 'disable' | 'restore') {
@@ -475,7 +451,6 @@ onMounted(() => {
     await loadList()
   })
 })
-onScopeDispose(stopPolling)
 
 function pageNumReset() {
   pageNum.value = 1

@@ -4,9 +4,9 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
-from servicedesk_ai.api.diagnosis import router as diagnosis_router
+from servicedesk_ai.api import action_drafts, conversations, feedback, runs, tasks
 from servicedesk_ai.api.errors import register_error_handlers
 from servicedesk_ai.api.health import router as health_router
 from servicedesk_ai.api.trace import RequestTraceMiddleware
@@ -52,6 +52,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.add_middleware(RequestTraceMiddleware)
     application.include_router(health_router)
-    application.include_router(diagnosis_router)
+    private_api = APIRouter(prefix="/api/v1/ai", tags=["私有辅助排障"])
+    for router in (
+        tasks.router,
+        conversations.router,
+        runs.router,
+        action_drafts.router,
+        feedback.router,
+    ):
+        private_api.include_router(router)
+    application.include_router(private_api)
     register_error_handlers(application)
     return application

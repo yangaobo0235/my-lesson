@@ -287,9 +287,21 @@ class Workflow:
             event["visibility"] == "INTERNAL"
             for event in winner.call(path + "/events", ticket=True)["records"]
         )
-        self.action(winner, ticket, "request-information", content="请确认是否仅当前用户受影响")
+        information = {
+            "clientActionId": key(),
+            "rowVersion": ticket["rowVersion"],
+            "content": "请确认是否仅当前用户受影响",
+        }
+        winner.call(path + "/request-information", information, ticket=True, code=1001)
+        follow_up = datetime.now(UTC).replace(microsecond=0) + timedelta(hours=1)
+        winner.call(
+            path + "/request-information",
+            information | {"followUpAt": follow_up.isoformat()},
+            ticket=True,
+        )
         ticket = self.current(customer, ticket)
         assert ticket["status"] == "WAITING_CUSTOMER"
+        assert datetime.fromisoformat(ticket["followUpAt"]) == follow_up
         self.action(customer, ticket, "supplements", content="其他用户正常，仅当前用户")
         ticket = self.current(winner, ticket)
         assert ticket["status"] == "PROCESSING"

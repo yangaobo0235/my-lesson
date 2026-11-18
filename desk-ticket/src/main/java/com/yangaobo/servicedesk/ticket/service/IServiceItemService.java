@@ -22,6 +22,15 @@ public interface IServiceItemService extends IService<ServiceItemEntity> {
     PageVO<ServiceItemVO> listItems(IdentityDTO actor, SupportQueryForm form);
 
     /**
+     * 知识管理员分页查询可用作资料适用规则的服务目录。
+     *
+     * @param actor 当前操作者
+     * @param form  目录筛选与分页参数
+     * @return 服务项目分页
+     */
+    PageVO<ServiceItemVO> listKnowledgeItems(IdentityDTO actor, SupportQueryForm form);
+
+    /**
      * 管理员读取目标项目。
      */
     ServiceItemVO query(IdentityDTO actor, String id);

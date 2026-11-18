@@ -6,6 +6,27 @@ from typing import Literal
 from servicedesk_ai.schemas.diagnosis_views import CitationView
 from servicedesk_ai.schemas.indexing import Identifier, WireModel
 from servicedesk_ai.schemas.runs import RunResult
+from servicedesk_ai.schemas.tasks import TaskStatus
+
+RunStatus = Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED"]
+ExecutionPhase = Literal["CONTEXT", "MODEL", "TOOL", "COMMIT"]
+
+
+class RunStageView(WireModel):
+    """订阅中实际已持久化的运行状态、阶段与迭代号。"""
+
+    status: RunStatus
+    execution_phase: ExecutionPhase
+    iteration_number: int
+
+
+class RunTaskUpdate(WireModel):
+    """本轮提交时的任务版本及新待答检查身份。"""
+
+    task_id: Identifier
+    status: TaskStatus
+    task_state_version: str
+    pending_check_ids: list[Identifier]
 
 
 class RunView(WireModel):
@@ -16,8 +37,8 @@ class RunView(WireModel):
     task_id: Identifier | None
     input_message_id: Identifier
     output_message_id: Identifier | None
-    status: Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED"]
-    execution_phase: Literal["CONTEXT", "MODEL", "TOOL", "COMMIT"]
+    status: RunStatus
+    execution_phase: ExecutionPhase
     iteration_number: int
     question: str
     answer: str | None

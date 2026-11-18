@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getFeedback, putFeedback } from '../../src/api/diagnosis/diagnosisApi'
+import { getFeedback, putFeedback } from '../../src/api/diagnosis/feedbackApi'
 
 /** 私有评价不继承旧共享协议，采纳与版本按原输入提交。 @author yangaobo */
 describe('私有运行反馈', () => {

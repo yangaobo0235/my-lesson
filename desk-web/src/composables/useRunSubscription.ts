@@ -1,11 +1,16 @@
 import { onScopeDispose, ref } from 'vue'
-import { getRun, subscribeRun, type Run } from '../api/diagnosis/diagnosisApi'
+import {
+  getRun,
+  subscribeRun,
+  type Run,
+  type RunStage,
+} from '../api/diagnosis/runApi'
 
 /** 订阅与核对共用同一生命周期，迟到状态不能覆盖新会话。 @author yangaobo */
 export function useRunSubscription(options: {
   signal: AbortSignal
   csrf: () => Promise<string>
-  status: (id: string, status: Run['status']) => void
+  stage: (id: string, value: RunStage) => void
   notice: (message: string) => void
   snapshot: (value: Run) => Promise<void>
   failed: (failure: unknown) => void
@@ -37,8 +42,8 @@ export function useRunSubscription(options: {
         id,
         csrf,
         signal,
-        (status) => {
-          if (live()) options.status(id, status)
+        (value) => {
+          if (live()) options.stage(id, value)
         },
         (tool) => {
           if (live()) options.notice(`只读工具 ${tool.name}：${tool.status}`)

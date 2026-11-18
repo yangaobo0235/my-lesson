@@ -9,6 +9,7 @@ from typing import Literal
 from uuid import uuid4
 
 from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
@@ -72,6 +73,86 @@ async def receipt(db: AsyncConnection, owner: str, key: str) -> RunReceipt | Non
         .first()
     )
     return None if row is None else RunReceipt(**row)
+
+
+async def context_rows(
+    db: AsyncConnection, run: RunLease
+) -> tuple[list[RowMapping], list[RowMapping], list[RowMapping]]:
+    """按受理时的消息摘要、事实版本和检查版本加载模型候选输入。"""
+    history: list[RowMapping] = []
+    facts: list[RowMapping] = []
+    checks: list[RowMapping] = []
+    for reference in run.context_manifest.messages:
+        row = (
+            (
+                await db.execute(
+                    text("""
+            SELECT m.id,m.role,m.content,m.content_sha256,m.task_id,
+                   r.id AS source_run_id
+            FROM ai_message m LEFT JOIN ai_run r ON r.output_message_id=m.id
+            WHERE m.id=:id AND m.conversation_id=:conversation
+        """),
+                    {"id": reference.id, "conversation": run.conversation_id},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        if row["content_sha256"] != reference.content_sha256 or row["task_id"] != run.task_id:
+            raise BusinessError(CommonErrorCode.CONFLICT)
+        history.append(row)
+    for fact_reference in run.context_manifest.facts:
+        row = (
+            (
+                await db.execute(
+                    text("""
+            SELECT f.id,f.statement,f.source_type,f.environment_snapshot,f.state_version,
+                   f.fact_kind,f.created_at,
+                   c.run_id AS source_run_id
+            FROM ai_diagnostic_fact f LEFT JOIN ai_tool_call c ON c.id=f.source_tool_call_id
+            WHERE f.id=:id AND f.task_id=:task AND f.state_version=:version
+        """),
+                    {
+                        "id": fact_reference.id,
+                        "task": run.task_id,
+                        "version": fact_reference.state_version,
+                    },
+                )
+            )
+            .mappings()
+            .one()
+        )
+        facts.append(row)
+    for check_reference in run.context_manifest.checks:
+        check_row = (
+            (
+                await db.execute(
+                    text("""
+            SELECT c.id,c.check_key,c.check_kind,c.instruction,c.status,c.normalized_answer,
+                   c.context_version,c.proposed_run_id,c.procedure_document_id,
+                   c.procedure_check_key,c.answer_message_id,c.answered_at,c.row_version,
+                   c.result_fact_id,
+                   m.content_sha256 AS answer_sha256
+            FROM ai_diagnostic_check c LEFT JOIN ai_message m
+              ON m.id=c.answer_message_id AND m.task_id=c.task_id AND m.role='USER'
+            WHERE c.id=:id AND c.task_id=:task
+              AND c.row_version=:version AND c.context_version=:context
+        """),
+                    {
+                        "id": check_reference.id,
+                        "task": run.task_id,
+                        "version": check_reference.row_version,
+                        "context": check_reference.context_version,
+                    },
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if check_row is None:
+            raise BusinessError(CommonErrorCode.CONFLICT)
+        checks.append(check_row)
+    return history, facts, checks
 
 
 async def save_context(db: AsyncConnection, value: RunLease) -> None:

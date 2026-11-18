@@ -9,11 +9,7 @@ import {
   record,
   text,
 } from '../validation'
-import {
-  affectedScope,
-  connectionType,
-  type SupportContextForm,
-} from '../support/types'
+import { supportContext, type SupportContextForm } from '../support/types'
 
 export const status = choices(
   'SUBMITTED',
@@ -33,19 +29,6 @@ export const statusNames: Record<TicketStatus, string> = {
   RESOLVED: '待确认',
   CLOSED: '已结单',
   CANCELLED: '已取消',
-}
-/** 固定环境快照转为编辑表单时保留空值，不从历史模型回答推断。 */
-export function supportContext(v: unknown): SupportContextForm {
-  const o = record(v)
-  return {
-    osName: nullable(text)(o.osName),
-    osVersion: nullable(text)(o.osVersion),
-    softwareName: nullable(text)(o.softwareName),
-    softwareVersion: nullable(text)(o.softwareVersion),
-    errorCode: nullable(text)(o.errorCode),
-    connectionType: connectionType(o.connectionType),
-    affectedScope: affectedScope(o.affectedScope),
-  }
 }
 /** 页面消费明确投影，额外服务端字段不进入编辑表单。 @author yangaobo */
 export function ticket(v: unknown) {

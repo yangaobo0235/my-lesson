@@ -49,6 +49,20 @@ export const blankContext = (): SupportContextForm => ({
   connectionType: 'UNKNOWN',
   affectedScope: 'UNKNOWN',
 })
+/** 固定环境快照转为编辑表单时保留空值，不从历史模型回答推断。 */
+export function supportContext(v: unknown): SupportContextForm {
+  const o = record(v)
+  return {
+    osName: nullable(text)(o.osName),
+    osVersion: nullable(text)(o.osVersion),
+    softwareName: nullable(text)(o.softwareName),
+    softwareVersion: nullable(text)(o.softwareVersion),
+    errorCode: nullable(text)(o.errorCode),
+    connectionType: connectionType(o.connectionType),
+    affectedScope: affectedScope(o.affectedScope),
+  }
+}
+
 export function serviceItem(v: unknown) {
   const o = record(v)
   return {

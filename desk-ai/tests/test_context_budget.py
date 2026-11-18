@@ -259,7 +259,7 @@ def test_schema_compaction_keeps_transitive_recursive_refs_and_drops_unreachable
 
 def test_procedure_preview_contract_has_no_operational_checks():
     """仅发现审核规程时不能输出操作选项，无候选的相关定义也不占输入预算。"""
-    from servicedesk_ai.diagnosis.execution import result_schema
+    from servicedesk_ai.diagnosis.model_request import result_schema
 
     schema = result_schema(True, [])
     assert "ProcedureChecks" not in schema["$defs"]

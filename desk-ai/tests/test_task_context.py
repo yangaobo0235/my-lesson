@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from servicedesk_ai.diagnosis.execution import (
+from servicedesk_ai.diagnosis.run_context import (
     check_message,
     fact_message,
     history_message,

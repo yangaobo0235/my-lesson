@@ -3,7 +3,7 @@
 import json
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from desk_contracts.user.v1.identity_pb2 import VerifiedIdentity
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
@@ -17,7 +17,7 @@ from servicedesk_ai.schemas.diagnosis_views import (
     ToolCallView,
 )
 from servicedesk_ai.schemas.procedures import ProcedureSnapshot
-from servicedesk_ai.schemas.run_views import MessagePage, MessageView, RunView
+from servicedesk_ai.schemas.run_views import MessagePage, MessageView, RunTaskUpdate, RunView
 from servicedesk_ai.schemas.runs import RunResult
 from servicedesk_ai.services.conversations import ConversationService, instant
 from servicedesk_ai.services.evidence import Evidence, EvidenceService
@@ -100,7 +100,7 @@ class RunReads:
             evidence,
         )
 
-    async def list(
+    async def list_for_conversation(
         self, actor: VerifiedIdentity, conversation_id: str, page: int, size: int
     ) -> PageView[RunView]:
         """执行历史按数据库分页，原始聊天另从消息游标读取。"""
@@ -275,19 +275,7 @@ class RunReads:
                 .mappings()
                 .all()
             )
-            tools = (
-                (
-                    await db.execute(
-                        text("""
-                SELECT tool_number,tool_name,status,result_summary,result_refs
-                FROM ai_tool_call WHERE run_id=:id ORDER BY tool_number
-            """),
-                        {"id": identifier},
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            tools = await self._tool_views(db, view)
         return CallsView(
             model_calls=[
                 ModelCallView(
@@ -306,19 +294,62 @@ class RunReads:
                 )
                 for row in models
             ],
-            tool_calls=[
-                ToolCallView(
-                    number=row["tool_number"],
-                    name=row["tool_name"],
-                    status=row["status"],
-                    result_summary=None if view.sources_hidden else row["result_summary"],
-                    source_usage_ids=[]
-                    if view.sources_hidden or not row["result_refs"]
-                    else json.loads(row["result_refs"]).get("source_usage_ids", []),
-                )
-                for row in tools
-            ],
+            tool_calls=tools,
         )
+
+    async def subscription_snapshot(
+        self, actor: VerifiedIdentity, identifier: str
+    ) -> tuple[RunView, list[ToolCallView], RunTaskUpdate | None]:
+        """一次订阅轮询只复核一次运行及来源，只读取需交付的工具和任务状态。"""
+        view = await self.get(actor, identifier)
+        async with self.engine.connect() as db:
+            tools = await self._tool_views(db, view)
+            update = None
+            if (
+                view.status == "SUCCEEDED"
+                and view.task_id
+                and view.output_state_version is not None
+                and not view.sources_hidden
+            ):
+                details = await tasks.completed_run_event(
+                    db, view.task_id, int(view.output_state_version)
+                )
+                if details is not None:
+                    update = RunTaskUpdate(
+                        task_id=view.task_id,
+                        status=details.receipt.status,
+                        task_state_version=view.output_state_version,
+                        pending_check_ids=details.changed_check_ids,
+                    )
+        return view, tools, update
+
+    async def _tool_views(self, db: AsyncConnection, view: RunView) -> list[ToolCallView]:
+        """同次授权读取的工具状态，来源隐藏时去除摘要和引用。"""
+        rows = (
+            (
+                await db.execute(
+                    text("""
+            SELECT tool_number,tool_name,status,result_summary,result_refs
+            FROM ai_tool_call WHERE run_id=:id ORDER BY tool_number
+        """),
+                    {"id": view.id},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return [
+            ToolCallView(
+                number=row["tool_number"],
+                name=row["tool_name"],
+                status=row["status"],
+                result_summary=None if view.sources_hidden else row["result_summary"],
+                source_usage_ids=[]
+                if view.sources_hidden or not row["result_refs"]
+                else json.loads(row["result_refs"]).get("source_usage_ids", []),
+            )
+            for row in rows
+        ]
 
     async def messages(
         self, actor: VerifiedIdentity, conversation_id: str, after: int, limit: int

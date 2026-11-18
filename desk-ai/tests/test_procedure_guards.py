@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from servicedesk_ai.diagnosis.execution import result_schema
+from servicedesk_ai.diagnosis.model_request import result_schema
 from servicedesk_ai.errors.common import BusinessError, CommonErrorCode
 from servicedesk_ai.repositories import tasks
 from servicedesk_ai.schemas.procedures import ProcedureCheck, ProcedureDefinition
@@ -695,7 +695,7 @@ def test_procedure_status_rejects_model_prose_and_requires_recovery_reference():
 )
 def test_free_analysis_and_clarification_still_require_review(extra):
     """跳过的是宿主确定的文字；自由假设、草稿、澄清及普通RAG继续审核。"""
-    from servicedesk_ai.diagnosis.execution import needs_model_review
+    from servicedesk_ai.diagnosis.model_request import needs_model_review
 
     result = RunResult.model_validate({"text": "宿主状态", "answer_type": "HANDOVER"} | extra)
     assert needs_model_review(result, True) == bool(extra)
@@ -777,7 +777,9 @@ async def test_procedure_decision_uses_host_output_without_semantic_judge(monkey
     worker.engine = SimpleNamespace(connect=connection)
     worker.verify = AsyncMock()
     worker.hazard_report = AsyncMock(return_value=False)
-    worker.messages = AsyncMock(return_value=(run, [ModelMessage(role="user", content="请排查")]))
+    worker.context_builder = SimpleNamespace(
+        build=AsyncMock(return_value=(run, [ModelMessage(role="user", content="请排查")]))
+    )
     worker.evidence = SimpleNamespace(list_items=AsyncMock(return_value=[source]))
     worker.completion = RunCompletion(worker.engine, None)
     worker.completion.unavailable_procedure_checks = AsyncMock(return_value={})
@@ -901,7 +903,7 @@ def test_clarification_schema_only_exposes_missing_procedure_environment():
 )
 def test_procedure_acquisition_precedes_free_document_reading(mixed, loaded, forced):
     """只有纯审核候选且尚未加载时固定取证阶段，不改变普通资料或混合资料的选择能力。"""
-    from servicedesk_ai.diagnosis.execution import discovery_tools
+    from servicedesk_ai.diagnosis.model_request import discovery_tools
     from servicedesk_ai.infrastructure.models import ModelTool
 
     source = Evidence(
@@ -953,7 +955,7 @@ def test_procedure_acquisition_precedes_free_document_reading(mixed, loaded, for
 @pytest.mark.parametrize("remaining,search_allowed", [(6, True), (5, False), (4, False)])
 def test_search_availability_includes_embedding_and_finalization_budget(remaining, search_allowed):
     """下一次Chat加查询Embedding仍须留四次收束预算，不把搜索当作免费只读。"""
-    from servicedesk_ai.diagnosis.execution import discovery_tools
+    from servicedesk_ai.diagnosis.model_request import discovery_tools
     from servicedesk_ai.infrastructure.models import ModelTool
 
     definitions = [

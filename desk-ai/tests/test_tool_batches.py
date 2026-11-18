@@ -32,7 +32,9 @@ async def test_stalled_round_finishes_without_another_discovery_call(monkeypatch
     )
     worker.engine = SimpleNamespace(connect=connection)
     worker.verify = AsyncMock()
-    worker.messages = AsyncMock(return_value=(run, [ModelMessage(role="user", content="当前问题")]))
+    worker.context_builder = SimpleNamespace(
+        build=AsyncMock(return_value=(run, [ModelMessage(role="user", content="当前问题")]))
+    )
     worker.evidence = SimpleNamespace(list_items=AsyncMock(return_value=[]))
     worker.tools = SimpleNamespace(
         no_progress=AsyncMock(return_value=no_progress),

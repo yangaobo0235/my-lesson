@@ -4,11 +4,11 @@ import { ElAlert, ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import {
   answerCheck,
   listChecks,
-  type CheckAnswerInput,
   type DiagnosticCheck,
   type DiagnosisTask,
   type TaskReceipt,
 } from '../../api/diagnosis/taskApi'
+import type { CheckAnswerInput } from '../../api/diagnosis/types'
 import { ApiError, newRequestId } from '../../api/http'
 import { useOperation } from '../../composables/useOperation'
 import { useAuthStore } from '../../stores/authStore'

@@ -60,7 +60,9 @@ async def test_rejected_candidate_is_never_published_and_correction_stays_bounde
     worker = RunWorker(SimpleNamespace(connect=connect), None, None, None, None, None, None)
     worker.verify = AsyncMock()
     worker.hazard_report = AsyncMock(return_value=False)
-    worker.messages = AsyncMock(return_value=(run, [ModelMessage(role="user", content="问题")]))
+    worker.context_builder = SimpleNamespace(
+        build=AsyncMock(return_value=(run, [ModelMessage(role="user", content="问题")]))
+    )
     worker.evidence = SimpleNamespace(list_items=AsyncMock(return_value=[]))
     worker.tools = SimpleNamespace(definitions=lambda _: [])
     worker.completion = SimpleNamespace(has_diagnostic_basis=AsyncMock(return_value=True))

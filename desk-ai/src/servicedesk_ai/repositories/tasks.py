@@ -299,6 +299,22 @@ async def assert_idle(db: AsyncConnection, conversation_id: str) -> None:
         raise BusinessError(CommonErrorCode.CONFLICT)
 
 
+async def completed_run_event(
+    db: AsyncConnection, task_id: str, state_version: int
+) -> TaskEventDetails | None:
+    """读取运行完成时提交的任务事件，后续反馈或更正在独立版本。"""
+    value = (
+        await db.execute(
+            text(
+                "SELECT details FROM ai_task_event WHERE task_id=:task "
+                "AND state_version=:version AND event_type='RUN_COMPLETED'"
+            ),
+            {"task": task_id, "version": state_version},
+        )
+    ).scalar_one_or_none()
+    return TaskEventDetails.model_validate_json(value) if value is not None else None
+
+
 async def decision_time(db: AsyncConnection) -> datetime:
     """有效期与数据库租约共用UTC时钟，不能按Web进程本地时间决定。"""
     return (await db.execute(text("SELECT UTC_TIMESTAMP(6)"))).scalar_one()

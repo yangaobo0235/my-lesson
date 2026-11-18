@@ -12,20 +12,18 @@ import {
   record,
   text,
 } from '../validation'
-import { fact, supportContext, type SafetyCondition } from './diagnosisApi'
-import type { SupportContextForm } from '../support/types'
+import { supportContext, type SupportContextForm } from '../support/types'
+import {
+  factKind,
+  safetyCondition,
+  taskStatus,
+  type CheckAnswerInput,
+  type FactInput,
+  type TaskAction,
+  type TaskInput,
+} from './types'
 
 /** 诊断任务与人工检查合同；答复保存不隐式发起模型运行。 @author yangaobo */
-const taskStatus = choices(
-  'ACTIVE',
-  'WAITING_USER',
-  'WAITING_APPROVAL',
-  'BLOCKED_EXTERNAL',
-  'RESOLVED_REPORTED',
-  'HANDED_OFF',
-  'CLOSED',
-  'CANCELLED',
-)
 const checkStatus = choices(
   'OPEN',
   'ANSWERED',
@@ -85,14 +83,8 @@ export function taskReceipt(value: unknown) {
   }
 }
 
-/** 正式动作提交后显式核对Java回执，不从浏览器成功提示推断任务终态。 */
-export const synchronizeDraft = (
-  id: string,
-  body: { clientActionId: string; taskStateVersion: string },
-  csrf: string,
-) => request(`ai/action-drafts/${id}/synchronize`, taskReceipt, { body, csrf })
 /** 规范答案保留 false 与零，未执行和未知结果均需明确。 */
-function answer(value: unknown) {
+function answer(value: unknown): CheckAnswerInput['answer'] {
   const o = record(value),
     v = o.value
   if (
@@ -147,24 +139,6 @@ export function check(value: unknown) {
 export type DiagnosisTask = ReturnType<typeof task>
 export type DiagnosticCheck = ReturnType<typeof check>
 export type TaskReceipt = ReturnType<typeof taskReceipt>
-export type TaskAction = { clientActionId: string; taskStateVersion: string }
-export type TaskInput = {
-  clientActionId: string
-  goal: string
-  serviceItemId?: string | null
-  deviceId?: string | null
-  supportContext?: SupportContextForm
-}
-export type FactInput = TaskAction & {
-  action: 'ASSERT' | 'CORRECT' | 'RETRACT'
-  statement: string
-  factKind: ReturnType<typeof fact>['factKind']
-  predecessorFactId: string | null
-  reportedConditions?: SafetyCondition[]
-}
-export type CheckAnswerInput = TaskAction & {
-  answer: ReturnType<typeof answer>
-}
 
 /** 任务创建和查询始终受会话私有范围约束。 */
 export const createTask = (id: string, body: TaskInput, csrf: string) =>
@@ -207,33 +181,25 @@ export const closeTask = (
   csrf: string,
 ) => request(`ai/tasks/${id}/${action}`, taskReceipt, { body, csrf })
 
-/** 独立消息按服务端游标读取，不从运行次数推算序号。 */
-export function messagePage(value: unknown) {
+/** 事实来源与更正链由后端提供，前端不推断执行结果。 */
+export function fact(value: unknown) {
   const o = record(value)
   return {
-    records: array((value) => {
-      const m = record(value)
-      return {
-        id: identifier(m.id),
-        taskId: nullable(identifier)(m.taskId),
-        sequenceNumber: decimal(m.sequenceNumber),
-        role: choices('USER', 'ASSISTANT', 'SYSTEM')(m.role),
-        content: nullable(text)(m.content),
-        runId: nullable(identifier)(m.runId),
-        sourcesHidden: bool(m.sourcesHidden),
-      }
-    })(o.records),
-    nextCursor: decimal(o.nextCursor),
-    hasMore: bool(o.hasMore),
+    id: identifier(o.id),
+    stateVersion: decimal(o.stateVersion),
+    factKind: factKind(o.factKind),
+    operation: choices('ASSERT', 'CORRECT', 'RETRACT')(o.operation),
+    active: bool(o.active),
+    statement: nullable(text)(o.statement),
+    reportedConditions: array(safetyCondition)(o.reportedConditions),
+    sourceType: choices(
+      'USER_REPORT',
+      'HUMAN_RECORD',
+      'TOOL_OBSERVATION',
+    )(o.sourceType),
+    supersedesFactId: nullable(identifier)(o.supersedesFactId),
+    sourcesHidden: bool(o.sourcesHidden),
+    historicalEnvironment: bool(o.historicalEnvironment),
   }
 }
-export const listMessages = (
-  id: string,
-  afterSequence: string,
-  signal?: AbortSignal,
-) =>
-  request(
-    `ai/conversations/${id}/messages${query({ afterSequence })}`,
-    messagePage,
-    { signal },
-  )
+export type Fact = ReturnType<typeof fact>

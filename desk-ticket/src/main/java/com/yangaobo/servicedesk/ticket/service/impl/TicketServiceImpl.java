@@ -1,7 +1,6 @@
 package com.yangaobo.servicedesk.ticket.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -59,6 +58,7 @@ import com.yangaobo.servicedesk.ticket.service.ITicketEventService;
 import com.yangaobo.servicedesk.ticket.service.ITicketService;
 import com.yangaobo.servicedesk.ticket.service.SupportAuthorization;
 import com.yangaobo.servicedesk.ticket.service.TicketScope;
+import com.yangaobo.servicedesk.ticket.service.TicketStateWriter;
 import com.yangaobo.servicedesk.ticket.service.TicketViews;
 
 import java.time.LocalDateTime;
@@ -80,7 +80,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "desk.ticket.enabled", havingValue = "true", matchIfMissing = true)
 public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
-        implements ITicketService, ITicketDeadlineService {
+        implements ITicketService {
     private final TicketEventMapper eventMapper;
     private final ITicketEventService timelineService;
     private final IServiceEntitlementService entitlementService;
@@ -92,6 +92,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
     private final IdentityVerificationClient identityClient;
     private final ActionDraftClient draftClient;
     private final IActionReceiptService receiptService;
+    private final ITicketDeadlineService ticketDeadlineService;
+    private final TicketStateWriter stateWriter;
 
     /**
      * {@inheritDoc}
@@ -349,7 +351,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                 (ticket, now, metadata) -> {
                     SupportAuthorization.role(actor, "TECHNICIAN");
                     state(ticket, TicketStatusEnum.SUBMITTED.getValue());
-                    recordOverdue(ticket, now);
+                    ticketDeadlineService.recordAcceptanceOverdue(ticket, now);
                     ticket.setAssigneeId(actor.getOwnerId());
                     ticket.setFirstAcceptedAt(now);
                     ticket.setStatus(TicketStatusEnum.PROCESSING.getValue());
@@ -397,7 +399,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                     metadata.put("previous_assignee_id", ticket.getAssigneeId());
                     metadata.put("assignee_id", form.getAssigneeId());
                     if (ticket.getFirstAcceptedAt() == null) {
-                        recordOverdue(ticket, now);
+                        ticketDeadlineService.recordAcceptanceOverdue(ticket, now);
                         ticket.setFirstAcceptedAt(now);
                         ticket.setStatus(TicketStatusEnum.PROCESSING.getValue());
                     }
@@ -741,7 +743,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                     LocalDateTime now = baseMapper.decisionTime();
                     ObjectNode metadata = objectMapper.createObjectNode();
                     change.apply(ticket, now, metadata);
-                    save(ticket, now);
+                    stateWriter.save(ticket, now);
                     TicketEventEntity event = append(ticket, actor, type, form.getClientActionId(), hash,
                             from, visibility, content, metadata, now);
                     draftClient.requireValid(validation, baseMapper.decisionTime());
@@ -756,107 +758,6 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, TicketEntity>
                             objectMapper.valueToTree(form).path("sourceDraftRootId").asText(null), hash);
                     return old == null ? null : receiptService.view(old);
                 });
-    }
-
-    /**
-     * {@inheritDoc} 每笔重核后写入，不将扫描候选当当前状态。
-     */
-    @Override
-    public int scan(int limit) {
-        if (limit < 1 || limit > 200) throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
-        LocalDateTime time = baseMapper.decisionTime();
-        List<TicketEntity> candidates = baseMapper.scanDue(time, limit);
-        int count = 0;
-        for (TicketEntity candidate : candidates) {
-            boolean changed =
-                    transactions.execute(
-                            () -> {
-                                TicketEntity ticket = baseMapper.lock(candidate.getId());
-                                LocalDateTime now = baseMapper.decisionTime();
-                                if (TicketStatusEnum.SUBMITTED.getValue().equals(ticket.getStatus())
-                                        && ticket.getAcceptanceOverdueRecordedAt() == null
-                                        && now.isAfter(ticket.getAcceptanceDueAt())) {
-                                    recordOverdue(ticket, now);
-                                    save(ticket, now);
-                                    return true;
-                                }
-                                if (Set.of("WAITING_CUSTOMER", "WAITING_EXTERNAL").contains(ticket.getStatus())
-                                        && ticket.getFollowUpNotifiedAt() == null
-                                        && !now.isBefore(ticket.getFollowUpAt())) {
-                                    ticket.setFollowUpNotifiedAt(now);
-                                    save(ticket, now);
-                                    append(ticket, null, "FOLLOW_UP_DUE", null, null, ticket.getStatus(),
-                                            VisibilityEnum.INTERNAL.getValue(), "已到本轮跟进期限，请处理人核对进展",
-                                            objectMapper.createObjectNode().put("wait_cycle", ticket.getWaitCycle()), now);
-                                    return true;
-                                }
-                                if (TicketStatusEnum.RESOLVED.getValue().equals(ticket.getStatus())
-                                        && !now.isBefore(ticket.getConfirmationDueAt())) {
-                                    ticket.setStatus(TicketStatusEnum.CLOSED.getValue());
-                                    ticket.setClosureReason(
-                                            ClosureReasonEnum.CONFIRMATION_TIMEOUT.getValue());
-                                    ticket.setClosedAt(now);
-                                    save(ticket, now);
-                                    append(
-                                            ticket,
-                                            null,
-                                            TicketStatusEnum.CLOSED.getValue(),
-                                            null,
-                                            null,
-                                            TicketStatusEnum.RESOLVED.getValue(),
-                                            VisibilityEnum.PUBLIC.getValue(),
-                                            "处理结果超过72小时未反馈，按期限结单",
-                                            objectMapper
-                                                    .createObjectNode()
-                                                    .put(
-                                                            "closure_reason",
-                                                            ClosureReasonEnum.CONFIRMATION_TIMEOUT
-                                                                    .getValue()),
-                                            now);
-                                    return true;
-                                }
-                                return false;
-                            },
-                            () -> false);
-            if (changed) count++;
-        }
-        return count;
-    }
-
-    /**
-     * 持有工单锁的条件版本写入，空值通过实体策略清空。
-     */
-    private void save(TicketEntity ticket, LocalDateTime now) {
-        long version = ticket.getRowVersion();
-        ticket.setRowVersion(version + 1);
-        ticket.setUpdatedAt(now);
-        if (baseMapper.update(
-                ticket,
-                new LambdaUpdateWrapper<TicketEntity>()
-                        .eq(TicketEntity::getId, ticket.getId())
-                        .eq(TicketEntity::getRowVersion, version))
-                != 1) throw new BusinessException(CommonErrorCode.CONFLICT);
-    }
-
-    /**
-     * 补记首次受理超期，内部事件不发送给客户。
-     */
-    private void recordOverdue(TicketEntity ticket, LocalDateTime now) {
-        if (ticket.getAcceptanceOverdueRecordedAt() == null
-                && now.isAfter(ticket.getAcceptanceDueAt())) {
-            ticket.setAcceptanceOverdueRecordedAt(now);
-            append(
-                    ticket,
-                    null,
-                    "ACCEPTANCE_OVERDUE",
-                    null,
-                    null,
-                    ticket.getStatus(),
-                    VisibilityEnum.INTERNAL.getValue(),
-                    "已超过首次受理期限",
-                    objectMapper.createObjectNode(),
-                    now);
-        }
     }
 
     /**

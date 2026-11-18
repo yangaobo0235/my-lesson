@@ -4,7 +4,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from unittest.mock import patch
 
-from servicedesk_ai.diagnosis import execution
+from servicedesk_ai.diagnosis import run_context
 from servicedesk_ai.services.run_tools import RunTools
 
 VARIANTS = (
@@ -37,7 +37,7 @@ def ablate(variant: str):
         raise ValueError("未知消融变体")
     original_definitions = RunTools.definitions
     original_prepare = RunTools.prepare
-    original_fit = execution.fit_context
+    original_fit = run_context.fit_context
 
     def definitions(self, run):
         return [
@@ -65,10 +65,10 @@ def ablate(variant: str):
     with ExitStack() as stack:
         stack.enter_context(patch.object(RunTools, "definitions", definitions))
         if variant == "no_structured_state":
-            stack.enter_context(patch.object(execution, "fit_context", fit_context))
+            stack.enter_context(patch.object(run_context, "fit_context", fit_context))
             # 初始投影不再包含检查，不能把其原始反馈聊天误当作冗余而删除。
             stack.enter_context(
-                patch.object(execution, "represented_feedback", lambda *args: set())
+                patch.object(run_context, "represented_feedback", lambda *args: set())
             )
         if variant == "no_duplicate_detection":
             stack.enter_context(patch.object(RunTools, "prepare", prepare))

@@ -132,34 +132,13 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
         Files.createDirectories(directory);
         Path temporary = Files.createTempFile(directory, "original-", ".tmp");
         try {
-            long size = 0;
             MessageDigest sha;
             try {
                 sha = MessageDigest.getInstance("SHA-256");
             } catch (NoSuchAlgorithmException impossible) {
                 throw new IllegalStateException(impossible);
             }
-            try (var output = Files.newOutputStream(temporary)) {
-                byte[] buffer = new byte[65536];
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    size += count;
-                    if (size > (markdown ? 1048576 : 20971520))
-                        throw new BusinessException(CommonErrorCode.PAYLOAD_TOO_LARGE);
-                    output.write(buffer, 0, count);
-                    sha.update(buffer, 0, count);
-                }
-            }
-            if (size == 0)
-                throw new BusinessException(
-                        markdown ? CommonErrorCode.INVALID_REQUEST : DocumentErrorCode.EMPTY_PDF);
-            if (markdown) validateMarkdown(Files.readAllBytes(temporary));
-            else
-                try (var header = Files.newInputStream(temporary)) {
-                    if (!Arrays.equals(
-                            header.readNBytes(5), "%PDF-".getBytes(StandardCharsets.US_ASCII)))
-                        throw new BusinessException(DocumentErrorCode.INVALID_PDF_TYPE);
-                }
+            long size = stageOriginal(input, temporary, sha, markdown);
             String fileSha = HexFormat.of().formatHex(sha.digest());
             String hash =
                     knowledgeDigest.hash(
@@ -194,7 +173,7 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
                 ref.setSessionRef(actor.getSessionRef());
                 ref.setAuthVersion(actor.getAuthVersion());
                 KnowledgeRules.administrator(identityVerificationClient.verifySession(ref));
-                validateRules(actor, form.getRules());
+                verifyRuleCatalog(actor, form.getRules());
                 var stored = originalStorage.put(temporary, form.getContentFormat(), size);
                 if (!lock.isHeldByCurrentThread())
                     throw new BusinessException(CommonErrorCode.CONFLICT);
@@ -298,7 +277,8 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
     @Override
     public DocumentVO update(IdentityDTO actor, DocumentUpdateForm form) {
         KnowledgeRules.administrator(actor);
-        validateRules(actor, form.getRules());
+        normalizeRules(form.getRules());
+        verifyRuleCatalog(actor, form.getRules());
         return businessTransaction.execute(
                 () -> {
                     var document = baseMapper.lock(form.getId());
@@ -721,10 +701,9 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
     }
 
     /**
-     * 规范规则并核验外部目录，重复规则拒绝，不扩大NULL语义。
+     * 核对已规范化的资料适用项目和可选型号是否存在于当前外部目录。
      */
-    private void validateRules(IdentityDTO actor, List<DocumentRuleForm> values) {
-        normalizeRules(values);
+    private void verifyRuleCatalog(IdentityDTO actor, List<DocumentRuleForm> values) {
         var projects = new HashSet<String>();
         var models = new HashSet<String>();
         for (var value : values) {
@@ -771,6 +750,43 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, DocumentEnt
             rule.setCreatedAt(now);
             documentRuleMapper.insert(rule);
         }
+    }
+
+    /**
+     * 有界复制与验证原件，计算其真实字节摘要；临时路径由上传用例负责清理。
+     *
+     * @param input     原件输入流
+     * @param temporary 本次上传的暂存路径
+     * @param digest    原件摘要计算器
+     * @param markdown  是否为 Markdown 原件
+     * @return 校验通过的原件字节数
+     * @throws IOException 暂存读写失败
+     */
+    private long stageOriginal(InputStream input, Path temporary, MessageDigest digest, boolean markdown)
+            throws IOException {
+        long size = 0;
+        try (var output = Files.newOutputStream(temporary)) {
+            byte[] buffer = new byte[65536];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                size += count;
+                if (size > (markdown ? 1048576 : 20971520))
+                    throw new BusinessException(CommonErrorCode.PAYLOAD_TOO_LARGE);
+                output.write(buffer, 0, count);
+                digest.update(buffer, 0, count);
+            }
+        }
+        if (size == 0)
+            throw new BusinessException(
+                    markdown ? CommonErrorCode.INVALID_REQUEST : DocumentErrorCode.EMPTY_PDF);
+        if (markdown) validateMarkdown(Files.readAllBytes(temporary));
+        else
+            try (var header = Files.newInputStream(temporary)) {
+                if (!Arrays.equals(
+                        header.readNBytes(5), "%PDF-".getBytes(StandardCharsets.US_ASCII)))
+                    throw new BusinessException(DocumentErrorCode.INVALID_PDF_TYPE);
+            }
+        return size;
     }
 
     /**

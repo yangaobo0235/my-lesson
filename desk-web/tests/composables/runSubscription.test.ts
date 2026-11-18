@@ -1,13 +1,9 @@
 import { effectScope } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRunSubscription } from '../../src/composables/useRunSubscription'
-import {
-  getRun,
-  subscribeRun,
-  type Run,
-} from '../../src/api/diagnosis/diagnosisApi'
+import { getRun, subscribeRun, type Run } from '../../src/api/diagnosis/runApi'
 
-vi.mock('../../src/api/diagnosis/diagnosisApi', () => ({
+vi.mock('../../src/api/diagnosis/runApi', () => ({
   getRun: vi.fn(),
   subscribeRun: vi.fn(),
 }))
@@ -25,7 +21,7 @@ function setup() {
   const options = {
     signal: new AbortController().signal,
     csrf: vi.fn().mockResolvedValue('csrf'),
-    status: vi.fn(),
+    stage: vi.fn(),
     notice: vi.fn(),
     snapshot: vi.fn().mockResolvedValue(undefined),
     failed: vi.fn(),
@@ -76,10 +72,14 @@ describe('生成订阅的资源生命周期', () => {
     const latest = fixture.follow('new', () => true)
     await Promise.resolve()
     const oldCall = vi.mocked(subscribeRun).mock.calls[0]!
-    oldCall[3]('SUCCEEDED')
+    oldCall[3]({
+      status: 'SUCCEEDED',
+      executionPhase: 'COMMIT',
+      iterationNumber: 1,
+    })
     first.resolve(false)
     await old
-    expect(fixture.options.status).not.toHaveBeenCalled()
+    expect(fixture.options.stage).not.toHaveBeenCalled()
     expect(getRun).not.toHaveBeenCalled()
     expect(fixture.streaming.value).toBe(true)
     fixture.stop()

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from servicedesk_ai.diagnosis import execution
+from servicedesk_ai.diagnosis import run_context
 from servicedesk_ai.diagnosis.budget import ContextGroup
 from servicedesk_ai.infrastructure.models import ModelMessage, ModelRequest
 from servicedesk_ai.services.run_tools import PreparedTool, RunTools
@@ -50,10 +50,10 @@ def test_state_ablation_keeps_raw_feedback_and_current_request():
     ]
     request = ModelRequest(messages=(ModelMessage(role="system", content="system"),))
     with ablate("no_structured_state"):
-        _, selected = execution.fit_context(request, groups, 10000)
+        _, selected = run_context.fit_context(request, groups, 10000)
         assert selected == {"message:feedback", "message:current"}
-        assert execution.represented_feedback([], [], "current") == set()
-    _, selected = execution.fit_context(request, groups, 10000)
+        assert run_context.represented_feedback([], [], "current") == set()
+    _, selected = run_context.fit_context(request, groups, 10000)
     assert len(selected) == 5
 
 

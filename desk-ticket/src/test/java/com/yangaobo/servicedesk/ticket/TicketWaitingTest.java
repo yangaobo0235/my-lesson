@@ -21,6 +21,8 @@ import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketContentForm;
 import com.yangaobo.servicedesk.ticket.model.form.ticket.TicketInformationForm;
 import com.yangaobo.servicedesk.ticket.service.IServiceEntitlementService;
 import com.yangaobo.servicedesk.ticket.service.ITicketEventService;
+import com.yangaobo.servicedesk.ticket.service.TicketStateWriter;
+import com.yangaobo.servicedesk.ticket.service.impl.TicketDeadlineServiceImpl;
 import com.yangaobo.servicedesk.ticket.service.impl.TicketServiceImpl;
 
 import java.time.LocalDateTime;
@@ -60,6 +62,10 @@ class TicketWaitingTest {
      */
     private TicketServiceImpl service;
     /**
+     * 与人工动作共享持锁写入规则的期限用例。
+     */
+    private TicketDeadlineServiceImpl deadlines;
+    /**
      * 工单持久化边界替身。
      */
     private TicketMapper tickets;
@@ -89,10 +95,12 @@ class TicketWaitingTest {
         var transactions = mock(BusinessTransaction.class);
         when(transactions.execute(any(), any())).thenAnswer(call -> ((Supplier<?>) call.getArgument(0)).get());
         var mapper = new ObjectMapper().findAndRegisterModules();
+        var stateWriter = new TicketStateWriter(tickets);
+        deadlines = new TicketDeadlineServiceImpl(tickets, timeline, transactions, mapper, stateWriter);
         service = new TicketServiceImpl(events, timeline, mock(IServiceEntitlementService.class),
                 mock(DeviceMapper.class), mock(ProductModelMapper.class), new RequestDigest(mapper),
                 transactions, mapper, mock(IdentityVerificationClient.class), mock(ActionDraftClient.class),
-                new ActionReceiptServiceImpl(receipts, tickets, events, mapper));
+                new ActionReceiptServiceImpl(receipts, tickets, events, mapper), deadlines, stateWriter);
         ReflectionTestUtils.setField(service, "baseMapper", tickets);
         actor = new IdentityDTO();
         actor.setMustChangePassword(false);
@@ -201,8 +209,8 @@ class TicketWaitingTest {
         service.requestInformation(actor, ticket.getId(), form());
         when(tickets.scanDue(any(), anyInt())).thenReturn(List.of(ticket));
         when(tickets.decisionTime()).thenReturn(now.plusHours(3));
-        assertEquals(1, service.scan(10));
-        assertEquals(0, service.scan(10));
+        assertEquals(1, deadlines.scan(10));
+        assertEquals(0, deadlines.scan(10));
         assertEquals("WAITING_CUSTOMER", ticket.getStatus());
         var next = form();
         next.setRowVersion(ticket.getRowVersion());
@@ -211,7 +219,7 @@ class TicketWaitingTest {
         assertNull(ticket.getFollowUpNotifiedAt());
         assertEquals(2, ticket.getWaitCycle());
         when(tickets.decisionTime()).thenReturn(now.plusHours(5));
-        assertEquals(1, service.scan(10));
+        assertEquals(1, deadlines.scan(10));
         verify(timeline, times(2)).append(eq(ticket), isNull(), eq("FOLLOW_UP_DUE"), isNull(), isNull(),
                 eq("WAITING_CUSTOMER"), eq("INTERNAL"), anyString(), any(ObjectNode.class), any(), isNull());
     }
@@ -222,7 +230,7 @@ class TicketWaitingTest {
     @Test
     void changedStateInvalidatesScanCandidate() {
         when(tickets.scanDue(any(), anyInt())).thenReturn(List.of(ticket));
-        assertEquals(0, service.scan(10));
+        assertEquals(0, deadlines.scan(10));
         verifyNoInteractions(timeline);
     }
 
