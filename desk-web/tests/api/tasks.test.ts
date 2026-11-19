@@ -3,6 +3,7 @@ import {
   answerCheck,
   check,
   createTask,
+  listTaskEvents,
   taskReceipt,
 } from '../../src/api/diagnosis/taskApi'
 import { conversation } from '../../src/api/diagnosis/conversationApi'
@@ -36,6 +37,29 @@ function respond(data: unknown) {
   return fetch
 }
 describe('任务与运行独立合同', () => {
+  it('任务事件使用版本游标并尊重服务端来源隐藏标记', async () => {
+    const fetch = respond({
+      records: [
+        {
+          id,
+          stateVersion: '17',
+          actorType: 'WORKER',
+          eventType: 'RUN_COMMITTED',
+          details: null,
+          sourcesHidden: true,
+          createdAt: '2026-11-16T00:00:00Z',
+        },
+      ],
+      nextCursor: '17',
+      hasMore: false,
+    })
+    const page = await listTaskEvents(taskId, '16')
+    expect(fetch.mock.calls[0]![0]).toContain(
+      `/tasks/${taskId}/events?afterStateVersion=16`,
+    )
+    expect(page.records[0]).toMatchObject({ reason: null, sourcesHidden: true })
+    expect(page.nextCursor).toBe('17')
+  })
   it('咨询不要求诊断项目或事实版本', () => {
     expect(
       conversation({

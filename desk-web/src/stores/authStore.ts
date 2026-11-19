@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import * as api from '../api/auth/authApi'
 import type { Identity, Role } from '../api/auth/types'
 import { ApiError } from '../api/http'
+import { useIntakeStore } from './intakeStore'
 
 /** 身份及令牌仅存当前页面内存，退出后清除；浏览器会话由HttpOnly Cookie持有。 @author yangaobo */
 export const useAuthStore = defineStore('auth', () => {
@@ -12,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clear() {
     user.value = null
     csrf.value = ''
+    useIntakeStore().reset()
   }
   function has(role: Role) {
     return user.value?.roles.includes(role) ?? false

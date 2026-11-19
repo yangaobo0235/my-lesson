@@ -13,6 +13,7 @@ const models = ref<ProductModel[]>([]),
   devicePage = ref(1),
   modelTotal = ref('0'),
   deviceTotal = ref('0'),
+  devicePageSize = ref(0),
   customerId = ref<string | null>(null)
 const model = ref<api.ModelForm>({
     category: 'COMPUTER',
@@ -41,6 +42,7 @@ async function load() {
   modelTotal.value = m.total
   devices.value = d.records
   deviceTotal.value = d.total
+  devicePageSize.value = d.pageSize
 }
 onMounted(() => void run(load))
 function editModel(row: ProductModel) {
@@ -154,7 +156,8 @@ function next(kind: 'model' | 'device', delta: number) {
 }
 </script>
 <template>
-  <section>
+  <main>
+    <h1>设备与型号</h1>
     <p v-if="!auth.has('SERVICE_AGENT')">
       型号与设备维护需要客服角色及相应客户范围。
     </p>
@@ -270,7 +273,9 @@ function next(kind: 'model' | 'device', delta: number) {
           >上一页</ElButton
         ><span>{{ deviceTotal }} 条</span
         ><ElButton
-          :disabled="busy || BigInt(devicePage * 20) >= BigInt(deviceTotal)"
+          :disabled="
+            busy || BigInt(devicePage * devicePageSize) >= BigInt(deviceTotal)
+          "
           @click="next('device', 1)"
           >下一页</ElButton
         >
@@ -326,5 +331,5 @@ function next(kind: 'model' | 'device', delta: number) {
         </div>
       </form></template
     >
-  </section>
+  </main>
 </template>

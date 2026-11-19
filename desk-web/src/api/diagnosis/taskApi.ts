@@ -149,6 +149,41 @@ export const listTasks = (id: string, pageNum: number, signal?: AbortSignal) =>
   })
 export const getTask = (id: string, signal?: AbortSignal) =>
   request(`ai/tasks/${id}`, task, { signal })
+
+function eventPage(value: unknown) {
+  const o = record(value)
+  return {
+    records: array((value) => {
+      const event = record(value)
+      const version = decimal(event.stateVersion)
+      const hidden = bool(event.sourcesHidden)
+      const details = nullable(record)(event.details)
+      return {
+        id: identifier(event.id),
+        stateVersion: version,
+        actorType: choices('USER', 'WORKER', 'SYSTEM')(event.actorType),
+        eventType: text(event.eventType),
+        reason: hidden || !details ? null : text(details.reason),
+        sourcesHidden: hidden,
+        createdAt: text(event.createdAt),
+      }
+    })(o.records),
+    nextCursor: decimal(o.nextCursor),
+    hasMore: bool(o.hasMore),
+  }
+}
+
+/** 按有界游标查看本人任务事件，来源隐藏状态来自服务端。 @author yangaobo */
+export const listTaskEvents = (
+  id: string,
+  cursor: string,
+  signal?: AbortSignal,
+) =>
+  request(
+    `ai/tasks/${identifier(id)}/events${query({ afterStateVersion: decimal(cursor) })}`,
+    eventPage,
+    { signal },
+  )
 export const listFacts = (id: string, pageNum: number, signal?: AbortSignal) =>
   request(`ai/tasks/${id}/facts${query({ pageNum })}`, page(fact), { signal })
 export const changeFacts = (id: string, body: FactInput, csrf: string) =>

@@ -11,27 +11,24 @@ import {
 } from 'element-plus'
 import * as api from '../../api/administration/identityApi'
 import {
-  roleNames,
   type Account,
   type AccountCreateForm,
-  type Audit,
   type Organization,
 } from '../../api/administration/types'
-import type { Role } from '../../api/auth/types'
+import { ROLE_LABELS, type Role } from '../../api/auth/types'
 import { useAuthStore } from '../../stores/authStore'
 import { useOperation } from '../../composables/useOperation'
+import { STAFF_ROLES } from '../../router/workspaceAccess'
 const auth = useAuthStore(),
   { busy, error, run, signal } = useOperation()
 const tab = ref('organizations'),
   organizations = ref<Organization[]>([]),
-  accounts = ref<Account[]>([]),
-  audits = ref<Audit[]>([])
+  accounts = ref<Account[]>([])
 const orgPage = ref(1),
   accountPage = ref(1),
-  auditPage = ref(1),
   orgTotal = ref('0'),
   accountTotal = ref('0'),
-  auditTotal = ref('0'),
+  accountPageSize = ref(0),
   keyword = ref('')
 const orgCode = ref(''),
   orgName = ref(''),
@@ -59,7 +56,7 @@ const selectedType = computed(
     )?.organizationType,
 )
 const allowedRoles = computed(() =>
-  Object.entries(roleNames).filter(([role]) =>
+  Object.entries(ROLE_LABELS).filter(([role]) =>
     selectedType.value === 'CUSTOMER'
       ? role === 'CUSTOMER_USER'
       : role !== 'CUSTOMER_USER',
@@ -70,17 +67,15 @@ const customers = computed(() =>
 )
 async function load() {
   const csrf = await auth.token()
-  const [orgs, users, events] = await Promise.all([
+  const [orgs, users] = await Promise.all([
     api.listOrganizations(orgPage.value, keyword.value, csrf, signal),
     api.listAccounts(accountPage.value, keyword.value, csrf, signal),
-    api.listAudit(auditPage.value, csrf, signal),
   ])
   organizations.value = orgs.records
   orgTotal.value = orgs.total
   accounts.value = users.records
   accountTotal.value = users.total
-  audits.value = events.records
-  auditTotal.value = events.total
+  accountPageSize.value = users.pageSize
 }
 onMounted(() => void run(load))
 function search() {
@@ -198,14 +193,13 @@ function changeOrganization() {
   accountForm.value.roles =
     selectedType.value === 'CUSTOMER' ? ['CUSTOMER_USER'] : []
 }
-function next(kind: 'org' | 'account' | 'audit', delta: number) {
+function next(kind: 'org' | 'account', delta: number) {
   if (kind === 'org') orgPage.value += delta
-  else if (kind === 'account') accountPage.value += delta
-  else auditPage.value += delta
+  else accountPage.value += delta
   void run(load)
 }
 function roleLabel(roles: Role[]) {
-  return roles.map((value) => roleNames[value]).join('、')
+  return roles.map((value) => ROLE_LABELS[value]).join('、')
 }
 </script>
 <template>
@@ -330,7 +324,10 @@ function roleLabel(roles: Role[]) {
             >上一页</ElButton
           ><span>{{ accountTotal }} 条 · 第 {{ accountPage }} 页</span
           ><ElButton
-            :disabled="busy || BigInt(accountPage * 20) >= BigInt(accountTotal)"
+            :disabled="
+              busy ||
+              BigInt(accountPage * accountPageSize) >= BigInt(accountTotal)
+            "
             @click="next('account', 1)"
             >下一页</ElButton
           >
@@ -388,6 +385,14 @@ function roleLabel(roles: Role[]) {
                 :key="value"
                 :value="value"
                 :label="label" /></ElSelect></label
+          ><ElButton
+            v-if="
+              selectedType === 'SERVICE_PROVIDER' &&
+              (!selectedAccount || accountAction === 'roles')
+            "
+            :disabled="busy"
+            @click="accountForm.roles = [...STAFF_ROLES]"
+            >选中全部服务商角色</ElButton
           ><label v-if="selectedAccount && accountAction === 'scopes'"
             >客户范围<ElSelect
               v-model="customerIds"
@@ -420,29 +425,6 @@ function roleLabel(roles: Role[]) {
             ><ElButton @click="clearAccount">新建 / 清空</ElButton>
           </div>
         </form></ElTabPane
-      ><ElTabPane label="变更审计" name="audit"
-        ><article v-for="event in audits" :key="event.id" class="card">
-          <strong>{{ event.eventType }}</strong>
-          <p>
-            {{ event.createdAt }} · 操作者 {{ event.actorUserId || '系统' }}
-          </p>
-          <details>
-            <summary>变更内容</summary>
-            <pre>{{ event.details }}</pre>
-          </details>
-        </article>
-        <div class="toolbar">
-          <ElButton
-            :disabled="busy || auditPage === 1"
-            @click="next('audit', -1)"
-            >上一页</ElButton
-          ><span>{{ auditTotal }} 条 · 第 {{ auditPage }} 页</span
-          ><ElButton
-            :disabled="busy || BigInt(auditPage * 20) >= BigInt(auditTotal)"
-            @click="next('audit', 1)"
-            >下一页</ElButton
-          >
-        </div></ElTabPane
       ></ElTabs
     >
   </main>

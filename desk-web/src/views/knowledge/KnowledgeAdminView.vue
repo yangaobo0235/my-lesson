@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   ElAlert,
   ElButton,
@@ -38,12 +39,15 @@ import { useAuthStore } from '../../stores/authStore'
 import { useOperation } from '../../composables/useOperation'
 import RuleEditor from './RuleEditor.vue'
 import ProcedureEditor from './ProcedureEditor.vue'
+import IndexProgressPanel from './IndexProgressPanel.vue'
 import { isIndexSettled, useIndexPolling } from './useIndexPolling'
 import type { ProcedureInput } from '../../api/knowledge/procedures'
+import { useKnowledgeRevision } from '../../router/knowledgeRevision'
 
 /** 原件、索引事务、AI执行和发布分别显示，超时沿原键查证。 @author yangaobo */
 const auth = useAuthStore(),
   { run, busy, error, signal } = useOperation()
+const route = useRoute()
 const seriesRows = ref<DocumentSeries[]>([]),
   docs = ref<KnowledgeDocument[]>([]),
   seriesId = ref<string | null>(null)
@@ -54,6 +58,7 @@ const seriesPage = ref(1),
 const selected = ref<KnowledgeDocument | null>(null),
   job = ref<IndexJob | null>(null)
 const selectedSeries = ref<DocumentSeries | null>(null)
+useKnowledgeRevision(() => selected.value?.id)
 const seriesForm = reactive<Omit<DocumentSeries, 'id'>>({
   sourceType: 'OFFICIAL_MANUAL',
   sourceNamespace: '',
@@ -151,13 +156,13 @@ async function refreshIndexStatus() {
   pollIndex(document)
 }
 
-function select(value: KnowledgeDocument) {
+function select(id: string) {
   if (busy.value || procedurePending.value) return
   stopPolling()
   selectionVersion++
   const version = selectionVersion
   void run(async () => {
-    const document = await getDocument(value.id, await auth.token(), signal)
+    const document = await getDocument(id, await auth.token(), signal)
     const source = await getSeries(
       document.seriesId,
       await auth.token(),
@@ -443,13 +448,21 @@ function safety(action?: DocumentSafetyAction) {
     await loadList()
   })
 }
-onMounted(() => {
-  void run(async () => {
+onMounted(async () => {
+  await run(async () => {
     const value = await listSeries(1, await auth.token(), signal)
     seriesRows.value = value.records
     seriesTotal.value = value.total
     await loadList()
   })
+  const initial = route.query.document
+  if (
+    !signal.aborted &&
+    !error.value &&
+    typeof initial === 'string' &&
+    /^[0-9a-f]{32}$/.test(initial)
+  )
+    select(initial)
 })
 
 function pageNumReset() {
@@ -468,7 +481,12 @@ function pageNumNext() {
 
 <template>
   <main class="page">
-    <h1>知识原件与发布</h1>
+    <div class="page-heading">
+      <div>
+        <h1>资料修订</h1>
+        <p>按资料修订上传原件、核对索引结果，再发布给有权读者。</p>
+      </div>
+    </div>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
     <details class="panel">
       <summary>登记资料来源系列</summary>
@@ -511,6 +529,7 @@ function pageNumNext() {
       </form>
     </details>
     <section class="panel">
+      <h2>资料与修订</h2>
       <label
         >资料系列<ElSelect
           v-model="seriesId"
@@ -537,7 +556,7 @@ function pageNumNext() {
           <ElButton
             link
             :disabled="busy || !!uploadPending || !!indexPending"
-            @click="select(row)"
+            @click="select(row.id)"
             >{{ row.title }} · 修订 {{ row.revisionNumber }} ·
             {{ row.publicationStatus }}</ElButton
           >
@@ -778,39 +797,12 @@ function pageNumNext() {
       <p>资料 {{ safetyPending.body.id }} · {{ safetyPending.body.reason }}</p>
       <ElButton :disabled="busy" @click="safety()">核对原安全动作</ElButton>
     </section>
-    <section v-if="job" class="panel" aria-live="polite">
-      <h2>索引任务进展</h2>
-      <p>本地提交 {{ job.submitState }} · 本地取消 {{ job.cancelState }}</p>
-      <p>
-        AI受理：{{
-          job.aiAccepted === null
-            ? '尚未查询'
-            : job.aiAccepted
-              ? '已持久受理'
-              : '本次未查到，仍可能在途'
-        }}
-        · 执行 {{ job.aiStatus ?? '未知' }} · 阶段 {{ job.aiStage ?? '尚无' }} ·
-        解析 {{ job.parserState ?? '未知' }}
-      </p>
-      <p>
-        双索引当前复核：{{
-          job.replicasVerified === null
-            ? '未验证'
-            : job.replicasVerified
-              ? '通过'
-              : '尚不满足'
-        }}
-        {{ job.lastErrorCode }}
-      </p>
-      <ElButton
-        :disabled="
-          busy ||
-          job.submitState !== 'COMMITTED' ||
-          job.cancelState === 'PREPARING'
-        "
-        @click="replay"
-        >审计并重放已提交原指令</ElButton
-      >
-    </section>
+    <IndexProgressPanel
+      v-if="job"
+      :job="job"
+      :busy="busy"
+      can-replay
+      @replay="replay"
+    />
   </main>
 </template>

@@ -1,63 +1,75 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ElAlert, ElButton } from 'element-plus'
+import { ElAlert, ElButton, ElSkeleton, ElTag } from 'element-plus'
 import { listNotifications, readNotification } from '../../api/ticket/ticketApi'
-import type { Notification } from '../../api/ticket/types'
+import PageControls from '../../components/PageControls.vue'
 import { useOperation } from '../../composables/useOperation'
 import { useAuthStore } from '../../stores/authStore'
-const rows = ref<Notification[]>([]),
-  pageNum = ref(1),
-  total = ref('0')
+const result = ref<Awaited<ReturnType<typeof listNotifications>> | null>(null)
 const { busy, error, run, signal } = useOperation(),
   auth = useAuthStore()
-async function load() {
-  const page = await listNotifications(pageNum.value, signal)
-  rows.value = page.records
-  total.value = page.total
+async function readPage(pageNum: number) {
+  result.value = await listNotifications(pageNum, signal)
 }
-function next(delta: number) {
-  void run(async () => {
-    pageNum.value += delta
-    await load()
-  })
+function load(pageNum = 1) {
+  void run(() => readPage(pageNum))
 }
 function read(id: string) {
   void run(async () => {
     await readNotification(id, await auth.token())
-    await load()
+    await readPage(result.value?.pageNum ?? 1)
   })
 }
-onMounted(() => void run(load))
+onMounted(() => load())
 </script>
 <template>
   <main>
     <h1>站内通知</h1>
     <p>只显示当前仍有权访问的工单通知。</p>
-    <ElAlert v-if="error" :title="error" type="error" :closable="false" />
-    <article v-for="row in rows" :key="row.id" class="card page-heading">
+    <ElAlert v-if="error" :title="error" type="error" :closable="false">
+      <ElButton text @click="load(result?.pageNum)">重新加载</ElButton>
+    </ElAlert>
+    <ElSkeleton v-if="busy && !result" :rows="3" animated />
+    <article
+      v-for="row in result?.records"
+      :key="row.id"
+      class="card notice-row"
+    >
       <div>
-        <RouterLink :to="`/tickets/${row.ticketId}`">{{ row.title }}</RouterLink
+        <RouterLink
+          :to="{ name: 'ticket-detail', params: { id: row.ticketId } }"
+          >{{ row.title }}</RouterLink
         ><small class="subtle">{{
           new Date(row.createdAt).toLocaleString('zh-CN', {
             timeZone: 'Asia/Shanghai',
           })
         }}</small>
       </div>
-      <ElButton :disabled="busy || !!row.readAt" @click="read(row.id)">{{
-        row.readAt ? '已读' : '标记已读'
-      }}</ElButton>
-    </article>
-    <p v-if="!rows.length && !busy">暂无通知</p>
-    <div class="toolbar">
-      <ElButton :disabled="busy || pageNum === 1" @click="next(-1)"
-        >上一页</ElButton
-      ><span>第 {{ pageNum }} 页 · 共 {{ total }} 条</span
-      ><ElButton
-        :disabled="busy || BigInt(pageNum * 20) >= BigInt(total)"
-        @click="next(1)"
-        >下一页</ElButton
+      <ElTag v-if="row.readAt" type="info">已读</ElTag>
+      <ElButton
+        v-else
+        plain
+        type="primary"
+        :disabled="busy"
+        @click="read(row.id)"
+        >标记已读</ElButton
       >
-    </div>
+    </article>
+    <p v-if="result && !result.records.length" class="card">暂无通知。</p>
+    <PageControls v-if="result" :page="result" :busy="busy" @change="load" />
   </main>
 </template>
+
+<style scoped>
+.notice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.notice-row a {
+  font-weight: 650;
+}
+</style>

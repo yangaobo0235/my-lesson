@@ -65,13 +65,15 @@ import {
   type Fact,
 } from '../../api/diagnosis/taskApi'
 import TaskChecks from './TaskChecks.vue'
+import TaskEventHistory from './TaskEventHistory.vue'
 import { useActionDraft } from './useActionDraft'
 import SupportContextFields from '../support/SupportContextFields.vue'
 
 /** 本人私有会话；断流查询原运行，建议必须人工编辑确认后进入正式工单。 @author yangaobo */
-const props = defineProps<{ ticket?: Ticket }>()
+const props = defineProps<{ ticket?: Ticket; initialDescription?: string }>()
 const emit = defineEmits<{ changed: [] }>()
 const calls = ref<RunCalls | null>(null)
+const historyOpen = ref(false)
 const auth = useAuthStore(),
   { run, busy, error, signal } = useOperation()
 const selectedMode = ref<'CUSTOMER_SELF_SERVICE' | 'CONSULT'>(
@@ -84,7 +86,7 @@ const task = ref<DiagnosisTask | null>(null),
   tasks = ref<DiagnosisTask[]>([]),
   taskPage = ref(1),
   taskTotal = ref('0'),
-  goal = ref(''),
+  goal = ref(props.initialDescription ?? ''),
   closeReason = ref('')
 const savedMessageId = ref<string | null>(null)
 const messages = ref<Awaited<ReturnType<typeof listMessages>>['records']>([]),
@@ -146,7 +148,9 @@ const services = ref<EntitledService[]>([]),
   deviceTotal = ref('0')
 const serviceItemId = ref(''),
   deviceId = ref<string | null>(null),
-  title = ref(''),
+  title = ref(
+    props.initialDescription?.split(/\r?\n/, 1)[0]?.slice(0, 100) ?? '',
+  ),
   context = ref(blankContext()),
   question = ref('')
 const pending = ref<{ conversationId: string; form: RunInput } | null>(null)
@@ -965,7 +969,7 @@ function factPageNext() {
         >下一页会话</ElButton
       >
     </div>
-    <details>
+    <details :open="!!initialDescription && !conversation">
       <summary>新建本人会话</summary>
       <label>会话标题<ElInput v-model="title" maxlength="100" /></label
       ><template v-if="!ticket && mode !== 'CONSULT'"
@@ -1004,8 +1008,20 @@ function factPageNext() {
         >{{ pendingCreate ? '按原请求完成创建' : '创建私有会话' }}</ElButton
       >
     </details>
-    <template v-if="conversation"
-      ><p>
+    <template v-if="conversation">
+      <ElButton
+        v-if="task"
+        text
+        :aria-expanded="historyOpen"
+        @click="historyOpen = !historyOpen"
+        >{{ historyOpen ? '收起任务历史' : '查看任务历史' }}</ElButton
+      >
+      <TaskEventHistory
+        v-if="task && historyOpen"
+        :key="task.id"
+        :task-id="task.id"
+      />
+      <p>
         任务版本 {{ task?.taskStateVersion ?? '咨询无诊断任务' }} · 会话版本
         {{ conversation.rowVersion
         }}<template v-if="current?.ticketRowVersion">

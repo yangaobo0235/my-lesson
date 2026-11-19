@@ -25,6 +25,7 @@ export const getTicket = (id: string, signal?: AbortSignal) =>
 export const listTickets = (
   filters: {
     pageNum: number
+    pageSize?: number
     status?: TicketStatus
     triage?: boolean
     overdue?: boolean

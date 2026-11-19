@@ -18,5 +18,6 @@ export default tseslint.config(
     languageOptions: { globals: globals.browser },
     rules: { '@typescript-eslint/consistent-type-imports': 'error' },
   },
+  { files: ['vite/**/*.mjs'], languageOptions: { globals: globals.node } },
   prettier,
 )

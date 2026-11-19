@@ -4,6 +4,11 @@ import {
   document,
 } from '../../src/api/knowledge/knowledgeApi'
 import { procedureCheck } from '../../src/api/knowledge/procedures'
+import {
+  listReadableDocuments,
+  readableOriginalLink,
+} from '../../src/api/knowledge/knowledgeReadApi'
+import { listDocumentEvents } from '../../src/api/knowledge/documentAuditApi'
 
 /** 资料安全状态与原动作重试必须完整通过跨端协议。 @author yangaobo */
 describe('知识修订安全合同', () => {
@@ -76,6 +81,76 @@ describe('知识修订安全合同', () => {
   })
   it('缺少访问状态的响应不能默认为允许', () => {
     expect(() => document({ ...revision, accessStatus: undefined })).toThrow()
+  })
+  it('知识列表和原件沿同一个适用上下文请求', async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            code: 0,
+            message: '成功',
+            traceId: 'trace',
+            data: {
+              records: [{ ...revision, publicationStatus: 'PUBLISHED' }],
+              total: '1',
+              pageNum: 1,
+              pageSize: 10,
+            },
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const context = { serviceItemId: revision.seriesId, osName: 'Windows 11' }
+    expect((await listReadableDocuments(context, 1)).records).toHaveLength(1)
+    expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/knowledge/documents?serviceItemId=${revision.seriesId}&environment.osName=Windows+11&pageNum=1`,
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(readableOriginalLink(revision.id, context)).toBe(
+      `/api/v1/knowledge/documents/${revision.id}/file?serviceItemId=${revision.seriesId}&environment.osName=Windows+11`,
+    )
+  })
+  it('发布审计使用修订筛选和受保护的管理查询', async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            code: 0,
+            message: '成功',
+            traceId: 'trace',
+            data: {
+              records: [
+                {
+                  id: revision.clientUploadId,
+                  documentId: revision.id,
+                  actorId: revision.seriesId,
+                  eventType: 'PUBLISHED',
+                  relatedDocumentId: null,
+                  details: { schema_version: 1 },
+                  createdAt: '2026-11-18T00:00:00Z',
+                },
+              ],
+              total: '1',
+              pageNum: 1,
+              pageSize: 10,
+            },
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    )
+    vi.stubGlobal('fetch', fetch)
+    expect(
+      (await listDocumentEvents(revision.id, 1, 'csrf')).records[0]?.eventType,
+    ).toBe('PUBLISHED')
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/admin/document-event/list',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ documentId: revision.id, pageNum: 1 }),
+        headers: expect.objectContaining({ 'X-CSRF-TOKEN': 'csrf' }),
+      }),
+    )
   })
   it('重试发送原动作键、预期版本与原因，不使用最新资料快照覆盖', async () => {
     const fetch = vi.fn().mockImplementation(() =>

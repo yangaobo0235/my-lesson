@@ -20,7 +20,6 @@ import {
 import { newRequestId } from '../../api/http'
 import { useAuthStore } from '../../stores/authStore'
 import { useOperation } from '../../composables/useOperation'
-import AssetAdminPanel from './AssetAdminPanel.vue'
 const auth = useAuthStore(),
   { busy, error, run, signal } = useOperation()
 const tab = ref(auth.has('SYSTEM_ADMIN') ? 'items' : 'entitlements')
@@ -32,7 +31,9 @@ const itemPage = ref(1),
   eventPage = ref(1),
   itemTotal = ref('0'),
   entitlementTotal = ref('0'),
+  entitlementPageSize = ref(0),
   eventTotal = ref('0'),
+  eventPageSize = ref(0),
   customerId = ref<string | null>(null)
 const serviceCode = ref(''),
   category = ref<Category>('TERMINAL'),
@@ -73,6 +74,7 @@ async function load() {
         .then((data) => {
           entitlements.value = data.records
           entitlementTotal.value = data.total
+          entitlementPageSize.value = data.pageSize
         }),
     )
   await Promise.all(jobs)
@@ -216,6 +218,8 @@ function showEvents(
 ) {
   eventTarget.value = { resource, id }
   eventPage.value = 1
+  eventTotal.value = '0'
+  events.value = []
   void run(loadEvents)
 }
 async function loadEvents() {
@@ -229,6 +233,7 @@ async function loadEvents() {
   )
   events.value = data.records
   eventTotal.value = data.total
+  eventPageSize.value = data.pageSize
 }
 function next(kind: 'item' | 'entitlement' | 'event', delta: number) {
   void run(async () => {
@@ -242,7 +247,7 @@ function next(kind: 'item' | 'entitlement' | 'event', delta: number) {
 </script>
 <template>
   <main>
-    <h1>支持范围管理</h1>
+    <h1>服务目录与资格</h1>
     <p>
       服务目录由系统管理员维护，客户资格由当前范围内客服维护。暂停或到期影响新受理，历史工单保留。
     </p>
@@ -420,7 +425,9 @@ function next(kind: 'item' | 'entitlement' | 'event', delta: number) {
           ><span>{{ entitlementTotal }} 条 · 第 {{ entitlementPage }} 页</span
           ><ElButton
             :disabled="
-              busy || BigInt(entitlementPage * 20) >= BigInt(entitlementTotal)
+              busy ||
+              BigInt(entitlementPage * entitlementPageSize) >=
+                BigInt(entitlementTotal)
             "
             @click="next('entitlement', 1)"
             >下一页</ElButton
@@ -487,9 +494,8 @@ function next(kind: 'item' | 'entitlement' | 'event', delta: number) {
             >
           </div>
         </form></ElTabPane
-      ><ElTabPane label="型号与设备" name="assets"
-        ><AssetAdminPanel /></ElTabPane
-    ></ElTabs>
+      ></ElTabs
+    >
     <section v-if="eventTarget" class="card">
       <h2>不可变变更历史</h2>
       <article v-for="event in events" :key="event.id">
@@ -512,7 +518,9 @@ function next(kind: 'item' | 'entitlement' | 'event', delta: number) {
           >上一页</ElButton
         ><span>{{ eventTotal }} 条 · 第 {{ eventPage }} 页</span
         ><ElButton
-          :disabled="busy || BigInt(eventPage * 20) >= BigInt(eventTotal)"
+          :disabled="
+            busy || BigInt(eventPage * eventPageSize) >= BigInt(eventTotal)
+          "
           @click="next('event', 1)"
           >下一页</ElButton
         >

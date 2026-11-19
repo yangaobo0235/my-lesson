@@ -36,6 +36,7 @@ AI_ROOT = {
 }
 WEB_ROOT = {
     "tests",
+    "vite",
     "package.json",
     "package-lock.json",
     "index.html",

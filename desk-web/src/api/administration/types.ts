@@ -81,10 +81,3 @@ export interface AccountMutationForm {
   rowVersion: string
   reason: string
 }
-export const roleNames: Record<Role, string> = {
-  SYSTEM_ADMIN: '系统管理员',
-  SERVICE_AGENT: '客服',
-  TECHNICIAN: '技术人员',
-  KNOWLEDGE_ADMIN: '知识管理员',
-  CUSTOMER_USER: '客户用户',
-}
